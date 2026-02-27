@@ -213,7 +213,6 @@ export default function NewsMapWidget() {
           {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""} ·{" "}
           {trendingCodes.length} trending ·{" "}
           Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-          {data.feedStats && ` · ${data.feedStats.succeeded}/${data.feedStats.total} feeds`}
           {data.usingMockData && " · demo data"}
         </p>
       )}
