@@ -28,9 +28,9 @@ function roundToNearest50(n: number): number {
 }
 
 function tierColor(alloc: number): string {
-  if (alloc > 0.75)  return "#fd853a"; // high  – orange
-  if (alloc >= 0.25) return "#465fff"; // mid   – brand blue
-  return "#9cb9ff";                     // low   – light blue
+  // alloc is a 0–1 fraction (0 = $0 DCA → red, 1 = $1000 max DCA → green)
+  const hue = Math.round(alloc * 120);
+  return `hsl(${hue}, 72%, 50%)`;
 }
 
 // ── Signal indicator ───────────────────────────────────────────────────────
@@ -154,6 +154,8 @@ export default function MonthlyTarget() {
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
+  // Days until we enter the 365-day pre-halving buy window
+  const daysToWindow  = Math.max(0, Math.ceil((msToHalving - 365 * 86_400_000) / 86_400_000));
 
   // ── Boost ──────────────────────────────────────────────────────────────
   let totalBoost = 0;
@@ -315,8 +317,8 @@ export default function MonthlyTarget() {
         />
         <SignalItem
           active={halvingActive}
-          label="Halving"
-          sub={`${daysToHalving}d`}
+          label={halvingActive ? "Pre-Halving" : "Halving Window"}
+          sub={halvingActive ? `${daysToHalving}d to halving` : `in ${daysToWindow}d`}
         />
       </div>
     </div>
