@@ -28,9 +28,9 @@ function roundToNearest50(n: number): number {
 }
 
 function tierColor(alloc: number): string {
-  if (alloc > 0.75)  return "#fd853a"; // high  – orange
-  if (alloc >= 0.25) return "#465fff"; // mid   – brand blue
-  return "#9cb9ff";                     // low   – light blue
+  // alloc is a 0–1 fraction (0 = $0 DCA → red, 1 = $1000 max DCA → green)
+  const hue = Math.round(alloc * 120);
+  return `hsl(${hue}, 72%, 50%)`;
 }
 
 // ── Signal indicator ───────────────────────────────────────────────────────
