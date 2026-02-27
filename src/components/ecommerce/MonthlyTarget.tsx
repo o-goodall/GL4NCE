@@ -75,24 +75,12 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
 // ── Main component ─────────────────────────────────────────────────────────
 export default function MonthlyTarget() {
   const [priceUSD,   setPriceUSD]   = useState<number | null>(null);
-  const [fxRate,     setFxRate]     = useState<number | null>(null); // live USD→AUD
   const [fearGreed,  setFearGreed]  = useState<number | null>(null);
   const [diffChange, setDiffChange] = useState<number | null>(null);
 
   const prevBuy   = useRef<number | "PASS" | null>(null);
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Live USD→AUD FX — Frankfurter (ECB-based, no API key required)
-  useEffect(() => {
-    fetch("https://api.frankfurter.app/latest?from=USD&to=AUD")
-      .then((r) => r.json())
-      .then((d) => {
-        const rate = parseFloat(d?.rates?.AUD);
-        if (!isNaN(rate)) setFxRate(rate);
-      })
-      .catch(() => {});
-  }, []);
 
   // Fear & Greed index
   useEffect(() => {
@@ -179,9 +167,8 @@ export default function MonthlyTarget() {
           1 - (priceUSD - LOW_PRICE_USD) / (HIGH_PRICE_USD - LOW_PRICE_USD)
         )
       );
-      recommendedBuy = roundToNearest50(
-        MAX_DCA_AUD * allocationPct * (1 + totalBoost / 100)
-      );
+      const rawBuy = MAX_DCA_AUD * allocationPct * (1 + totalBoost / 100);
+      recommendedBuy = roundToNearest50(Math.min(rawBuy, MAX_DCA_AUD));
     }
   }
 
@@ -207,19 +194,14 @@ export default function MonthlyTarget() {
   const isPass    = recommendedBuy === "PASS";
   const isLoading = recommendedBuy === null;
 
-  const color       = isPass || isLoading ? "#98a2b3" : tierColor(allocationPct);
-  const chartValue  = isPass || isLoading ? 0 : Math.round(allocationPct * 100);
+  const buyRatio    = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
+  const color       = isPass || isLoading ? "#98a2b3" : tierColor(buyRatio);
+  const chartValue  = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
   const centerLabel = isLoading
     ? "—"
     : isPass
     ? "PASS"
     : `$${fmt(recommendedBuy as number)}`;
-
-  // Live BTC price in AUD (uses fetched FX, not hardcoded)
-  const priceAUD =
-    priceUSD !== null && fxRate !== null
-      ? `BTC ≈ $${fmt(Math.round(priceUSD * fxRate))} AUD`
-      : null;
 
   // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
@@ -265,11 +247,8 @@ export default function MonthlyTarget() {
           <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
             4
           </span>
-          <span className="text-lg font-bold text-orange-400 leading-none" aria-label="Bitcoin">
-            ₿
-          </span>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            BTC DCA Advisor
+            DCA signal
           </h3>
           <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -295,11 +274,6 @@ export default function MonthlyTarget() {
         {/* Sub-label */}
         <p className="mx-auto mt-10 w-full max-w-[380px] text-center text-sm text-gray-500 dark:text-gray-400 sm:text-base">
           AUD · Fortnightly DCA
-          {priceAUD && (
-            <span className="block text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-              {priceAUD}
-            </span>
-          )}
         </p>
       </div>
 
