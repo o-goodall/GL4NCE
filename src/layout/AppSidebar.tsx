@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
+import GL4NCELogo from "../components/common/GL4NCELogo";
 
 // Assume these icons are imported from an icon library
 import {
@@ -306,28 +307,11 @@ const AppSidebar: React.FC = () => {
         <Link to="/">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
-              <img
-                className="dark:hidden"
-                src="/images/logo/logo.svg"
-                alt="Logo"
-                width={150}
-                height={40}
-              />
-              <img
-                className="hidden dark:block"
-                src="/images/logo/logo-dark.svg"
-                alt="Logo"
-                width={150}
-                height={40}
-              />
+              <GL4NCELogo variant="light" className="dark:hidden" />
+              <GL4NCELogo variant="dark"  className="hidden dark:block" />
             </>
           ) : (
-            <img
-              src="/images/logo/logo-icon.svg"
-              alt="Logo"
-              width={32}
-              height={32}
-            />
+            <GL4NCELogo variant="icon" />
           )}
         </Link>
       </div>
