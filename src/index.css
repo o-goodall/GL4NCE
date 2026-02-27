@@ -39,7 +39,7 @@ layer(base);
   --color-current: currentColor;
   --color-transparent: transparent;
   --color-white: #ffffff;
-  --color-black: #101828;
+  --color-black: #111113;
 
   --color-brand-25: #fffcf5;
   --color-brand-50: #fff7ed;
@@ -47,8 +47,8 @@ layer(base);
   --color-brand-200: #fed7aa;
   --color-brand-300: #fdba74;
   --color-brand-400: #fb923c;
-  --color-brand-500: #F7931A;
-  --color-brand-600: #ea7c09;
+  --color-brand-500: #FF5500;
+  --color-brand-600: #E54A00;
   --color-brand-700: #c2620a;
   --color-brand-800: #9a4d0f;
   --color-brand-900: #7c3d12;
@@ -68,18 +68,18 @@ layer(base);
   --color-blue-light-950: #062c41;
 
   --color-gray-25: #fcfcfd;
-  --color-gray-50: #f9fafb;
+  --color-gray-50: #F9F9F9;
   --color-gray-100: #f2f4f7;
   --color-gray-200: #e4e7ec;
   --color-gray-300: #d0d5dd;
-  --color-gray-400: #98a2b3;
-  --color-gray-500: #667085;
+  --color-gray-400: #A1A1AA;
+  --color-gray-500: #71717A;
   --color-gray-600: #475467;
   --color-gray-700: #344054;
-  --color-gray-800: #1d2939;
-  --color-gray-900: #101828;
-  --color-gray-950: #0c111d;
-  --color-gray-dark: #1a2231;
+  --color-gray-800: #27272A;
+  --color-gray-900: #111113;
+  --color-gray-950: #09090B;
+  --color-gray-dark: #0B0F14;
 
   --color-orange-25: #fffaf5;
   --color-orange-50: #fff6ed;
@@ -100,7 +100,7 @@ layer(base);
   --color-success-200: #a6f4c5;
   --color-success-300: #6ce9a6;
   --color-success-400: #32d583;
-  --color-success-500: #12b76a;
+  --color-success-500: #00D26A;
   --color-success-600: #039855;
   --color-success-700: #027a48;
   --color-success-800: #05603a;
@@ -113,7 +113,7 @@ layer(base);
   --color-error-200: #fecdca;
   --color-error-300: #fda29b;
   --color-error-400: #f97066;
-  --color-error-500: #f04438;
+  --color-error-500: #FF3B3B;
   --color-error-600: #d92d20;
   --color-error-700: #b42318;
   --color-error-800: #912018;
@@ -135,7 +135,9 @@ layer(base);
 
   --color-theme-pink-500: #ee46bc;
 
-  --color-theme-purple-500: #7a5af8;
+  --color-theme-purple-500: #7C3AED;
+
+  --color-theme-cyan-500: #00E5FF;
 
   --shadow-theme-md: 0px 4px 8px -2px rgba(16, 24, 40, 0.1),
     0px 2px 4px -2px rgba(16, 24, 40, 0.06);
@@ -147,7 +149,9 @@ layer(base);
   --shadow-theme-xl: 0px 20px 24px -4px rgba(16, 24, 40, 0.08),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #262d3c, 5px 0 0 #262d3c;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(247, 147, 26, 0.15);
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(255, 85, 0, 0.15);
+  --shadow-neon-orange: 0 0 8px rgba(255, 85, 0, 0.55), 0 0 20px rgba(255, 85, 0, 0.25);
+  --shadow-neon-cyan: 0 0 8px rgba(0, 229, 255, 0.55), 0 0 20px rgba(0, 229, 255, 0.25);
   --shadow-slider-navigation: 0px 1px 2px 0px rgba(16, 24, 40, 0.1),
     0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip: 0px 4px 6px -2px rgba(16, 24, 40, 0.05),
@@ -163,6 +167,27 @@ layer(base);
   --z-index-9999: 9999;
   --z-index-99999: 99999;
   --z-index-999999: 999999;
+}
+
+/* Fintech semantic color variables — light mode defaults */
+:root {
+  --color-bg-primary: #F8F9FA;
+  --color-bg-surface: #ffffff;
+  --color-text-primary: #111111;
+  --color-text-secondary: #475467;
+  --color-accent-orange: var(--color-brand-500);
+  --color-accent-cyan: var(--color-theme-cyan-500);
+  --color-accent-violet: var(--color-theme-purple-500);
+  --color-status-success: var(--color-success-500);
+  --color-status-danger: var(--color-error-500);
+}
+
+/* Fintech semantic color variables — dark mode overrides */
+.dark {
+  --color-bg-primary: #0B0F14;
+  --color-bg-surface: #121826;
+  --color-text-primary: #E6EDF3;
+  --color-text-secondary: #9DA7B3;
 }
 
 /*
@@ -523,13 +548,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #F7931A;
+  background: #FF5500;
   @apply !border-brand-500 !bg-brand-500 hover:!border-brand-500 hover:!bg-brand-500;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #F7931A;
+  box-shadow: -10px 0 0 #FF5500;
 }
 
 .flatpickr-months .flatpickr-prev-month svg,
