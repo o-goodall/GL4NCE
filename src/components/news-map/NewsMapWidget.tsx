@@ -5,13 +5,16 @@ import { worldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
+import { useTheme } from "../../context/ThemeContext";
 
-const HOVER_FILL = "#465fff";
+const HOVER_FILL = "#F7931A";
+const DARK_DEFAULT_FILL = "#344054";
+const LIGHT_DEFAULT_FILL = "#D0D5DD";
 const PING_DEFAULT = "#ffffff";
 const PING_TRENDING = "#f04438";
 
 const REGION_STYLE = {
-  initial: { fill: "#D0D5DD", fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
+  initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
   hover: { fillOpacity: 0.7, cursor: "pointer", fill: HOVER_FILL, stroke: "none" },
   selected: { fill: HOVER_FILL },
   selectedHover: { fill: HOVER_FILL, fillOpacity: 0.8 },
@@ -29,6 +32,16 @@ const REGION_LABEL_STYLE = {
   initial: { fill: "#35373e", fontWeight: 500, fontSize: "13px", stroke: "none" },
   hover: {}, selected: {}, selectedHover: {},
 } as const;
+
+/** Convert an ISO-3166-1 alpha-2 country code to a flag emoji.
+ *  Returns an empty string for invalid codes (non-alpha or wrong length). */
+function countryFlag(code: string): string {
+  const upper = code.toUpperCase();
+  if (upper.length !== 2 || !/^[A-Z]{2}$/.test(upper)) return "";
+  return [...upper].map((c) =>
+    String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
+  ).join("");
+}
 
 type CategoryFilter = "all" | EventCategory;
 
@@ -77,10 +90,12 @@ const StableMap = memo(function StableMap({
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
+  const { theme } = useTheme();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const mapRef = useRef<IMapObject | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Keep latest country lookup in a ref so the stable handler can access it
   const countryByCodeRef = useRef(new Map<string, CountryNewsData>());
@@ -100,6 +115,11 @@ export default function NewsMapWidget() {
 
   const trendingCodes = useMemo(
     () => countries.filter((c) => c.trending).map((c) => c.code),
+    [countries]
+  );
+
+  const trendingCountries = useMemo(
+    () => countries.filter((c) => c.trending),
     [countries]
   );
 
@@ -124,14 +144,41 @@ export default function NewsMapWidget() {
     setTappedCode(null);
   }, []);
 
-  // Update selected regions via jVectorMap's own API.
+  /**
+   * Paint all jVectorMap region SVG paths with the correct fill using inline
+   * styles. jVectorMap sets fills via the SVG `fill` *attribute*, which CSS
+   * class rules can override because CSS properties beat SVG presentation
+   * attributes in the cascade. Setting fill via element.style (inline style)
+   * wins over class-based CSS rules without requiring !important hacks.
+   *
+   * We read jVectorMap's own fill *attribute* as ground truth: after
+   * setSelectedRegions() the selected paths have fill=HOVER_FILL, others
+   * have the initial fill.  We then mirror those values as inline styles.
+   * Scoped to the specific map container to avoid interfering with other maps.
+   */
+  const paintRegions = useCallback((isDark: boolean) => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+    const defaultFill = isDark ? DARK_DEFAULT_FILL : LIGHT_DEFAULT_FILL;
+    container
+      .querySelectorAll<SVGPathElement>(".jvectormap-region.jvectormap-element")
+      .forEach((el) => {
+        el.style.fill =
+          el.getAttribute("fill") === HOVER_FILL ? HOVER_FILL : defaultFill;
+      });
+  }, []);
+
+  // Update selected regions via jVectorMap's own API, then force-paint inline
+  // styles to override any CSS cascade issues.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     map.clearSelectedRegions();
     const toSelect = tappedCode ? [...trendingCodes, tappedCode] : trendingCodes;
     if (toSelect.length > 0) map.setSelectedRegions(toSelect);
-  }, [trendingCodes, tappedCode]);
+    // jVectorMap has now updated fill *attributes*; paint inline styles on top.
+    paintRegions(theme === "dark");
+  }, [trendingCodes, tappedCode, theme, paintRegions]);
 
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
@@ -197,7 +244,7 @@ export default function NewsMapWidget() {
 
       {/* Map container */}
       <div className="relative overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
-        <div className="h-[300px] sm:h-[360px] xl:h-[420px]">
+        <div ref={mapContainerRef} className="h-[300px] sm:h-[360px] xl:h-[420px]">
           <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} />
         </div>
 
@@ -209,12 +256,31 @@ export default function NewsMapWidget() {
       </div>
 
       {data && (
-        <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
-          {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""} ·{" "}
-          {trendingCodes.length} trending ·{" "}
-          Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-          {data.usingMockData && " · demo data"}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
+          </span>
+          {trendingCountries.length > 0 && (
+            <>
+              <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {trendingCountries.map((c) => (
+                  <span
+                    key={c.code}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-brand-500/10 text-brand-600 dark:bg-brand-500/20 dark:text-brand-400 border border-brand-500/20"
+                  >
+                    <span aria-label={c.name}>{countryFlag(c.code)}</span>
+                    {c.name}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
+            Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+            {data.usingMockData && " · demo data"}
+          </span>
+        </div>
       )}
 
       <EventModal country={selected} onClose={handleClose} />
