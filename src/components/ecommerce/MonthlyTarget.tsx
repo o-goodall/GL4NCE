@@ -1,200 +1,323 @@
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
-import { useState } from "react";
-import { Dropdown } from "../ui/dropdown/Dropdown";
-import { DropdownItem } from "../ui/dropdown/DropdownItem";
-import { MoreDotIcon } from "../../icons";
+import { useEffect, useRef, useState } from "react";
 
+// ── POC constants ──────────────────────────────────────────────────────────
+const LOW_PRICE_USD  = 55_000;
+const HIGH_PRICE_USD = 125_000;
+const MAX_DCA_AUD    = 1_000;
+const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
+
+// Signal thresholds
+const FEAR_EXTREME_THRESHOLD = 20;
+const FEAR_ACTIVE_THRESHOLD  = 40;
+const DIFF_DROP_THRESHOLD    = -5;
+
+// Boost percentages per signal
+const BOOST_FEAR_EXTREME = 20;
+const BOOST_FEAR_ACTIVE  = 10;
+const BOOST_DIFF_DROP    = 10;
+const BOOST_HALVING      = 10;
+
+// Chart style tokens
+const CHART_FONT     = "Outfit, sans-serif";
+const CHART_TRACK_BG = "#E4E7EC"; // light-mode track; matches gray-200
+
+function roundToNearest50(n: number): number {
+  return Math.round(n / 50) * 50;
+}
+
+function tierColor(alloc: number): string {
+  if (alloc > 0.75)  return "#fd853a"; // high  – orange
+  if (alloc >= 0.25) return "#465fff"; // mid   – brand blue
+  return "#9cb9ff";                     // low   – light blue
+}
+
+// ── Signal indicator ───────────────────────────────────────────────────────
+interface SignalItemProps {
+  active: boolean;
+  label: string;
+  sub: string;
+}
+
+function SignalItem({ active, label, sub }: SignalItemProps) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 py-3 px-1">
+      <div className="flex items-center gap-1.5">
+        <span
+          className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-500 ${
+            active ? "bg-emerald-400" : "bg-gray-300 dark:bg-gray-600"
+          }`}
+        />
+        <span
+          className={`text-xs font-semibold text-center leading-tight transition-colors duration-300 ${
+            active
+              ? "text-gray-800 dark:text-white/90"
+              : "text-gray-400 dark:text-gray-500"
+          }`}
+        >
+          {label}
+        </span>
+      </div>
+      <span
+        className={`text-xs transition-colors duration-300 ${
+          active
+            ? "text-emerald-500 dark:text-emerald-400"
+            : "text-gray-400 dark:text-gray-500"
+        }`}
+      >
+        {sub}
+      </span>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
 export default function MonthlyTarget() {
-  const series = [75.55];
+  const [priceUSD,   setPriceUSD]   = useState<number | null>(null);
+  const [fxRate,     setFxRate]     = useState<number | null>(null); // live USD→AUD
+  const [fearGreed,  setFearGreed]  = useState<number | null>(null);
+  const [diffChange, setDiffChange] = useState<number | null>(null);
+
+  const prevBuy   = useRef<number | "PASS" | null>(null);
+  const [animate, setAnimate] = useState(false);
+  const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Live USD→AUD FX — Frankfurter (ECB-based, no API key required)
+  useEffect(() => {
+    fetch("https://api.frankfurter.app/latest?from=USD&to=AUD")
+      .then((r) => r.json())
+      .then((d) => {
+        const rate = parseFloat(d?.rates?.AUD);
+        if (!isNaN(rate)) setFxRate(rate);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fear & Greed index
+  useEffect(() => {
+    fetch("https://api.alternative.me/fng/?limit=1&format=json")
+      .then((r) => r.json())
+      .then((d) => {
+        const val = parseInt((d?.data?.[0]?.value as string) ?? "", 10);
+        if (!isNaN(val)) setFearGreed(val);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Mining difficulty — last retarget % from mempool.space
+  useEffect(() => {
+    fetch("https://mempool.space/api/v1/difficulty-adjustment")
+      .then((r) => r.json())
+      .then((d: unknown) => {
+        if (d !== null && typeof d === "object" && "previousRetarget" in d) {
+          const val = parseFloat(String((d as Record<string, unknown>).previousRetarget));
+          if (!isNaN(val)) setDiffChange(val);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Binance WebSocket — live BTC/USDT price
+  useEffect(() => {
+    const ws = new WebSocket(
+      "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker"
+    );
+    ws.onmessage = (e: MessageEvent) => {
+      try {
+        const msg = JSON.parse(e.data as string) as {
+          data?: Record<string, string>;
+        };
+        const raw = msg?.data?.["c"];
+        if (raw !== undefined) {
+          const price = parseFloat(raw);
+          if (!isNaN(price)) setPriceUSD(price);
+        }
+      } catch { /* ignore malformed frames */ }
+    };
+    if (import.meta.env.DEV) {
+      ws.onerror = () => console.error("[DCAWidget] WebSocket error");
+    }
+    return () => {
+      if (
+        ws.readyState !== WebSocket.CLOSED &&
+        ws.readyState !== WebSocket.CLOSING
+      ) ws.close();
+    };
+  }, []);
+
+  // ── Signal states ──────────────────────────────────────────────────────
+  const fearExtreme = fearGreed !== null && fearGreed <= FEAR_EXTREME_THRESHOLD;
+  const fearActive  = fearGreed !== null && fearGreed <= FEAR_ACTIVE_THRESHOLD;
+  const diffActive  = diffChange !== null && diffChange < DIFF_DROP_THRESHOLD;
+
+  const msToHalving   = NEXT_HALVING_MS - Date.now();
+  const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
+  const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
+
+  // ── Boost ──────────────────────────────────────────────────────────────
+  let totalBoost = 0;
+  if (fearExtreme)     totalBoost += BOOST_FEAR_EXTREME;
+  else if (fearActive) totalBoost += BOOST_FEAR_ACTIVE;
+  if (diffActive)      totalBoost += BOOST_DIFF_DROP;
+  if (halvingActive)   totalBoost += BOOST_HALVING;
+
+  // ── DCA calculation ────────────────────────────────────────────────────
+  let recommendedBuy: number | "PASS" | null = null;
+  let allocationPct = 0;
+
+  if (priceUSD !== null) {
+    if (priceUSD > HIGH_PRICE_USD) {
+      recommendedBuy = "PASS";
+    } else {
+      allocationPct = Math.max(
+        0,
+        Math.min(
+          1,
+          1 - (priceUSD - LOW_PRICE_USD) / (HIGH_PRICE_USD - LOW_PRICE_USD)
+        )
+      );
+      recommendedBuy = roundToNearest50(
+        MAX_DCA_AUD * allocationPct * (1 + totalBoost / 100)
+      );
+    }
+  }
+
+  // Subtle scale animation when buy amount changes
+  useEffect(() => {
+    if (recommendedBuy !== null && recommendedBuy !== prevBuy.current) {
+      if (prevBuy.current !== null) {
+        setAnimate(true);
+        if (animTimer.current) clearTimeout(animTimer.current);
+        animTimer.current = setTimeout(() => setAnimate(false), 500);
+      }
+      prevBuy.current = recommendedBuy;
+    }
+    return () => {
+      if (animTimer.current) clearTimeout(animTimer.current);
+    };
+  }, [recommendedBuy]);
+
+  // ── Display helpers ────────────────────────────────────────────────────
+  const fmt = (n: number) =>
+    n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  const isPass    = recommendedBuy === "PASS";
+  const isLoading = recommendedBuy === null;
+
+  const color       = isPass || isLoading ? "#98a2b3" : tierColor(allocationPct);
+  const chartValue  = isPass || isLoading ? 0 : Math.round(allocationPct * 100);
+  const centerLabel = isLoading
+    ? "—"
+    : isPass
+    ? "PASS"
+    : `$${fmt(recommendedBuy as number)}`;
+
+  // Live BTC price in AUD (uses fetched FX, not hardcoded)
+  const priceAUD =
+    priceUSD !== null && fxRate !== null
+      ? `BTC ≈ $${fmt(Math.round(priceUSD * fxRate))} AUD`
+      : null;
+
+  // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
-    colors: ["#465FFF"],
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: CHART_FONT,
       type: "radialBar",
       height: 330,
-      sparkline: {
-        enabled: true,
-      },
+      sparkline: { enabled: true },
     },
     plotOptions: {
       radialBar: {
         startAngle: -85,
         endAngle: 85,
-        hollow: {
-          size: "80%",
-        },
+        hollow: { size: "80%" },
         track: {
-          background: "#E4E7EC",
+          background: CHART_TRACK_BG,
           strokeWidth: "100%",
-          margin: 5, // margin is in pixels
+          margin: 5,
         },
         dataLabels: {
-          name: {
-            show: false,
-          },
+          name: { show: false },
           value: {
-            fontSize: "36px",
+            fontSize: "32px",
             fontWeight: "600",
             offsetY: -40,
-            color: "#1D2939",
-            formatter: function (val) {
-              return val + "%";
-            },
+            color,
+            formatter: () => centerLabel,
           },
         },
       },
     },
-    fill: {
-      type: "solid",
-      colors: ["#465FFF"],
-    },
-    stroke: {
-      lineCap: "round",
-    },
-    labels: ["Progress"],
+    fill: { type: "solid", colors: [color] },
+    stroke: { lineCap: "round" },
+    labels: ["Allocation"],
   };
-  const [isOpen, setIsOpen] = useState(false);
 
-  function toggleDropdown() {
-    setIsOpen(!isOpen);
-  }
-
-  function closeDropdown() {
-    setIsOpen(false);
-  }
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03]">
       <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-11 dark:bg-gray-900 sm:px-6 sm:pt-6">
-        <div className="flex justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">4</span>
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-                Monthly Target
-              </h3>
-            </div>
-            <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-              Target you’ve set for each month
-            </p>
-          </div>
-          <div className="relative inline-block">
-            <button className="dropdown-toggle" onClick={toggleDropdown}>
-              <MoreDotIcon className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 size-6" />
-            </button>
-            <Dropdown
-              isOpen={isOpen}
-              onClose={closeDropdown}
-              className="w-40 p-2"
-            >
-              <DropdownItem
-                onItemClick={closeDropdown}
-                className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
-              >
-                View More
-              </DropdownItem>
-              <DropdownItem
-                onItemClick={closeDropdown}
-                className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
-              >
-                Delete
-              </DropdownItem>
-            </Dropdown>
-          </div>
-        </div>
-        <div className="relative ">
-          <div className="max-h-[330px]" id="chartDarkStyle">
-            <Chart
-              options={options}
-              series={series}
-              type="radialBar"
-              height={330}
-            />
-          </div>
 
-          <span className="absolute left-1/2 top-full -translate-x-1/2 -translate-y-[95%] rounded-full bg-success-50 px-3 py-1 text-xs font-medium text-success-600 dark:bg-success-500/15 dark:text-success-500">
-            +10%
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            4
+          </span>
+          <span className="text-lg font-bold text-orange-400 leading-none" aria-label="Bitcoin">
+            ₿
+          </span>
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+            BTC DCA Advisor
+          </h3>
+          <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live
           </span>
         </div>
-        <p className="mx-auto mt-10 w-full max-w-[380px] text-center text-sm text-gray-500 sm:text-base">
-          You earn $3287 today, it's higher than last month. Keep up your good
-          work!
+
+        {/* Radial bar — allocation % */}
+        <div
+          style={{
+            transform: animate ? "scale(1.02)" : "scale(1)",
+            transition: "transform 0.3s ease",
+          }}
+        >
+          <Chart
+            options={options}
+            series={[chartValue]}
+            type="radialBar"
+            height={330}
+          />
+        </div>
+
+        {/* Sub-label */}
+        <p className="mx-auto mt-10 w-full max-w-[380px] text-center text-sm text-gray-500 dark:text-gray-400 sm:text-base">
+          AUD · Fortnightly DCA
+          {priceAUD && (
+            <span className="block text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              {priceAUD}
+            </span>
+          )}
         </p>
       </div>
 
-      <div className="flex items-center justify-center gap-5 px-6 py-3.5 sm:gap-8 sm:py-5">
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">
-            Target
-          </p>
-          <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">
-            $20K
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M7.26816 13.6632C7.4056 13.8192 7.60686 13.9176 7.8311 13.9176C7.83148 13.9176 7.83187 13.9176 7.83226 13.9176C8.02445 13.9178 8.21671 13.8447 8.36339 13.6981L12.3635 9.70076C12.6565 9.40797 12.6567 8.9331 12.3639 8.6401C12.0711 8.34711 11.5962 8.34694 11.3032 8.63973L8.5811 11.36L8.5811 2.5C8.5811 2.08579 8.24531 1.75 7.8311 1.75C7.41688 1.75 7.0811 2.08579 7.0811 2.5L7.0811 11.3556L4.36354 8.63975C4.07055 8.34695 3.59568 8.3471 3.30288 8.64009C3.01008 8.93307 3.01023 9.40794 3.30321 9.70075L7.26816 13.6632Z"
-                fill="#D92D20"
-              />
-            </svg>
-          </p>
-        </div>
-
-        <div className="w-px bg-gray-200 h-7 dark:bg-gray-800"></div>
-
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">
-            Revenue
-          </p>
-          <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">
-            $20K
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M7.60141 2.33683C7.73885 2.18084 7.9401 2.08243 8.16435 2.08243C8.16475 2.08243 8.16516 2.08243 8.16556 2.08243C8.35773 2.08219 8.54998 2.15535 8.69664 2.30191L12.6968 6.29924C12.9898 6.59203 12.9899 7.0669 12.6971 7.3599C12.4044 7.6529 11.9295 7.65306 11.6365 7.36027L8.91435 4.64004L8.91435 13.5C8.91435 13.9142 8.57856 14.25 8.16435 14.25C7.75013 14.25 7.41435 13.9142 7.41435 13.5L7.41435 4.64442L4.69679 7.36025C4.4038 7.65305 3.92893 7.6529 3.63613 7.35992C3.34333 7.06693 3.34348 6.59206 3.63646 6.29926L7.60141 2.33683Z"
-                fill="#039855"
-              />
-            </svg>
-          </p>
-        </div>
-
-        <div className="w-px bg-gray-200 h-7 dark:bg-gray-800"></div>
-
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">
-            Today
-          </p>
-          <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">
-            $20K
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M7.60141 2.33683C7.73885 2.18084 7.9401 2.08243 8.16435 2.08243C8.16475 2.08243 8.16516 2.08243 8.16556 2.08243C8.35773 2.08219 8.54998 2.15535 8.69664 2.30191L12.6968 6.29924C12.9898 6.59203 12.9899 7.0669 12.6971 7.3599C12.4044 7.6529 11.9295 7.65306 11.6365 7.36027L8.91435 4.64004L8.91435 13.5C8.91435 13.9142 8.57856 14.25 8.16435 14.25C7.75013 14.25 7.41435 13.9142 7.41435 13.5L7.41435 4.64442L4.69679 7.36025C4.4038 7.65305 3.92893 7.6529 3.63613 7.35992C3.34333 7.06693 3.34348 6.59206 3.63646 6.29926L7.60141 2.33683Z"
-                fill="#039855"
-              />
-            </svg>
-          </p>
-        </div>
+      {/* Signals footer */}
+      <div className="grid grid-cols-3 divide-x divide-gray-200 dark:divide-gray-800">
+        <SignalItem
+          active={fearActive}
+          label={fearExtreme ? "Extreme Fear" : "Fear & Greed"}
+          sub={fearGreed !== null ? String(fearGreed) : "—"}
+        />
+        <SignalItem
+          active={diffActive}
+          label="Diff Drop"
+          sub={diffChange !== null ? `${diffChange.toFixed(1)}%` : "—"}
+        />
+        <SignalItem
+          active={halvingActive}
+          label="Halving"
+          sub={`${daysToHalving}d`}
+        />
       </div>
     </div>
   );
