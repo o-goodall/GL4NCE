@@ -107,8 +107,8 @@ export default function EventModal({ country, onClose }: EventModalProps) {
 
         {/* Event list */}
         <div className="overflow-y-auto flex-1 px-5 custom-scrollbar">
-          {country.events.map((ev, i) => (
-            <EventRow key={`${ev.title}-${i}`} event={ev} />
+          {country.events.map((ev) => (
+            <EventRow key={ev.title} event={ev} />
           ))}
         </div>
       </div>

@@ -51,6 +51,9 @@ const StableMap = memo(function StableMap({
       zoomAnimate={true}
       zoomStep={1.5}
       markersSelectable={false}
+      // `as any` needed: @react-jvectormap type definitions are narrower than
+      // the actual jVectorMap runtime interface (missing overloads / `const`
+      // object compatibility).  No runtime impact.
       onRegionClick={onRegionClick as any}
       regionStyle={REGION_STYLE as any}
       regionLabelStyle={REGION_LABEL_STYLE as any}
