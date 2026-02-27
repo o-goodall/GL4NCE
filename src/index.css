@@ -73,13 +73,13 @@ layer(base);
   --color-gray-200: #e4e7ec;
   --color-gray-300: #d0d5dd;
   --color-gray-400: #A1A1AA;
-  --color-gray-500: #667085;
+  --color-gray-500: #71717A;
   --color-gray-600: #475467;
   --color-gray-700: #344054;
   --color-gray-800: #27272A;
   --color-gray-900: #111113;
-  --color-gray-950: #0D0D0F;
-  --color-gray-dark: #18181B;
+  --color-gray-950: #09090B;
+  --color-gray-dark: #141417;
 
   --color-orange-25: #fffaf5;
   --color-orange-50: #fff6ed;
