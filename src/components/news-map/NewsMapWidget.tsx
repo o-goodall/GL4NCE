@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject } from "@react-jvectormap/core/dist/types";
 import { worldMill } from "@react-jvectormap/world";
-import type { CountryNewsData } from "./types";
+import type { CountryNewsData, EventCategory } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
 
@@ -29,6 +29,15 @@ const REGION_LABEL_STYLE = {
   initial: { fill: "#35373e", fontWeight: 500, fontSize: "13px", stroke: "none" },
   hover: {}, selected: {}, selectedHover: {},
 } as const;
+
+type CategoryFilter = "all" | EventCategory;
+
+const FILTER_LABELS: Record<CategoryFilter, string> = {
+  all: "All",
+  violent: "Violent",
+  economic: "Economic",
+  minor: "Minor",
+};
 
 /**
  * Isolated VectorMap that never re-renders after mount.
@@ -69,12 +78,25 @@ export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const mapRef = useRef<IMapObject | null>(null);
 
   // Keep latest country lookup in a ref so the stable handler can access it
   const countryByCodeRef = useRef(new Map<string, CountryNewsData>());
 
-  const countries = data?.countries ?? [];
+  const allCountries = data?.countries ?? [];
+
+  // Filter countries to those that have at least one event matching the active filter
+  const countries = useMemo(() => {
+    if (categoryFilter === "all") return allCountries;
+    return allCountries
+      .map((c) => ({
+        ...c,
+        events: c.events.filter((e) => e.category === categoryFilter),
+      }))
+      .filter((c) => c.events.length > 0);
+  }, [allCountries, categoryFilter]);
+
   const trendingCodes = useMemo(
     () => countries.filter((c) => c.trending).map((c) => c.code),
     [countries]
@@ -102,10 +124,6 @@ export default function NewsMapWidget() {
   }, []);
 
   // Update selected regions via jVectorMap's own API.
-  // Using setSelectedRegions for both trending and tapped countries ensures the
-  // blue fill persists on mobile touch devices where there is no hover state to
-  // maintain the colour — this replaces the direct DOM manipulation that was
-  // unreliable on touch devices.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -138,10 +156,15 @@ export default function NewsMapWidget() {
     });
   }, [countries]);
 
+  const totalEvents = useMemo(
+    () => countries.reduce((sum, c) => sum + c.events.length, 0),
+    [countries]
+  );
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
             6
@@ -150,7 +173,21 @@ export default function NewsMapWidget() {
             Global News Map
           </h3>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Category filter tabs */}
+          {(Object.keys(FILTER_LABELS) as CategoryFilter[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => setCategoryFilter(f)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                categoryFilter === f
+                  ? "bg-brand-500 text-white"
+                  : "bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+              }`}
+            >
+              {FILTER_LABELS[f]}
+            </button>
+          ))}
           {loading && (
             <span className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Updating…</span>
           )}
@@ -172,7 +209,7 @@ export default function NewsMapWidget() {
 
       {data && (
         <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
-          {countries.length} countr{countries.length !== 1 ? "ies" : "y"} with recent events ·{" "}
+          {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""} ·{" "}
           {trendingCodes.length} trending ·{" "}
           Updated {new Date(data.lastUpdated).toLocaleTimeString()}
           {data.usingMockData && " · demo data"}

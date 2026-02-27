@@ -1,6 +1,9 @@
 import type { NewsEvent, EventSeverity, EventCategory, CountryNewsData, NewsMapData } from "./types";
 import { KEYWORD_MAP, UNIQUE_COUNTRIES } from "./countryData";
 
+// Sorted keywords longest-first — pre-computed once for O(1) amortised article processing
+const SORTED_KEYWORDS = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.length);
+
 // Severity / category keyword lists (ordered: most severe first)
 const HIGH_VIOLENT = [
   "bombing", "explosion", "suicide attack", "terrorist attack",
@@ -54,10 +57,7 @@ export function classifyEvent(text: string): { severity: EventSeverity; category
 /** Detect a country ISO code from article text */
 export function detectCountry(text: string): string | null {
   const lower = text.toLowerCase();
-
-  // Try longest keyword match first by iterating sorted by length desc
-  const sortedKeys = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.length);
-  for (const kw of sortedKeys) {
+  for (const kw of SORTED_KEYWORDS) {
     if (lower.includes(kw)) {
       return KEYWORD_MAP.get(kw)!.code;
     }
