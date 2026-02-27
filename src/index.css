@@ -79,7 +79,7 @@ layer(base);
   --color-gray-800: #27272A;
   --color-gray-900: #111113;
   --color-gray-950: #09090B;
-  --color-gray-dark: #141417;
+  --color-gray-dark: #0B0F14;
 
   --color-orange-25: #fffaf5;
   --color-orange-50: #fff6ed;
@@ -100,7 +100,7 @@ layer(base);
   --color-success-200: #a6f4c5;
   --color-success-300: #6ce9a6;
   --color-success-400: #32d583;
-  --color-success-500: #12b76a;
+  --color-success-500: #00D26A;
   --color-success-600: #039855;
   --color-success-700: #027a48;
   --color-success-800: #05603a;
@@ -113,7 +113,7 @@ layer(base);
   --color-error-200: #fecdca;
   --color-error-300: #fda29b;
   --color-error-400: #f97066;
-  --color-error-500: #f04438;
+  --color-error-500: #FF3B3B;
   --color-error-600: #d92d20;
   --color-error-700: #b42318;
   --color-error-800: #912018;
@@ -135,7 +135,9 @@ layer(base);
 
   --color-theme-pink-500: #ee46bc;
 
-  --color-theme-purple-500: #7a5af8;
+  --color-theme-purple-500: #7C3AED;
+
+  --color-theme-cyan-500: #00E5FF;
 
   --shadow-theme-md: 0px 4px 8px -2px rgba(16, 24, 40, 0.1),
     0px 2px 4px -2px rgba(16, 24, 40, 0.06);
@@ -148,6 +150,8 @@ layer(base);
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #262d3c, 5px 0 0 #262d3c;
   --shadow-focus-ring: 0px 0px 0px 4px rgba(255, 85, 0, 0.15);
+  --shadow-neon-orange: 0 0 8px rgba(255, 85, 0, 0.55), 0 0 20px rgba(255, 85, 0, 0.25);
+  --shadow-neon-cyan: 0 0 8px rgba(0, 229, 255, 0.55), 0 0 20px rgba(0, 229, 255, 0.25);
   --shadow-slider-navigation: 0px 1px 2px 0px rgba(16, 24, 40, 0.1),
     0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip: 0px 4px 6px -2px rgba(16, 24, 40, 0.05),
@@ -163,6 +167,27 @@ layer(base);
   --z-index-9999: 9999;
   --z-index-99999: 99999;
   --z-index-999999: 999999;
+}
+
+/* Fintech semantic color variables — light mode defaults */
+:root {
+  --color-bg-primary: #F8F9FA;
+  --color-bg-surface: #ffffff;
+  --color-text-primary: #111111;
+  --color-text-secondary: #475467;
+  --color-accent-orange: var(--color-brand-500);
+  --color-accent-cyan: var(--color-theme-cyan-500);
+  --color-accent-violet: var(--color-theme-purple-500);
+  --color-status-success: var(--color-success-500);
+  --color-status-danger: var(--color-error-500);
+}
+
+/* Fintech semantic color variables — dark mode overrides */
+.dark {
+  --color-bg-primary: #0B0F14;
+  --color-bg-surface: #121826;
+  --color-text-primary: #E6EDF3;
+  --color-text-secondary: #9DA7B3;
 }
 
 /*
