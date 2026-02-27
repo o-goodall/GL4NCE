@@ -34,6 +34,8 @@ interface NewsMapData {
   countries: CountryNewsData[];
   lastUpdated: string;
   usingMockData?: boolean;
+  /** Feed health — how many sources responded successfully out of total attempted */
+  feedStats?: { succeeded: number; total: number };
 }
 
 // ── Country database ─────────────────────────────────────────────────────────
@@ -139,6 +141,9 @@ const SORTED_KEYWORDS = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.leng
 
 // ── RSS sources ──────────────────────────────────────────────────────────────
 // Al Jazeera conflict feed is the primary source; others supplement coverage.
+// Reuters has no public RSS since 2020 — use AP News instead.
+// RFE/RL auto-generated key URL was removed in favour of their stable feed.
+// Euronews Feedburner URL replaced with direct feed.
 const RSS_SOURCES = [
   { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/subjects/conflict.xml" },
   { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml" },
@@ -147,9 +152,9 @@ const RSS_SOURCES = [
   { name: "DW",         url: "https://rss.dw.com/xml/rss-en-world" },
   { name: "France24",   url: "https://www.france24.com/en/rss" },
   { name: "Sky News",   url: "https://feeds.skynews.com/feeds/rss/world.xml" },
-  { name: "Reuters",    url: "https://feeds.reuters.com/reuters/worldnews" },
-  { name: "RFE/RL",     url: "https://www.rferl.org/api/zumWrRqpyJWk" },
-  { name: "Euronews",   url: "https://feeds.feedburner.com/euronews/en/news/" },
+  { name: "AP News",    url: "https://feeds.apnews.com/apnews/world" },
+  { name: "Euronews",   url: "https://www.euronews.com/rss?format=mrss&level=theme&name=news" },
+  { name: "RFE/RL",     url: "https://www.rferl.org/api/jqpxiflpqo" },
 ];
 
 const ARTICLES_PER_FEED = 20;
@@ -311,15 +316,21 @@ let _cacheExpiresAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const parser = new Parser({
-  requestOptions: {
-    headers: {
-      "User-Agent": "GL4NCE-NewsMap/1.0 (https://github.com/o-goodall/GL4NCE)",
-      Accept: "application/rss+xml, application/xml, text/xml, */*",
-    },
+  // Reduce per-feed timeout from the 60-second default to 10 seconds.
+  // With Promise.allSettled, a slow/blocked feed (e.g. Al Jazeera anti-bot)
+  // previously stalled the entire response for a full minute.
+  timeout: 10_000,
+  // Fall back to RSS 2.0 parsing for feeds that omit the version attribute.
+  defaultRSS: 2.0,
+  headers: {
+    // A descriptive but browser-compatible User-Agent reduces bot-detection
+    // blocks from sites like Al Jazeera that filter automated UA strings.
+    "User-Agent": "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)",
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
   },
 });
 
-async function fetchAllEvents(): Promise<NewsEvent[]> {
+async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
   const results = await Promise.allSettled(
     RSS_SOURCES.map(async (src) => {
       const feed = await parser.parseURL(src.url);
@@ -331,10 +342,16 @@ async function fetchAllEvents(): Promise<NewsEvent[]> {
         if (!cls) continue;
         const country = detectCountry(text);
         if (!country) continue;
+        // isoDate is normalised by rss-parser; pubDate can be in any locale format
+        const rawTime = item.isoDate ?? item.pubDate;
+        const parsedDate = rawTime ? new Date(rawTime) : null;
+        const time = parsedDate && !isNaN(parsedDate.getTime())
+          ? parsedDate.toISOString()
+          : new Date().toISOString();
         events.push({
           title: item.title,
           source: src.name,
-          time: item.pubDate ?? new Date().toISOString(),
+          time,
           country: country.name,
           countryCode: country.code,
           severity: cls.severity,
@@ -348,14 +365,16 @@ async function fetchAllEvents(): Promise<NewsEvent[]> {
   // Deduplicate by title (same story from multiple feeds)
   const seen = new Set<string>();
   const all: NewsEvent[] = [];
+  let succeeded = 0;
   for (const r of results) {
     if (r.status !== "fulfilled") continue;
+    succeeded++;
     for (const ev of r.value) {
       const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
       if (!seen.has(key)) { seen.add(key); all.push(ev); }
     }
   }
-  return all;
+  return { events: all, feedStats: { succeeded, total: RSS_SOURCES.length } };
 }
 
 // ── Vercel serverless handler ────────────────────────────────────────────────
@@ -369,11 +388,11 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
   }
 
   try {
-    const events = await fetchAllEvents();
+    const { events, feedStats } = await fetchAllEvents();
     const data: NewsMapData =
       events.length > 0
-        ? { countries: aggregateCountries(events), lastUpdated: new Date().toISOString() }
-        : generateMockData();
+        ? { countries: aggregateCountries(events), lastUpdated: new Date().toISOString(), feedStats }
+        : { ...generateMockData(), feedStats };
 
     _cache = data;
     _cacheExpiresAt = Date.now() + CACHE_TTL_MS;

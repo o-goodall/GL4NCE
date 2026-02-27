@@ -26,4 +26,6 @@ export interface NewsMapData {
   lastUpdated: string;
   /** True when the API fell back to mock data (feeds unavailable) */
   usingMockData?: boolean;
+  /** How many RSS sources responded successfully vs total attempted */
+  feedStats?: { succeeded: number; total: number };
 }
