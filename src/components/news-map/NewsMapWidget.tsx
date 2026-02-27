@@ -69,9 +69,12 @@ function dominantCategory(country: CountryNewsData): EventCategory {
   ) ?? "minor";
 }
 
+const HOVER_FILL = "#465fff";
+
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
+  const [tappedCode, setTappedCode] = useState<string | null>(null);
   const mapRef = useRef<IMapObject | null>(null);
 
   // Keep latest country lookup in a ref so the stable handler can access it
@@ -90,22 +93,42 @@ export default function NewsMapWidget() {
 
   // Stable — never recreated, so StableMap never re-renders
   const handleRegionClick = useCallback((_e: Event, code: string) => {
-    const country = countryByCodeRef.current.get(code.toUpperCase());
-    if (country) setSelected(country);
+    const upperCode = code.toUpperCase();
+    const country = countryByCodeRef.current.get(upperCode);
+    if (country) {
+      setSelected(country);
+      setTappedCode(upperCode);
+    }
   }, []);
 
-  // Push trending colour updates imperatively.
+  // Stable close handler — clears both the modal and the tap highlight
+  const handleClose = useCallback(() => {
+    setSelected(null);
+    setTappedCode(null);
+  }, []);
+
+  // Push trending colour updates and tap highlight imperatively.
+  // Combined into one effect to avoid a race where the trending effect
+  // overwrites the tap highlight applied by a separate effect.
   // Dual approach: direct SVG fill for immediate visual update +
   // jVectorMap API call so hover-out restores the correct colour.
   useEffect(() => {
     const trendingSet = new Set(trendingCodes);
 
-    // 1. Direct DOM fill (bypasses any timing issue with mapRef)
+    // 1. Direct DOM fill (bypasses any timing issue with mapRef).
+    //    If a region is currently tapped (mobile touch feedback), apply
+    //    the hover colour so the user sees which country they selected.
     const container = document.querySelector(".jvectormap-container");
     if (container) {
       container.querySelectorAll<SVGPathElement>(".jvectormap-region").forEach((el) => {
         const code = el.getAttribute("data-code");
-        if (code) el.setAttribute("fill", trendingSet.has(code) ? TRENDING_FILL : "#D0D5DD");
+        if (code) {
+          if (code === tappedCode) {
+            el.setAttribute("fill", HOVER_FILL);
+          } else {
+            el.setAttribute("fill", trendingSet.has(code) ? TRENDING_FILL : "#D0D5DD");
+          }
+        }
       });
     }
 
@@ -115,7 +138,7 @@ export default function NewsMapWidget() {
       map.clearSelectedRegions();
       if (trendingCodes.length > 0) map.setSelectedRegions(trendingCodes);
     }
-  }, [trendingCodes]);
+  }, [trendingCodes, tappedCode]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
@@ -186,10 +209,11 @@ export default function NewsMapWidget() {
           {countries.length} countr{countries.length !== 1 ? "ies" : "y"} with recent events ·{" "}
           {trendingCodes.length} trending ·{" "}
           Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+          {data.usingMockData && " · demo data"}
         </p>
       )}
 
-      <EventModal country={selected} onClose={() => setSelected(null)} />
+      <EventModal country={selected} onClose={handleClose} />
     </div>
   );
 }

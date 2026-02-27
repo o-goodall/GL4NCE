@@ -24,4 +24,6 @@ export interface CountryNewsData {
 export interface NewsMapData {
   countries: CountryNewsData[];
   lastUpdated: string;
+  /** True when the API fell back to mock data (feeds unavailable) */
+  usingMockData?: boolean;
 }

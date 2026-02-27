@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { NewsMapData } from "./types";
-import { fetchNewsData } from "./newsProcessor";
 
 const DEFAULT_POLL_MINUTES = 15;
 
@@ -10,31 +9,53 @@ interface UseNewsMapReturn {
   error: string | null;
 }
 
+/**
+ * Fetches processed news-map data from the server-side API route (/api/news-map).
+ * The API fetches RSS feeds server-side (no CORS issues) and aggregates events by
+ * country, avoiding the rate-limit and CORS problems of client-side RSS fetching.
+ * Falls back to client-side mock data (from newsProcessor) if the API is unavailable
+ * (e.g. local dev without the Vercel runtime).
+ */
 export function useNewsMap(pollMinutes = DEFAULT_POLL_MINUTES): UseNewsMapReturn {
   const [data, setData] = useState<NewsMapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
-      const result = await fetchNewsData();
+      let result: NewsMapData;
+      const resp = await fetch("/api/news-map");
+      if (resp.ok) {
+        result = (await resp.json()) as NewsMapData;
+      } else {
+        // API unavailable — fall back to client-side mock data
+        const { generateMockData } = await import("./newsProcessor");
+        result = generateMockData();
+      }
       setData(result);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load news data");
+      // Network error — fall back to client-side mock data
+      try {
+        const { generateMockData } = await import("./newsProcessor");
+        setData(generateMockData());
+        setError(null);
+      } catch {
+        setError(err instanceof Error ? err.message : "Failed to load news data");
+      }
     } finally {
       setLoading(false);
     }
-  }
+  }, []); // setData/setError/setLoading are stable; no external dependencies
 
   useEffect(() => {
-    load();
-    timerRef.current = setInterval(load, pollMinutes * 60 * 1000);
+    void load();
+    timerRef.current = setInterval(() => { void load(); }, pollMinutes * 60 * 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [pollMinutes]);
+  }, [load, pollMinutes]);
 
   return { data, loading, error };
 }

@@ -1,16 +1,6 @@
 import type { NewsEvent, EventSeverity, EventCategory, CountryNewsData, NewsMapData } from "./types";
 import { KEYWORD_MAP, UNIQUE_COUNTRIES } from "./countryData";
 
-const RSS_SOURCES = [
-  { name: "BBC", url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
-  { name: "Reuters", url: "https://feeds.reuters.com/reuters/worldNews" },
-  { name: "CNN", url: "http://rss.cnn.com/rss/edition_world.rss" },
-  { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml" },
-  { name: "AP", url: "https://rsshub.app/ap/topics/apf-intlnews" },
-];
-
-const RSS2JSON_BASE = "https://api.rss2json.com/v1/api.json?rss_url=";
-
 // Severity / category keyword lists (ordered: most severe first)
 const HIGH_VIOLENT = [
   "bombing", "explosion", "suicide attack", "terrorist attack",
@@ -73,48 +63,6 @@ export function detectCountry(text: string): string | null {
   return null;
 }
 
-interface RssItem {
-  title: string;
-  description: string;
-  pubDate: string;
-  link: string;
-}
-
-interface Rss2JsonResponse {
-  status: string;
-  items: RssItem[];
-}
-
-async function fetchFeed(source: { name: string; url: string }): Promise<NewsEvent[]> {
-  const resp = await fetch(`${RSS2JSON_BASE}${encodeURIComponent(source.url)}`);
-  if (!resp.ok) return [];
-  const data = (await resp.json()) as Rss2JsonResponse;
-  if (data.status !== "ok" || !data.items) return [];
-
-  const events: NewsEvent[] = [];
-  for (const item of data.items) {
-    const combined = `${item.title} ${item.description ?? ""}`;
-    const cls = classifyEvent(combined);
-    if (!cls) continue;
-    const code = detectCountry(combined);
-    if (!code) continue;
-    const countryInfo = KEYWORD_MAP.get(code.toLowerCase());
-    if (!countryInfo) continue;
-
-    events.push({
-      title: item.title,
-      source: source.name,
-      time: item.pubDate ?? new Date().toISOString(),
-      country: countryInfo.name,
-      countryCode: code,
-      severity: cls.severity,
-      category: cls.category,
-      link: item.link,
-    });
-  }
-  return events;
-}
-
 function isWithinRetentionWindow(isoTime: string): boolean {
   const eventMs = new Date(isoTime).getTime();
   const cutoffMs = Date.now() - RETENTION_HOURS * 60 * 60 * 1000;
@@ -130,7 +78,7 @@ function computeTrending(events: NewsEvent[]): Set<string> {
   return new Set(Object.keys(scores).filter((code) => scores[code] >= TRENDING_THRESHOLD));
 }
 
-/** Aggregate events into per-country NewsMapData */
+/** Aggregate events into per-country data */
 export function aggregateCountries(events: NewsEvent[]): NewsMapData {
   const recent = events.filter((e) => isWithinRetentionWindow(e.time));
   const trending = computeTrending(recent);
@@ -155,36 +103,35 @@ export function aggregateCountries(events: NewsEvent[]): NewsMapData {
   return { countries, lastUpdated: new Date().toISOString() };
 }
 
-/** Generate realistic mock data when live feeds are unavailable */
+/**
+ * Generate mock data — used as a fallback when the API is unavailable
+ * (e.g. local dev without the Vercel runtime).
+ */
 export function generateMockData(): NewsMapData {
   const now = new Date();
   const h = (hours: number) => new Date(now.getTime() - hours * 3600_000).toISOString();
 
   const mockEvents: Omit<NewsEvent, "countryCode">[] = [
-    { title: "Explosion near government building kills several", source: "BBC", time: h(1), country: "Iraq", severity: "high", category: "violent" },
-    { title: "Airstrike targets militant positions in northern region", source: "Reuters", time: h(2), country: "Syria", severity: "high", category: "violent" },
+    { title: "Explosion near government building kills several", source: "Al Jazeera", time: h(1), country: "Iraq", severity: "high", category: "violent" },
+    { title: "Airstrike targets militant positions in northern region", source: "BBC", time: h(2), country: "Syria", severity: "high", category: "violent" },
     { title: "Missile strike reported on port city", source: "Al Jazeera", time: h(1.5), country: "Yemen", severity: "high", category: "violent" },
     { title: "Casualties reported after drone strike", source: "BBC", time: h(3), country: "Ukraine", severity: "high", category: "violent" },
-    { title: "Bombing attack on market leaves dozens dead", source: "CNN", time: h(4), country: "Afghanistan", severity: "high", category: "violent" },
-    { title: "Mass protests turn violent in capital", source: "Reuters", time: h(5), country: "Iran", severity: "high", category: "violent" },
+    { title: "Bombing attack on market leaves dozens dead", source: "Guardian", time: h(4), country: "Afghanistan", severity: "high", category: "violent" },
+    { title: "Mass protests turn violent in capital", source: "DW", time: h(5), country: "Iran", severity: "high", category: "violent" },
     { title: "Stock market crash wipes billions off exchange", source: "BBC", time: h(2), country: "China", severity: "high", category: "economic" },
-    { title: "Currency collapses amid economic meltdown", source: "Reuters", time: h(6), country: "Venezuela", severity: "high", category: "economic" },
-    { title: "Banking crisis deepens as runs continue", source: "CNN", time: h(8), country: "Nigeria", severity: "high", category: "economic" },
+    { title: "Currency collapses amid economic meltdown", source: "Guardian", time: h(6), country: "Venezuela", severity: "high", category: "economic" },
+    { title: "Banking crisis deepens as runs continue", source: "BBC", time: h(8), country: "Nigeria", severity: "high", category: "economic" },
     { title: "Trade embargo escalates trade war tensions", source: "Al Jazeera", time: h(3), country: "Russia", severity: "high", category: "economic" },
-    { title: "Riot police clash with demonstrators downtown", source: "Reuters", time: h(7), country: "France", severity: "medium", category: "violent" },
+    { title: "Riot police clash with demonstrators downtown", source: "Guardian", time: h(7), country: "France", severity: "medium", category: "violent" },
     { title: "Armed confrontation near disputed border", source: "BBC", time: h(10), country: "India", severity: "medium", category: "violent" },
-    { title: "Kidnapping of journalists reported in conflict zone", source: "AP", time: h(12), country: "Libya", severity: "medium", category: "violent" },
+    { title: "Kidnapping of journalists reported in conflict zone", source: "Al Jazeera", time: h(12), country: "Libya", severity: "medium", category: "violent" },
     { title: "Thousands march in peaceful climate demonstration", source: "BBC", time: h(4), country: "Germany", severity: "low", category: "minor" },
-    { title: "Worker strike disrupts public transport", source: "Reuters", time: h(9), country: "United Kingdom", severity: "low", category: "minor" },
-    { title: "Civil unrest follows disputed election results", source: "AP", time: h(11), country: "Ethiopia", severity: "low", category: "minor" },
-    { title: "Evacuation ordered after minor earthquake", source: "CNN", time: h(15), country: "Japan", severity: "low", category: "minor" },
+    { title: "Civil unrest follows disputed election results", source: "Al Jazeera", time: h(11), country: "Ethiopia", severity: "low", category: "minor" },
+    { title: "Evacuation ordered after minor earthquake", source: "DW", time: h(15), country: "Japan", severity: "low", category: "minor" },
     { title: "Food shortage worsens amid supply chain collapse", source: "Al Jazeera", time: h(6), country: "Sudan", severity: "high", category: "economic" },
-    { title: "Energy crisis hits manufacturing sector", source: "Reuters", time: h(13), country: "Pakistan", severity: "high", category: "economic" },
     { title: "Mass casualties in coordinated terrorist attack", source: "BBC", time: h(2), country: "Somalia", severity: "high", category: "violent" },
-    { title: "Shooting near parliament building injures officers", source: "AP", time: h(14), country: "South Africa", severity: "medium", category: "violent" },
-    { title: "Tensions rise as military buildup continues", source: "CNN", time: h(8), country: "North Korea", severity: "low", category: "minor" },
-    { title: "Violent clashes erupt at border crossing", source: "Reuters", time: h(16), country: "Myanmar", severity: "medium", category: "violent" },
-    { title: "Sovereign default risk surges as debt crisis deepens", source: "BBC", time: h(5), country: "Argentina", severity: "high", category: "economic" },
+    { title: "Tensions rise as military buildup continues", source: "DW", time: h(8), country: "North Korea", severity: "low", category: "minor" },
+    { title: "Violent clashes erupt at border crossing", source: "Al Jazeera", time: h(16), country: "Myanmar", severity: "medium", category: "violent" },
   ];
 
   const eventWithCodes: NewsEvent[] = mockEvents.map((e) => {
@@ -192,20 +139,5 @@ export function generateMockData(): NewsMapData {
     return { ...e, countryCode: info?.code ?? "UN" };
   }).filter((e) => e.countryCode !== "UN");
 
-  return aggregateCountries(eventWithCodes);
-}
-
-/** Fetch live RSS data; fall back to mock on error */
-export async function fetchNewsData(): Promise<NewsMapData> {
-  try {
-    const results = await Promise.allSettled(RSS_SOURCES.map(fetchFeed));
-    const allEvents = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
-
-    if (allEvents.length > 0) {
-      return aggregateCountries(allEvents);
-    }
-  } catch {
-    // fall through to mock data
-  }
-  return generateMockData();
+  return { ...aggregateCountries(eventWithCodes), usingMockData: true };
 }
