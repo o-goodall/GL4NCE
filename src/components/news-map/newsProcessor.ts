@@ -1,6 +1,9 @@
 import type { NewsEvent, EventSeverity, EventCategory, CountryNewsData, NewsMapData } from "./types";
 import { KEYWORD_MAP, UNIQUE_COUNTRIES } from "./countryData";
 
+// Sorted keywords longest-first — pre-computed once to avoid repeated sorting during article processing
+const SORTED_KEYWORDS = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.length);
+
 // Severity / category keyword lists (ordered: most severe first)
 const HIGH_VIOLENT = [
   "bombing", "explosion", "suicide attack", "terrorist attack",
@@ -29,6 +32,28 @@ const HIGH_ECONOMIC = [
   "mass unemployment", "factory closure", "supply chain collapse",
   "food shortage", "energy crisis",
 ];
+/** Violent attacks with a clearly identified extremist/ideological motive */
+const HIGH_EXTREMISM = [
+  "neo-nazi attack", "neo nazi attack", "neonazi attack",
+  "white supremacist attack", "far-right attack", "far right attack",
+  "far-left attack", "far left attack", "antifa attack",
+  "antisemitic attack", "antisemitic shooting", "antisemitic stabbing",
+  "extremist bombing", "hate crime killing", "hate crime murder",
+];
+/** Extremist ideology, movements, rallies, and hate-crime activity */
+const MEDIUM_EXTREMISM = [
+  "neo-nazi", "neo nazi", "neonazi",
+  "white supremacist", "white supremacy", "white nationalist",
+  "antisemitism", "antisemitic", "antisemite",
+  "far-right extremist", "far right extremist",
+  "far-left extremist", "far left extremist",
+  "antifa", "fascist rally", "nazi rally", "nazi march",
+  "hate group", "hate march", "extremist rally",
+  "kkk", "ku klux klan",
+  "political extremism", "radicalization", "radicalisation",
+  "islamophobic attack", "islamophobia",
+  "alt-right", "alt right", "proud boys", "oath keepers",
+];
 
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
@@ -44,20 +69,19 @@ function matchesAny(text: string, keywords: string[]): boolean {
 /** Classify an article's severity and category */
 export function classifyEvent(text: string): { severity: EventSeverity; category: EventCategory } | null {
   const lower = text.toLowerCase();
-  if (matchesAny(lower, HIGH_ECONOMIC)) return { severity: "high", category: "economic" };
-  if (matchesAny(lower, HIGH_VIOLENT)) return { severity: "high", category: "violent" };
-  if (matchesAny(lower, MEDIUM_VIOLENT)) return { severity: "medium", category: "violent" };
-  if (matchesAny(lower, LOW_MINOR)) return { severity: "low", category: "minor" };
+  if (matchesAny(lower, HIGH_ECONOMIC))    return { severity: "high",   category: "economic"   };
+  if (matchesAny(lower, HIGH_EXTREMISM))   return { severity: "high",   category: "extremism"  };
+  if (matchesAny(lower, MEDIUM_EXTREMISM)) return { severity: "medium", category: "extremism"  };
+  if (matchesAny(lower, HIGH_VIOLENT))     return { severity: "high",   category: "violent"    };
+  if (matchesAny(lower, MEDIUM_VIOLENT))   return { severity: "medium", category: "violent"    };
+  if (matchesAny(lower, LOW_MINOR))        return { severity: "low",    category: "minor"      };
   return null;
 }
 
 /** Detect a country ISO code from article text */
 export function detectCountry(text: string): string | null {
   const lower = text.toLowerCase();
-
-  // Try longest keyword match first by iterating sorted by length desc
-  const sortedKeys = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.length);
-  for (const kw of sortedKeys) {
+  for (const kw of SORTED_KEYWORDS) {
     if (lower.includes(kw)) {
       return KEYWORD_MAP.get(kw)!.code;
     }
@@ -135,6 +159,10 @@ export function generateMockData(): NewsMapData {
     { title: "Mass casualties in coordinated terrorist attack", source: "BBC", time: h(2), country: "Somalia", severity: "high", category: "violent" },
     { title: "Tensions rise as military buildup continues", source: "DW", time: h(8), country: "North Korea", severity: "low", category: "minor" },
     { title: "Violent clashes erupt at border crossing", source: "Al Jazeera", time: h(16), country: "Myanmar", severity: "medium", category: "violent" },
+    { title: "Neo-nazi march through city centre draws counter-protests", source: "Guardian", time: h(5), country: "Germany", severity: "medium", category: "extremism" },
+    { title: "Antisemitic attack on synagogue injures worshippers", source: "BBC", time: h(3), country: "France", severity: "high", category: "extremism" },
+    { title: "White supremacist rally triggers clashes with antifa groups", source: "Guardian", time: h(9), country: "United States", severity: "medium", category: "extremism" },
+    { title: "Far-right extremist group banned after hate march", source: "BBC", time: h(14), country: "United Kingdom", severity: "medium", category: "extremism" },
   ];
 
   const eventWithCodes: NewsEvent[] = mockEvents.map((e) => {
