@@ -140,21 +140,33 @@ for (const c of COUNTRIES) {
 const SORTED_KEYWORDS = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.length);
 
 // ── RSS sources ──────────────────────────────────────────────────────────────
-// Al Jazeera conflict feed is the primary source; others supplement coverage.
-// Reuters has no public RSS since 2020 — use AP News instead.
-// RFE/RL auto-generated key URL was removed in favour of their stable feed.
-// Euronews Feedburner URL replaced with direct feed.
+// All feeds are fetched concurrently via Promise.allSettled — a single slow or
+// unavailable feed fails fast (10 s timeout) without blocking the others.
+//
+// Excluded from this list:
+//   Reuters       – removed public RSS in 2020; feeds.reuters.com always 404s
+//   FT            – full paywall; RSS returns no usable article text
+//   Telesur       – Venezuelan state outlet; RSS endpoint unreliable
+//   Euronews/FBN  – Feedburner variant deprecated; direct feed already present
 const RSS_SOURCES = [
+  // ── Primary / High-volume world news ───────────────────────────────────────
   { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/subjects/conflict.xml" },
   { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml" },
   { name: "BBC",        url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
+  { name: "AP News",    url: "https://feeds.apnews.com/apnews/world" },
+  { name: "CNN",        url: "https://rss.cnn.com/rss/edition_world.rss" },
   { name: "Guardian",   url: "https://www.theguardian.com/world/rss" },
+  // ── Regional coverage ──────────────────────────────────────────────────────
   { name: "DW",         url: "https://rss.dw.com/xml/rss-en-world" },
   { name: "France24",   url: "https://www.france24.com/en/rss" },
   { name: "Sky News",   url: "https://feeds.skynews.com/feeds/rss/world.xml" },
-  { name: "AP News",    url: "https://feeds.apnews.com/apnews/world" },
-  { name: "Euronews",   url: "https://www.euronews.com/rss?format=mrss&level=theme&name=news" },
   { name: "RFE/RL",     url: "https://www.rferl.org/api/jqpxiflpqo" },
+  { name: "Euronews",   url: "https://www.euronews.com/rss?format=mrss&level=theme&name=news" },
+  { name: "CNA",        url: "https://www.channelnewsasia.com/rssfeeds/8395884" },
+  { name: "Africanews", url: "https://www.africanews.com/feed/" },
+  // ── Specialist / humanitarian ──────────────────────────────────────────────
+  { name: "ReliefWeb",  url: "https://reliefweb.int/updates/rss.xml" },
+  { name: "UN News",    url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml" },
 ];
 
 const ARTICLES_PER_FEED = 20;
@@ -177,6 +189,10 @@ const LOW_MINOR = [
   "civil unrest", "blockade", "curfew", "evacuation",
   "power outage", "flooding", "earthquake", "storm",
   "social unrest", "tension", "dispute",
+  // Humanitarian / disaster terms — surfaces ReliefWeb and UN News articles
+  "refugee", "refugees", "displaced", "displacement",
+  "humanitarian", "famine", "drought",
+  "disease outbreak", "epidemic", "aid convoy",
 ];
 const HIGH_ECONOMIC = [
   "stock market crash", "market collapse", "market plunge",
