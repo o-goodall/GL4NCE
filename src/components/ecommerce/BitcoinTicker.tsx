@@ -104,7 +104,7 @@ export default function BitcoinTicker() {
       animations: { enabled: false },
     },
     stroke: { curve: "smooth", width: 2 },
-    colors: ["#F7931A"],
+    colors: ["#465FFF"],
     tooltip: { enabled: false },
   };
 
@@ -119,7 +119,7 @@ export default function BitcoinTicker() {
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <span
-          className="w-5 h-5 flex items-center justify-center text-lg font-bold text-orange-400 leading-none"
+          className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-500 leading-none"
           aria-label="Bitcoin"
         >
           ₿
