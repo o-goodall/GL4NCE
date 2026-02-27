@@ -154,6 +154,8 @@ export default function MonthlyTarget() {
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
+  // Days until we enter the 365-day pre-halving buy window
+  const daysToWindow  = Math.max(0, Math.ceil((msToHalving - 365 * 86_400_000) / 86_400_000));
 
   // ── Boost ──────────────────────────────────────────────────────────────
   let totalBoost = 0;
@@ -315,8 +317,8 @@ export default function MonthlyTarget() {
         />
         <SignalItem
           active={halvingActive}
-          label="Halving"
-          sub={`${daysToHalving}d`}
+          label={halvingActive ? "Pre-Halving" : "Halving Window"}
+          sub={halvingActive ? `${daysToHalving}d to halving` : `in ${daysToWindow}d`}
         />
       </div>
     </div>
