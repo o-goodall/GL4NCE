@@ -3,7 +3,7 @@ import Parser from "rss-parser";
 
 // ── Types (mirror src/components/news-map/types.ts) ─────────────────────────
 type EventSeverity = "high" | "medium" | "low";
-type EventCategory = "violent" | "minor" | "economic";
+type EventCategory = "violent" | "minor" | "economic" | "extremism";
 
 /** Number of characters used to build the deduplication key from a title.
  *  Long enough to distinguish different stories, short enough to catch
@@ -182,6 +182,28 @@ const HIGH_ECONOMIC = [
   "mass unemployment", "factory closure", "supply chain collapse",
   "food shortage", "energy crisis",
 ];
+/** Violent attacks with a clearly identified extremist/ideological motive */
+const HIGH_EXTREMISM = [
+  "neo-nazi attack", "neo nazi attack", "neonazi attack",
+  "white supremacist attack", "far-right attack", "far right attack",
+  "far-left attack", "far left attack", "antifa attack",
+  "antisemitic attack", "antisemitic shooting", "antisemitic stabbing",
+  "extremist bombing", "hate crime killing", "hate crime murder",
+];
+/** Extremist ideology, movements, rallies, and hate-crime activity */
+const MEDIUM_EXTREMISM = [
+  "neo-nazi", "neo nazi", "neonazi",
+  "white supremacist", "white supremacy", "white nationalist",
+  "antisemitism", "antisemitic", "antisemite",
+  "far-right extremist", "far right extremist",
+  "far-left extremist", "far left extremist",
+  "antifa", "fascist rally", "nazi rally", "nazi march",
+  "hate group", "hate march", "extremist rally",
+  "kkk", "ku klux klan",
+  "political extremism", "radicalization", "radicalisation",
+  "islamophobic attack", "islamophobia",
+  "alt-right", "alt right", "proud boys", "oath keepers",
+];
 
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
@@ -195,10 +217,12 @@ function matchesAny(text: string, keywords: string[]): boolean {
 
 function classifyEvent(text: string): { severity: EventSeverity; category: EventCategory } | null {
   const lower = text.toLowerCase();
-  if (matchesAny(lower, HIGH_ECONOMIC))  return { severity: "high",   category: "economic" };
-  if (matchesAny(lower, HIGH_VIOLENT))   return { severity: "high",   category: "violent"  };
-  if (matchesAny(lower, MEDIUM_VIOLENT)) return { severity: "medium", category: "violent"  };
-  if (matchesAny(lower, LOW_MINOR))      return { severity: "low",    category: "minor"    };
+  if (matchesAny(lower, HIGH_ECONOMIC))    return { severity: "high",   category: "economic"   };
+  if (matchesAny(lower, HIGH_EXTREMISM))   return { severity: "high",   category: "extremism"  };
+  if (matchesAny(lower, MEDIUM_EXTREMISM)) return { severity: "medium", category: "extremism"  };
+  if (matchesAny(lower, HIGH_VIOLENT))     return { severity: "high",   category: "violent"    };
+  if (matchesAny(lower, MEDIUM_VIOLENT))   return { severity: "medium", category: "violent"    };
+  if (matchesAny(lower, LOW_MINOR))        return { severity: "low",    category: "minor"      };
   return null;
 }
 
@@ -265,8 +289,12 @@ function generateMockData(): NewsMapData {
     { title: "Evacuation ordered after minor earthquake",               source: "DW",         time: h(15), country: "Japan",        countryName: "Japan",        severity: "low",    category: "minor"    },
     { title: "Food shortage worsens amid supply chain collapse",         source: "Al Jazeera", time: h(6),  country: "Sudan",        countryName: "Sudan",        severity: "high",   category: "economic" },
     { title: "Mass casualties in coordinated terrorist attack",          source: "BBC",        time: h(2),  country: "Somalia",      countryName: "Somalia",      severity: "high",   category: "violent"  },
-    { title: "Tensions rise as military buildup continues",              source: "DW",         time: h(8),  country: "North Korea",  countryName: "North Korea",  severity: "low",    category: "minor"    },
-    { title: "Violent clashes erupt at border crossing",                source: "Al Jazeera", time: h(16), country: "Myanmar",      countryName: "Myanmar",      severity: "medium", category: "violent"  },
+    { title: "Tensions rise as military buildup continues",              source: "DW",         time: h(8),  country: "North Korea",  countryName: "North Korea",  severity: "low",    category: "minor"      },
+    { title: "Violent clashes erupt at border crossing",                source: "Al Jazeera", time: h(16), country: "Myanmar",      countryName: "Myanmar",      severity: "medium", category: "violent"    },
+    { title: "Neo-nazi march through city centre draws counter-protests", source: "Guardian",  time: h(5),  country: "Germany",      countryName: "Germany",      severity: "medium", category: "extremism"  },
+    { title: "Antisemitic attack on synagogue injures worshippers",      source: "BBC",        time: h(3),  country: "France",       countryName: "France",       severity: "high",   category: "extremism"  },
+    { title: "White supremacist rally triggers clashes with antifa",     source: "Guardian",   time: h(9),  country: "United States", countryName: "United States",  severity: "medium", category: "extremism"  },
+    { title: "Far-right extremist group banned after hate march",        source: "BBC",        time: h(14), country: "United Kingdom", countryName: "United Kingdom", severity: "medium", category: "extremism"  },
   ];
   const events: NewsEvent[] = raw
     .map((e) => {

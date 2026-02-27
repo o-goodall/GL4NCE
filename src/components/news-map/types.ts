@@ -1,5 +1,5 @@
 export type EventSeverity = "high" | "medium" | "low";
-export type EventCategory = "violent" | "minor" | "economic";
+export type EventCategory = "violent" | "minor" | "economic" | "extremism";
 
 export interface NewsEvent {
   title: string;

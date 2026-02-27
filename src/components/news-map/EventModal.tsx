@@ -6,9 +6,10 @@ interface EventModalProps {
 }
 
 const CATEGORY_STYLES: Record<EventCategory, string> = {
-  violent: "bg-error-100 text-error-700 dark:bg-error-900/30 dark:text-error-400",
-  minor: "bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400",
-  economic: "bg-blue-light-100 text-blue-light-700 dark:bg-blue-light-900/30 dark:text-blue-light-400",
+  violent:   "bg-error-100 text-error-700 dark:bg-error-900/30 dark:text-error-400",
+  minor:     "bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400",
+  economic:  "bg-blue-light-100 text-blue-light-700 dark:bg-blue-light-900/30 dark:text-blue-light-400",
+  extremism: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
 const SEVERITY_DOT: Record<string, string> = {

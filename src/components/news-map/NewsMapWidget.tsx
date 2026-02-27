@@ -33,10 +33,11 @@ const REGION_LABEL_STYLE = {
 type CategoryFilter = "all" | EventCategory;
 
 const FILTER_LABELS: Record<CategoryFilter, string> = {
-  all: "All",
-  violent: "Violent",
-  economic: "Economic",
-  minor: "Minor",
+  all:       "All",
+  violent:   "Violent",
+  economic:  "Economic",
+  minor:     "Minor",
+  extremism: "Extremism",
 };
 
 /**
