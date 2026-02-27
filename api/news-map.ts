@@ -141,6 +141,8 @@ const HIGH_ECONOMIC = ["stock market crash", "market collapse", "hyperinflation"
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
 const RETENTION_HOURS = 48;
+/** Events within this window contribute to the trending score */
+const TRENDING_WINDOW_HOURS = 2;
 
 function matchesAny(text: string, keywords: string[]): boolean {
   return keywords.some((kw) => text.includes(kw));
@@ -169,8 +171,9 @@ function isWithinRetentionWindow(isoTime: string): boolean {
 
 function computeTrending(events: NewsEvent[]): Set<string> {
   const scores: Record<string, number> = {};
+  const cutoff = Date.now() - TRENDING_WINDOW_HOURS * 3_600_000;
   for (const ev of events) {
-    if (!isWithinRetentionWindow(ev.time)) continue;
+    if (new Date(ev.time).getTime() < cutoff) continue;
     scores[ev.countryCode] = (scores[ev.countryCode] ?? 0) + SEVERITY_WEIGHTS[ev.severity];
   }
   return new Set(Object.keys(scores).filter((code) => scores[code] >= TRENDING_THRESHOLD));

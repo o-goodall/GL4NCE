@@ -2,25 +2,28 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject } from "@react-jvectormap/core/dist/types";
 import { worldMill } from "@react-jvectormap/world";
-import type { CountryNewsData, EventCategory } from "./types";
-import { latLngToPercent } from "./countryData";
+import type { CountryNewsData } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
 
-const CATEGORY_COLOURS: Record<EventCategory, string> = {
-  violent: "#f04438",
-  minor: "#f79009",
-  economic: "#0ba5ec",
-};
-
-const TRENDING_FILL = "#f04438";
+const HOVER_FILL = "#465fff";
+const PING_DEFAULT = "#ffffff";
+const PING_TRENDING = "#f04438";
 
 const REGION_STYLE = {
   initial: { fill: "#D0D5DD", fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
-  hover: { fillOpacity: 0.7, cursor: "pointer", fill: "#465fff", stroke: "none" },
-  selected: { fill: TRENDING_FILL },
-  selectedHover: { fill: TRENDING_FILL, fillOpacity: 0.7 },
+  hover: { fillOpacity: 0.7, cursor: "pointer", fill: HOVER_FILL, stroke: "none" },
+  selected: { fill: HOVER_FILL },
+  selectedHover: { fill: HOVER_FILL, fillOpacity: 0.8 },
 } as const;
+
+// Default marker style — individual marker colours are set imperatively via addMarker()
+const MARKER_STYLE = {
+  initial: { fill: PING_DEFAULT, stroke: "#667085", "stroke-width": 1.5, r: 4 },
+  hover: { stroke: HOVER_FILL, cursor: "pointer" },
+  selected: {},
+  selectedHover: {},
+};
 
 const REGION_LABEL_STYLE = {
   initial: { fill: "#35373e", fontWeight: 500, fontSize: "13px", stroke: "none" },
@@ -57,19 +60,10 @@ const StableMap = memo(function StableMap({
       onRegionClick={onRegionClick as any}
       regionStyle={REGION_STYLE as any}
       regionLabelStyle={REGION_LABEL_STYLE as any}
+      markerStyle={MARKER_STYLE as any}
     />
   );
 });
-
-function dominantCategory(country: CountryNewsData): EventCategory {
-  const counts: Record<EventCategory, number> = { violent: 0, minor: 0, economic: 0 };
-  for (const ev of country.events) counts[ev.category]++;
-  return (["violent", "economic", "minor"] as EventCategory[]).find(
-    (c) => counts[c] === Math.max(...Object.values(counts))
-  ) ?? "minor";
-}
-
-const HOVER_FILL = "#465fff";
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
@@ -107,38 +101,42 @@ export default function NewsMapWidget() {
     setTappedCode(null);
   }, []);
 
-  // Push trending colour updates and tap highlight imperatively.
-  // Combined into one effect to avoid a race where the trending effect
-  // overwrites the tap highlight applied by a separate effect.
-  // Dual approach: direct SVG fill for immediate visual update +
-  // jVectorMap API call so hover-out restores the correct colour.
+  // Update selected regions via jVectorMap's own API.
+  // Using setSelectedRegions for both trending and tapped countries ensures the
+  // blue fill persists on mobile touch devices where there is no hover state to
+  // maintain the colour — this replaces the direct DOM manipulation that was
+  // unreliable on touch devices.
   useEffect(() => {
-    const trendingSet = new Set(trendingCodes);
-
-    // 1. Direct DOM fill (bypasses any timing issue with mapRef).
-    //    If a region is currently tapped (mobile touch feedback), apply
-    //    the hover colour so the user sees which country they selected.
-    const container = document.querySelector(".jvectormap-container");
-    if (container) {
-      container.querySelectorAll<SVGPathElement>(".jvectormap-region").forEach((el) => {
-        const code = el.getAttribute("data-code");
-        if (code) {
-          if (code === tappedCode) {
-            el.setAttribute("fill", HOVER_FILL);
-          } else {
-            el.setAttribute("fill", trendingSet.has(code) ? TRENDING_FILL : "#D0D5DD");
-          }
-        }
-      });
-    }
-
-    // 2. jVectorMap selection — keeps hover-out behaviour consistent
     const map = mapRef.current;
-    if (map) {
-      map.clearSelectedRegions();
-      if (trendingCodes.length > 0) map.setSelectedRegions(trendingCodes);
-    }
+    if (!map) return;
+    map.clearSelectedRegions();
+    const toSelect = tappedCode ? [...trendingCodes, tappedCode] : trendingCodes;
+    if (toSelect.length > 0) map.setSelectedRegions(toSelect);
   }, [trendingCodes, tappedCode]);
+
+  // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
+  // and move correctly with the map when the user zooms or pans on mobile.
+  // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || countries.length === 0) return;
+    map.removeAllMarkers();
+    countries.forEach((country) => {
+      map.addMarker(
+        country.code,
+        {
+          name: country.name,
+          latLng: [country.lat, country.lng],
+          style: {
+            fill: country.trending ? PING_TRENDING : PING_DEFAULT,
+            stroke: country.trending ? "#ffffff" : "#667085",
+            r: country.trending ? 6 : 4,
+          } as React.CSSProperties,
+        },
+        []
+      );
+    });
+  }, [countries]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
@@ -153,16 +151,6 @@ export default function NewsMapWidget() {
           </h3>
         </div>
         <div className="flex items-center gap-3">
-          {(["violent", "economic", "minor"] as EventCategory[]).map((cat) => (
-            <span key={cat} className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: CATEGORY_COLOURS[cat] }} />
-              {cat}
-            </span>
-          ))}
-          <span className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TRENDING_FILL }} />
-            trending
-          </span>
           {loading && (
             <span className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Updating…</span>
           )}
@@ -174,28 +162,6 @@ export default function NewsMapWidget() {
         <div className="h-[300px] sm:h-[360px] xl:h-[420px]">
           <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} />
         </div>
-
-        {/* Category-coloured ping dots (visual indicators, no interaction) */}
-        <svg
-          className="absolute inset-0 w-full h-full"
-          style={{ pointerEvents: "none" }}
-          aria-hidden="true"
-        >
-          {countries.map((country) => {
-            const { x, y } = latLngToPercent(country.lat, country.lng);
-            return (
-              <circle
-                key={country.code}
-                cx={`${x}%`}
-                cy={`${y}%`}
-                r="4"
-                fill={CATEGORY_COLOURS[dominantCategory(country)]}
-                stroke="white"
-                strokeWidth="1.5"
-              />
-            );
-          })}
-        </svg>
 
         {!loading && countries.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
