@@ -209,6 +209,7 @@ export default function NewsMapWidget() {
           {countries.length} countr{countries.length !== 1 ? "ies" : "y"} with recent events ·{" "}
           {trendingCodes.length} trending ·{" "}
           Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+          {data.usingMockData && " · demo data"}
         </p>
       )}
 
