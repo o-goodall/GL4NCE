@@ -4,9 +4,7 @@ import { ApexOptions } from "apexcharts";
 
 interface TickerData {
   priceUSD: number | null;
-  priceAUD: number | null;
   changePercentUSD: number | null;
-  changePercentAUD: number | null;
 }
 
 type FlashState = "up" | "down" | null;
@@ -16,9 +14,7 @@ const MAX_SPARKLINE_POINTS = 30;
 export default function BitcoinTicker() {
   const [ticker, setTicker] = useState<TickerData>({
     priceUSD: null,
-    priceAUD: null,
     changePercentUSD: null,
-    changePercentAUD: null,
   });
   const [sparkline, setSparkline] = useState<number[]>([]);
   const [flash, setFlash] = useState<FlashState>(null);
@@ -27,7 +23,7 @@ export default function BitcoinTicker() {
 
   useEffect(() => {
     const ws = new WebSocket(
-      "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker/btcaud@ticker"
+      "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker"
     );
 
     ws.onmessage = (event: MessageEvent) => {
@@ -63,10 +59,6 @@ export default function BitcoinTicker() {
             }
           }
           prevUSD.current = price;
-        } else if (stream === "btcaud@ticker") {
-          const price = parseFloat(data["c"]);
-          const pct = parseFloat(data["P"]);
-          setTicker((prev: TickerData) => ({ ...prev, priceAUD: price, changePercentAUD: pct }));
         }
       } catch (err) {
         if (import.meta.env.DEV) {
@@ -126,14 +118,12 @@ export default function BitcoinTicker() {
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
-        <svg
-          className="w-5 h-5 text-orange-400"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          aria-hidden="true"
+        <span
+          className="w-5 h-5 flex items-center justify-center text-lg font-bold text-orange-400 leading-none"
+          aria-label="Bitcoin"
         >
-          <path d="M11.5 2C6.81 2 3 5.81 3 10.5S6.81 19 11.5 19 20 15.19 20 10.5 16.19 2 11.5 2zm.75 12.25v.75h-1.5v-.75c-1.24-.27-2.25-1.13-2.25-2.5h1.5c0 .69.67 1.25 2.25 1.25s2.25-.56 2.25-1.25c0-.63-.45-1.25-2.25-1.25-2.19 0-3.75-.94-3.75-2.75 0-1.37 1.01-2.23 2.25-2.5V5h1.5v.75c1.24.27 2.25 1.13 2.25 2.5h-1.5c0-.69-.67-1.25-2.25-1.25S8.5 7.56 8.5 8.25c0 .63.45 1.25 2.25 1.25 2.19 0 3.75.94 3.75 2.75 0 1.37-1.01 2.23-2.25 2.5z" />
-        </svg>
+          ₿
+        </span>
         <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
           Bitcoin
         </span>
@@ -141,7 +131,7 @@ export default function BitcoinTicker() {
 
       {/* Prices row */}
       <div className="flex items-baseline gap-3 flex-wrap">
-        {/* USD — primary */}
+        {/* USD */}
         <div className="flex items-baseline gap-1.5">
           <span
             className={`text-2xl font-bold transition-colors duration-300 ${flashClass}`}
@@ -152,21 +142,6 @@ export default function BitcoinTicker() {
             <span className={`text-sm font-medium ${pctColor(ticker.changePercentUSD)}`}>
               ({ticker.changePercentUSD >= 0 ? "+" : ""}
               {fmt(ticker.changePercentUSD)}%)
-            </span>
-          )}
-        </div>
-
-        <span className="text-gray-300 dark:text-gray-700 text-lg font-light">|</span>
-
-        {/* AUD — secondary */}
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-base font-semibold text-gray-500 dark:text-gray-400">
-            {ticker.priceAUD !== null ? `A$${fmt(ticker.priceAUD)}` : "—"}
-          </span>
-          {ticker.changePercentAUD !== null && (
-            <span className={`text-xs font-medium ${pctColor(ticker.changePercentAUD)}`}>
-              ({ticker.changePercentAUD >= 0 ? "+" : ""}
-              {fmt(ticker.changePercentAUD)}%)
             </span>
           )}
         </div>
