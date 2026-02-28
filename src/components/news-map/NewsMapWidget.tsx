@@ -38,7 +38,7 @@ const LIGHT_DEFAULT_FILL = "#D0D5DD";
 /** Default ping colour for all event markers — matches the hover/trending region fill */
 const EVENT_PING_FILL = "#A63A1E";   // brand-500 terra cotta
 /** Ping colour for trending-country markers */
-const TRENDING_PING_FILL = "#f04438"; // error-500 (red)
+const TRENDING_PING_FILL = "#C46050"; // brand-400 terra cotta
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -298,7 +298,7 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
-  // Trending country markers are shown in red; all other events use the default gray.
+  // Trending country markers are shown in a lighter terra cotta; all other events use the default fill.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || countries.length === 0) return;
