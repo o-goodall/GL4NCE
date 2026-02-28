@@ -29,6 +29,8 @@ export interface CountryNewsData {
   lat: number;
   lng: number;
   trending: boolean;
+  /** 1-based rank among trending countries (1 = most trending); undefined for non-trending */
+  trendingRank?: number;
   /** Computed urgency — see AlertLevel */
   alertLevel: AlertLevel;
   events: NewsEvent[];

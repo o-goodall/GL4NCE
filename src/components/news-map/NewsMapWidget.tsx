@@ -35,21 +35,10 @@ const worldMill = (() => {
 const HOVER_FILL = "#F7931A";
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
-/** Map marker fill colour by alert level — used imperatively via addMarker() */
-const ALERT_PING: Record<AlertLevel, string> = {
-  critical: "#f04438", // error-500
-  high:     "#f79009", // warning-500
-  medium:   "#465fff", // brand-500
-  watch:    "#98a2b3", // gray-400
-};
-
-/** Marker radius by alert level */
-const ALERT_RADIUS: Record<AlertLevel, number> = {
-  critical: 8,
-  high:     6,
-  medium:   5,
-  watch:    4,
-};
+/** Default ping colour for all event markers */
+const EVENT_PING_FILL = "#98a2b3";  // gray-400
+/** Ping colour for trending-country markers */
+const TRENDING_PING_FILL = "#f04438"; // error-500 (red)
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -60,7 +49,7 @@ const REGION_STYLE = {
 
 // Default marker style — individual marker colours are overridden imperatively via addMarker()
 const MARKER_STYLE = {
-  initial: { fill: ALERT_PING.watch, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
+  initial: { fill: EVENT_PING_FILL, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
   hover: { stroke: HOVER_FILL, cursor: "pointer" },
   selected: {},
   selectedHover: {},
@@ -174,7 +163,9 @@ export default function NewsMapWidget() {
   }, [allCountries, categoryFilter]);
 
   const trendingCountries = useMemo(
-    () => countries.filter((c) => c.trending),
+    () => countries
+      .filter((c) => c.trending)
+      .sort((a, b) => (a.trendingRank ?? 99) - (b.trendingRank ?? 99)),
     [countries]
   );
 
@@ -218,26 +209,39 @@ export default function NewsMapWidget() {
   }, []);
 
   // ── Desktop zoom controls ───────────────────────────────────────────────────
-  // jVectorMap exposes `setFocus({ scale, animate })` for programmatic zoom.
-  // The `scale` property is not part of the public IMapObject type but is a
-  // reliable runtime field on the underlying jVectorMap instance.  We use a
-  // type guard so the fallback value of 1 is used if the field is absent.
-  const getMapScale = (map: IMapObject): number => {
-    const raw = (map as unknown as Record<string, unknown>).scale;
-    return typeof raw === "number" ? raw : 1;
-  };
+  // jVectorMap's `setFocus({ scale })` without position params corrupts transX/transY
+  // to undefined when animating.  We call `setScale` directly — the same approach used
+  // by jVectorMap's own built-in +/- buttons — anchoring at the viewport centre.
+  const mapSetScale = useCallback((newScale: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const raw = map as unknown as Record<string, unknown>;
+    const w = typeof raw.width  === "number" ? raw.width  : 0;
+    const h = typeof raw.height === "number" ? raw.height : 0;
+    if (typeof raw.setScale === "function") {
+      (raw.setScale as (s: number, x: number, y: number, c: boolean, a: boolean) => void)(
+        newScale, w / 2, h / 2, false, true
+      );
+    }
+  }, []);
 
   const handleZoomIn = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setFocus({ scale: Math.min(getMapScale(map) * 1.5, 12), animate: true });
-  }, []);
+    const raw = map as unknown as Record<string, unknown>;
+    const cur = typeof raw.scale === "number" ? raw.scale : 1;
+    const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
+    mapSetScale(Math.min(cur * 1.5, 12 * base));
+  }, [mapSetScale]);
 
   const handleZoomOut = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setFocus({ scale: Math.max(getMapScale(map) / 1.5, 1), animate: true });
-  }, []);
+    const raw = map as unknown as Record<string, unknown>;
+    const cur = typeof raw.scale === "number" ? raw.scale : 1;
+    const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
+    mapSetScale(Math.max(cur / 1.5, 1 * base));
+  }, [mapSetScale]);
 
   const handleZoomReset = useCallback(() => {
     mapRef.current?.reset();
@@ -294,23 +298,22 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
-  // Marker size and colour reflect the country's alertLevel for a visual urgency
-  // gradient: critical (red/large) → high (amber) → medium (brand) → watch (gray).
+  // Trending country markers are shown in red; all other events use the default gray.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || countries.length === 0) return;
     map.removeAllMarkers();
     countries.forEach((country) => {
-      const level = (country.alertLevel ?? "watch") as AlertLevel;
+      const isTrending = country.trending;
       map.addMarker(
         country.code,
         {
           name: country.name,
           latLng: [country.lat, country.lng],
           style: {
-            fill: ALERT_PING[level],
+            fill: isTrending ? TRENDING_PING_FILL : EVENT_PING_FILL,
             stroke: "#ffffff",
-            r: ALERT_RADIUS[level],
+            r: isTrending ? 6 : 4,
           } as React.CSSProperties,
         },
         []
@@ -496,13 +499,21 @@ export default function NewsMapWidget() {
                     ))}
                   </span>
                 ))}
-                {/* Solo trending pills */}
+                {/* Solo trending pills — ordered by rank with rank badge */}
                 {soloTrendingCountries.map((c) => (
                   <button
                     key={c.code}
                     onClick={() => handlePillClick(c)}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-brand-500/20 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/20 dark:bg-brand-500/20 dark:text-brand-400 dark:hover:bg-brand-500/30"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
                   >
+                    {c.trendingRank !== undefined && (
+                      <span
+                        className="shrink-0 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-error-500 text-white text-[9px] font-bold leading-none"
+                        aria-label={`Rank ${c.trendingRank}`}
+                      >
+                        {c.trendingRank}
+                      </span>
+                    )}
                     <span aria-label={c.name}>{countryFlag(c.code)}</span>
                     {c.name}
                   </button>
