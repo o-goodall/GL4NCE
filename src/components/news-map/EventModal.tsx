@@ -49,7 +49,7 @@ function EventRow({ event }: { event: NewsEvent }) {
             href={event.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-medium text-gray-800 dark:text-white/90 hover:text-brand-500 dark:hover:text-brand-400 line-clamp-2"
+            className="text-sm font-medium text-gray-800 dark:text-white/90 hover:text-brand-500 dark:hover:text-brand-200 line-clamp-2"
           >
             {event.title}
           </a>

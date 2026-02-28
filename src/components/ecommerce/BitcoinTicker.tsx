@@ -103,7 +103,7 @@ export default function BitcoinTicker() {
       animations: { enabled: false },
     },
     stroke: { curve: "smooth", width: 2 },
-    colors: ["#A63A1E"],
+    colors: ["#4F46E5"],
     tooltip: { enabled: false },
   };
 

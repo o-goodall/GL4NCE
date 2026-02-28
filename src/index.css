@@ -44,18 +44,18 @@ layer(base);
   --color-white: #ffffff;
   --color-black: #121212;
 
-  --color-brand-25: #FEF7F5;
-  --color-brand-50: #FBF0EE;
-  --color-brand-100: #F5DCDA;
-  --color-brand-200: #EABBB5;
-  --color-brand-300: #D88D82;
-  --color-brand-400: #C46050;
-  --color-brand-500: #A63A1E;
-  --color-brand-600: #8E2F18;
-  --color-brand-700: #732511;
-  --color-brand-800: #591B0C;
-  --color-brand-900: #431308;
-  --color-brand-950: #2B0C05;
+  --color-brand-25: #F5F3FF;
+  --color-brand-50: #EEF2FF;
+  --color-brand-100: #E0E7FF;
+  --color-brand-200: #C7D2FE;
+  --color-brand-300: #A5B4FC;
+  --color-brand-400: #818CF8;
+  --color-brand-500: #4F46E5;
+  --color-brand-600: #4338CA;
+  --color-brand-700: #3730A3;
+  --color-brand-800: #312E81;
+  --color-brand-900: #1E1B4B;
+  --color-brand-950: #13113A;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -205,7 +205,7 @@ layer(base);
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-300;
+  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-200;
 }
 
 @utility menu-item-inactive {
@@ -217,7 +217,7 @@ layer(base);
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-500 dark:text-brand-300;
+  @apply text-brand-500 dark:text-brand-200;
 }
 
 @utility menu-item-icon-size {
@@ -235,7 +235,7 @@ layer(base);
 }
 
 @utility menu-item-arrow-active {
-  @apply rotate-180 text-brand-500 dark:text-brand-300;
+  @apply rotate-180 text-brand-500 dark:text-brand-200;
 }
 
 @utility menu-item-arrow-inactive {
@@ -247,7 +247,7 @@ layer(base);
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-300;
+  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-200;
 }
 
 @utility menu-dropdown-item-inactive {
@@ -255,7 +255,7 @@ layer(base);
 }
 
 @utility menu-dropdown-badge {
-  @apply block rounded-full px-2.5 py-0.5 text-xs font-medium uppercase text-brand-500 dark:text-brand-300;
+  @apply block rounded-full px-2.5 py-0.5 text-xs font-medium uppercase text-brand-500 dark:text-brand-200;
 }
 
 @utility menu-dropdown-badge-active {
@@ -533,13 +533,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #A63A1E;
+  background: #4F46E5;
   @apply !border-brand-500 !bg-brand-500 hover:!border-brand-500 hover:!bg-brand-500;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #A63A1E;
+  box-shadow: -10px 0 0 #4F46E5;
 }
 
 .flatpickr-months .flatpickr-prev-month svg,

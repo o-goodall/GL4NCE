@@ -6,7 +6,7 @@ import { MoreDotIcon } from "../../icons";
 import { useState } from "react";
 
 const options: ApexOptions = {
-  colors: ["#A63A1E"],
+  colors: ["#4F46E5"],
   chart: {
     fontFamily: "Inter, sans-serif",
     type: "bar",
