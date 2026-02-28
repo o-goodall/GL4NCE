@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject } from "@react-jvectormap/core/dist/types";
 import { worldMill as rawWorldMill } from "@react-jvectormap/world";
-import type { CountryNewsData, EventCategory } from "./types";
+import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
 import { useTheme } from "../../context/ThemeContext";
@@ -36,8 +36,22 @@ const worldMill = (() => {
 const HOVER_FILL = "#F7931A";
 const DARK_DEFAULT_FILL = "#344054";
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
-const PING_DEFAULT = "#465fff"; // brand-500 — visible in both light and dark mode
-const PING_TRENDING = "#f04438";
+
+/** Map marker fill colour by alert level — used imperatively via addMarker() */
+const ALERT_PING: Record<AlertLevel, string> = {
+  critical: "#f04438", // error-500
+  high:     "#f79009", // warning-500
+  medium:   "#465fff", // brand-500
+  watch:    "#98a2b3", // gray-400
+};
+
+/** Marker radius by alert level */
+const ALERT_RADIUS: Record<AlertLevel, number> = {
+  critical: 8,
+  high:     6,
+  medium:   5,
+  watch:    4,
+};
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -46,9 +60,9 @@ const REGION_STYLE = {
   selectedHover: { fill: HOVER_FILL, fillOpacity: 0.8 },
 } as const;
 
-// Default marker style — individual marker colours are set imperatively via addMarker()
+// Default marker style — individual marker colours are overridden imperatively via addMarker()
 const MARKER_STYLE = {
-  initial: { fill: PING_DEFAULT, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
+  initial: { fill: ALERT_PING.watch, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
   hover: { stroke: HOVER_FILL, cursor: "pointer" },
   selected: {},
   selectedHover: {},
@@ -72,11 +86,12 @@ function countryFlag(code: string): string {
 type CategoryFilter = "all" | EventCategory;
 
 const FILTER_LABELS: Record<CategoryFilter, string> = {
-  all:       "All",
-  violent:   "Violent",
-  economic:  "Economic",
-  minor:     "Minor",
-  extremism: "Extremism",
+  all:        "All",
+  violent:    "Violent",
+  economic:   "Economic",
+  minor:      "Minor",
+  extremism:  "Extremism",
+  escalation: "Escalation",
 };
 
 /**
@@ -267,20 +282,23 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
+  // Marker size and colour reflect the country's alertLevel for a visual urgency
+  // gradient: critical (red/large) → high (amber) → medium (brand) → watch (gray).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || countries.length === 0) return;
     map.removeAllMarkers();
     countries.forEach((country) => {
+      const level = (country.alertLevel ?? "watch") as AlertLevel;
       map.addMarker(
         country.code,
         {
           name: country.name,
           latLng: [country.lat, country.lng],
           style: {
-            fill: country.trending ? PING_TRENDING : PING_DEFAULT,
+            fill: ALERT_PING[level],
             stroke: "#ffffff",
-            r: country.trending ? 6 : 4,
+            r: ALERT_RADIUS[level],
           } as React.CSSProperties,
         },
         []
@@ -292,6 +310,13 @@ export default function NewsMapWidget() {
     () => countries.reduce((sum, c) => sum + c.events.length, 0),
     [countries]
   );
+
+  /** Count of countries at each alert level — shown in the footer summary */
+  const alertCounts = useMemo(() => {
+    const counts: Record<AlertLevel, number> = { critical: 0, high: 0, medium: 0, watch: 0 };
+    for (const c of countries) counts[(c.alertLevel ?? "watch") as AlertLevel]++;
+    return counts;
+  }, [countries]);
 
   // Resolve conflict groups from the data payload into CountryNewsData arrays,
   // filtering to only groups where ≥ 2 trending members are present.
@@ -405,6 +430,29 @@ export default function NewsMapWidget() {
 
       {data && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          {/* Alert-level summary dots */}
+          <div className="flex items-center gap-1.5">
+            {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
+              alertCounts[level] > 0 ? (
+                <span
+                  key={level}
+                  title={`${alertCounts[level]} ${level}`}
+                  className="inline-flex items-center gap-1 text-xs font-medium"
+                >
+                  <span
+                    className={`inline-flex h-2 w-2 rounded-full ${
+                      level === "critical" ? "bg-error-500 animate-pulse" :
+                      level === "high"     ? "bg-warning-500" :
+                                            "bg-brand-500"
+                    }`}
+                  />
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {alertCounts[level]}
+                  </span>
+                </span>
+              ) : null
+            )}
+          </div>
           <span className="text-xs text-gray-400 dark:text-gray-500">
             {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
           </span>

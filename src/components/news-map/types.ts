@@ -1,5 +1,16 @@
 export type EventSeverity = "high" | "medium" | "low";
-export type EventCategory = "violent" | "minor" | "economic" | "extremism";
+export type EventCategory = "violent" | "minor" | "economic" | "extremism" | "escalation";
+/**
+ * Computed urgency level for a country, derived from recent event severity,
+ * category mix, and trending velocity.  Used for map marker sizing/colour and
+ * the alert badge in the news modal.
+ *
+ * critical – active war / mass-casualty event trending right now
+ * high     – significant violence or fast-escalating situation
+ * medium   – civil unrest, armed clashes, escalation signals
+ * watch    – low-level tension or minor events only
+ */
+export type AlertLevel = "critical" | "high" | "medium" | "watch";
 
 export interface NewsEvent {
   title: string;
@@ -18,6 +29,8 @@ export interface CountryNewsData {
   lat: number;
   lng: number;
   trending: boolean;
+  /** Computed urgency — see AlertLevel */
+  alertLevel: AlertLevel;
   events: NewsEvent[];
 }
 
