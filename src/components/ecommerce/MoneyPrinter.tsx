@@ -28,10 +28,6 @@ const BANKS: readonly Bank[] = [
   { id: "EU", flag: "🇪🇺", label: "ECB", series: "ECBASSETSW", symbol: "€",  factor: 1e-6, suffix: "T" },
   // RNUASSET: Bank of Japan weekly total assets, billions JPY → display in T
   { id: "JP", flag: "🇯🇵", label: "BOJ", series: "RNUASSET",   symbol: "¥",  factor: 1e-3, suffix: "T" },
-  // BOEBSTAR: Bank of England sterling assets, millions GBP → display in T
-  { id: "GB", flag: "🇬🇧", label: "BoE", series: "BOEBSTAR",   symbol: "£",  factor: 1e-6, suffix: "T" },
-  // WCASGDPDSAB: Bank of Canada total assets, billions CAD → display in B
-  { id: "CA", flag: "🇨🇦", label: "BoC", series: "WCASGDPDSAB", symbol: "C$", factor: 1,    suffix: "B" },
 ];
 
 // ── State types ─────────────────────────────────────────────────────────────
