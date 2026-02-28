@@ -103,7 +103,7 @@ export default function BitcoinTicker() {
       animations: { enabled: false },
     },
     stroke: { curve: "smooth", width: 2 },
-    colors: ["#6D28D9"],
+    colors: ["#6522CC"],
     tooltip: { enabled: false },
   };
 
@@ -111,7 +111,7 @@ export default function BitcoinTicker() {
 
   return (
     <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-      <span className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+      <span className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
         1
       </span>
 

@@ -87,13 +87,13 @@ export default function SignInForm() {
               <div className="space-y-6">
                 <div>
                   <Label>
-                    Email <span className="text-error-500">*</span>{" "}
+                    Email <span className="text-error-800">*</span>{" "}
                   </Label>
                   <Input placeholder="info@gmail.com" />
                 </div>
                 <div>
                   <Label>
-                    Password <span className="text-error-500">*</span>{" "}
+                    Password <span className="text-error-800">*</span>{" "}
                   </Label>
                   <div className="relative">
                     <Input

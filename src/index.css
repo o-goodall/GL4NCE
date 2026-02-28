@@ -47,10 +47,10 @@ layer(base);
   --color-brand-25: #FAF5FF;
   --color-brand-50: #F5F3FF;
   --color-brand-100: #EDE9FE;
-  --color-brand-200: #AD90FF;
+  --color-brand-200: #B095FF;
   --color-brand-300: #A78BFA;
   --color-brand-400: #8B5CF6;
-  --color-brand-500: #6D28D9;
+  --color-brand-500: #6522CC;
   --color-brand-600: #5B21B6;
   --color-brand-700: #4C1D95;
   --color-brand-800: #2E1065;
@@ -76,7 +76,7 @@ layer(base);
   --color-gray-200: #E5E5E7;
   --color-gray-300: #d0d5dd;
   --color-gray-400: #C6C6CC;
-  --color-gray-500: #667085;
+  --color-gray-500: #4B5563;
   --color-gray-600: #444449;
   --color-gray-700: #344054;
   --color-gray-800: #262629;
@@ -140,18 +140,18 @@ layer(base);
 
   --color-theme-purple-500: #7a5af8;
 
-  --shadow-theme-md: 0px 4px 10px -2px rgba(109, 40, 217, 0.07),
+  --shadow-theme-md: 0px 4px 10px -2px rgba(101, 34, 204, 0.07),
     0px 2px 4px -2px rgba(16, 24, 40, 0.04);
-  --shadow-theme-lg: 0px 12px 20px -4px rgba(109, 40, 217, 0.08),
+  --shadow-theme-lg: 0px 12px 20px -4px rgba(101, 34, 204, 0.08),
     0px 4px 6px -2px rgba(16, 24, 40, 0.03);
   --shadow-theme-sm: 0px 1px 4px 0px rgba(16, 24, 40, 0.07),
     0px 1px 2px 0px rgba(16, 24, 40, 0.04);
   --shadow-theme-xs: 0px 1px 3px 0px rgba(16, 24, 40, 0.04);
-  --shadow-theme-xl: 0px 20px 28px -4px rgba(109, 40, 217, 0.09),
+  --shadow-theme-xl: 0px 20px 28px -4px rgba(101, 34, 204, 0.09),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #18181B, 5px 0 0 #18181B;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(109, 40, 217, 0.22);
-  --shadow-brand-glow: 0 0 0 1px rgba(109, 40, 217, 0.30), 0 4px 16px rgba(109, 40, 217, 0.40);
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(101, 34, 204, 0.22);
+  --shadow-brand-glow: 0 0 0 1px rgba(101, 34, 204, 0.30), 0 4px 16px rgba(101, 34, 204, 0.40);
   --shadow-slider-navigation: 0px 1px 2px 0px rgba(16, 24, 40, 0.1),
     0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip: 0px 4px 6px -2px rgba(16, 24, 40, 0.05),

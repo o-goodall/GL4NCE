@@ -32,11 +32,11 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#6D28D9"; // brand-500 electric indigo — used for hover AND trending region highlight
+const HOVER_FILL = "#6522CC"; // brand-500 electric indigo — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Default ping colour for all event markers — matches the hover/trending region fill */
-const EVENT_PING_FILL = "#6D28D9";   // brand-500 electric indigo
+const EVENT_PING_FILL = "#6522CC";   // brand-500 electric indigo
 /** Ping colour for trending-country markers */
 const TRENDING_PING_FILL = "#A78BFA"; // brand-300 bright electric lavender
 
@@ -340,7 +340,7 @@ export default function NewsMapWidget() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
             6
           </span>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
@@ -358,7 +358,7 @@ export default function NewsMapWidget() {
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 categoryFilter === f
                   ? "bg-brand-500 text-white"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
               }`}
             >
               {FILTER_LABELS[f]}
@@ -479,7 +479,7 @@ export default function NewsMapWidget() {
                     >
                       {c.trendingRank !== undefined && (
                         <span
-                          className="shrink-0 font-bold underline text-error-500 dark:text-error-400"
+                          className="shrink-0 font-bold underline text-error-800 dark:text-error-300"
                           aria-label={`Rank ${c.trendingRank}`}
                         >
                           #{c.trendingRank}

@@ -11,7 +11,7 @@ const options: ApexOptions = {
     position: "top",
     horizontalAlign: "left",
   },
-  colors: ["#6D28D9", "#C6C6CC"],
+  colors: ["#6522CC", "#C6C6CC"],
   chart: {
     fontFamily: "Inter, sans-serif",
     height: 310,
@@ -149,7 +149,7 @@ export default function StatisticsChart() {
       <div className="flex flex-col gap-5 mb-6 sm:flex-row sm:justify-between">
         <div className="w-full">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">5</span>
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">5</span>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
               Statistics
             </h3>
