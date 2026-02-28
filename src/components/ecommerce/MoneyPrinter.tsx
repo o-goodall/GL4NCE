@@ -131,12 +131,6 @@ export default function MoneyPrinter() {
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
-        <span
-          className="w-5 h-5 flex items-center justify-center text-base leading-none"
-          aria-label="Money printer"
-        >
-          🖨️
-        </span>
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           Money Printer
         </h3>

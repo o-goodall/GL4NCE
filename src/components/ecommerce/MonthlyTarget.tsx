@@ -255,12 +255,13 @@ export default function MonthlyTarget() {
             height={340}
           />
           {/* Centre label rendered as HTML so colour always matches the bar.
-               bottom: ~34px positions the label just above the gauge baseline
-               for a half-circle gauge with sparkline mode (proportional to 340px height). */}
+               bottom: ~18px sits the label closer to the gauge arc baseline;
+               font-size 56px makes the amount more prominent while chart height
+               stays at 340px so mobile layout is unaffected. */}
           <div
             style={{
               position: "absolute",
-              bottom: "34px",
+              bottom: "18px",
               left: 0,
               right: 0,
               textAlign: "center",
@@ -270,7 +271,7 @@ export default function MonthlyTarget() {
             <span
               style={{
                 color,
-                fontSize: "48px",
+                fontSize: "56px",
                 fontWeight: 600,
                 fontFamily: CHART_FONT,
                 lineHeight: 1,
