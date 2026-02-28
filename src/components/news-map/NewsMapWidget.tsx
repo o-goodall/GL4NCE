@@ -102,6 +102,22 @@ export default function NewsMapWidget() {
 
   const allCountries = data?.countries ?? [];
 
+  // Compute which categories have at least one live event
+  const activeCategories = useMemo<Set<CategoryFilter>>(() => {
+    const cats = new Set<CategoryFilter>(["all"]);
+    for (const c of allCountries) {
+      for (const e of c.events) cats.add(e.category as CategoryFilter);
+    }
+    return cats;
+  }, [allCountries]);
+
+  // If the selected filter no longer has any events, fall back to "all"
+  useEffect(() => {
+    if (categoryFilter !== "all" && !activeCategories.has(categoryFilter)) {
+      setCategoryFilter("all");
+    }
+  }, [activeCategories, categoryFilter, setCategoryFilter]);
+
   // Filter countries to those that have at least one event matching the active filter
   const countries = useMemo(() => {
     if (categoryFilter === "all") return allCountries;
@@ -222,8 +238,10 @@ export default function NewsMapWidget() {
           </h3>
         </div>
         <div className="flex items-center gap-2">
-          {/* Category filter tabs */}
-          {(Object.keys(FILTER_LABELS) as CategoryFilter[]).map((f) => (
+          {/* Category filter tabs — only shown when that category has live events */}
+          {(Object.keys(FILTER_LABELS) as CategoryFilter[])
+            .filter((f) => activeCategories.has(f))
+            .map((f) => (
             <button
               key={f}
               onClick={() => setCategoryFilter(f)}

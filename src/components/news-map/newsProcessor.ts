@@ -58,8 +58,12 @@ const MEDIUM_EXTREMISM = [
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
 const RETENTION_HOURS = 48;
-/** Events within this window contribute to the trending score */
-const TRENDING_WINDOW_HOURS = 2;
+/** "Breaking" window: events within this many hours are scored as recent */
+const TRENDING_RECENT_HOURS = 1;
+/** Baseline window: the hours beyond TRENDING_RECENT_HOURS used to measure ongoing coverage */
+const TRENDING_BASELINE_HOURS = 5;
+/** Characters used for per-country story dedup key within the trending window */
+const DEDUP_TITLE_LENGTH = 40;
 
 /** Check if any keyword is contained in the text */
 function matchesAny(text: string, keywords: string[]): boolean {
@@ -96,13 +100,43 @@ function isWithinRetentionWindow(isoTime: string): boolean {
 }
 
 function computeTrending(events: NewsEvent[]): Set<string> {
-  const scores: Record<string, number> = {};
-  const cutoff = Date.now() - TRENDING_WINDOW_HOURS * 3_600_000;
+  const now = Date.now();
+  const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
+  const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
+
+  const recentScores:   Record<string, number> = {};
+  const baselineScores: Record<string, number> = {};
+  const seenPerCountry = new Map<string, Set<string>>();
+
   for (const ev of events) {
-    if (new Date(ev.time).getTime() < cutoff) continue;
-    scores[ev.countryCode] = (scores[ev.countryCode] ?? 0) + SEVERITY_WEIGHTS[ev.severity];
+    const evTime = new Date(ev.time).getTime();
+    if (evTime < baselineCutoff) continue;
+
+    const storyKey = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    let seen = seenPerCountry.get(ev.countryCode);
+    if (!seen) { seen = new Set(); seenPerCountry.set(ev.countryCode, seen); }
+    if (seen.has(storyKey)) continue;
+    seen.add(storyKey);
+
+    const weight = SEVERITY_WEIGHTS[ev.severity];
+    if (evTime >= recentCutoff) {
+      recentScores[ev.countryCode]   = (recentScores[ev.countryCode]   ?? 0) + weight;
+    } else {
+      baselineScores[ev.countryCode] = (baselineScores[ev.countryCode] ?? 0) + weight;
+    }
   }
-  return new Set(Object.keys(scores).filter((code) => scores[code] >= TRENDING_THRESHOLD));
+
+  // Velocity: sudden spike in coverage (new conflict) beats steady ongoing coverage.
+  let topCode: string | null = null;
+  let topVelocity = 0;
+  for (const [code, recentScore] of Object.entries(recentScores)) {
+    if (recentScore < TRENDING_THRESHOLD) continue;
+    const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
+    const velocity = recentScore / Math.max(baselineRate, 1);
+    if (velocity > topVelocity) { topVelocity = velocity; topCode = code; }
+  }
+
+  return topCode ? new Set([topCode]) : new Set();
 }
 
 /** Aggregate events into per-country data */

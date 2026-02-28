@@ -6,9 +6,9 @@ type EventSeverity = "high" | "medium" | "low";
 type EventCategory = "violent" | "minor" | "economic" | "extremism";
 
 /** Number of characters used to build the deduplication key from a title.
- *  Long enough to distinguish different stories, short enough to catch
- *  the same article re-published with a minor suffix change. */
-const DEDUP_TITLE_LENGTH = 60;
+ *  Short enough to also catch the same story re-published with a minor
+ *  wording change (e.g. "kills 5" vs "kills at least 5"). */
+const DEDUP_TITLE_LENGTH = 40;
 
 interface NewsEvent {
   title: string;
@@ -65,6 +65,11 @@ const COUNTRIES: CountryInfo[] = [
   { code: "PS", name: "Palestine", lat: 31.95, lng: 35.23, keywords: ["palestine", "palestinian", "gaza", "ramallah", "hamas", "west bank"] },
   { code: "SA", name: "Saudi Arabia", lat: 23.89, lng: 45.08, keywords: ["saudi arabia", "saudi", "riyadh", "jeddah", "mecca", "medina", "mbs"] },
   { code: "AE", name: "UAE", lat: 23.42, lng: 53.85, keywords: ["uae", "united arab emirates", "dubai", "abu dhabi"] },
+  { code: "JO", name: "Jordan", lat: 30.59, lng: 36.24, keywords: ["jordan", "jordanian", "amman"] },
+  { code: "QA", name: "Qatar", lat: 25.35, lng: 51.18, keywords: ["qatar", "qatari", "doha"] },
+  { code: "KW", name: "Kuwait", lat: 29.37, lng: 47.98, keywords: ["kuwait", "kuwaiti", "kuwait city"] },
+  { code: "BH", name: "Bahrain", lat: 26.07, lng: 50.56, keywords: ["bahrain", "bahraini", "manama"] },
+  { code: "OM", name: "Oman", lat: 21.47, lng: 55.97, keywords: ["oman", "omani", "muscat"] },
   { code: "YE", name: "Yemen", lat: 15.55, lng: 48.52, keywords: ["yemen", "yemeni", "sanaa", "aden", "houthi"] },
   { code: "LB", name: "Lebanon", lat: 33.85, lng: 35.86, keywords: ["lebanon", "lebanese", "beirut", "hezbollah"] },
   { code: "TR", name: "Turkey", lat: 38.96, lng: 35.24, keywords: ["turkey", "turkish", "ankara", "istanbul", "erdogan"] },
@@ -77,6 +82,11 @@ const COUNTRIES: CountryInfo[] = [
   { code: "VE", name: "Venezuela", lat: 6.42, lng: -66.59, keywords: ["venezuela", "venezuelan", "caracas", "maduro"] },
   { code: "AR", name: "Argentina", lat: -38.42, lng: -63.62, keywords: ["argentina", "argentine", "buenos aires", "milei"] },
   { code: "CL", name: "Chile", lat: -35.68, lng: -71.54, keywords: ["chile", "chilean", "santiago"] },
+  { code: "BO", name: "Bolivia", lat: -16.29, lng: -63.59, keywords: ["bolivia", "bolivian", "la paz", "santa cruz", "cochabamba"] },
+  { code: "PE", name: "Peru", lat: -9.19, lng: -75.02, keywords: ["peru", "peruvian", "lima", "arequipa"] },
+  { code: "EC", name: "Ecuador", lat: -1.83, lng: -78.18, keywords: ["ecuador", "ecuadorian", "quito", "guayaquil"] },
+  { code: "PY", name: "Paraguay", lat: -23.44, lng: -58.44, keywords: ["paraguay", "paraguayan", "asuncion"] },
+  { code: "UY", name: "Uruguay", lat: -32.52, lng: -55.77, keywords: ["uruguay", "uruguayan", "montevideo"] },
   { code: "NG", name: "Nigeria", lat: 9.08, lng: 8.68, keywords: ["nigeria", "nigerian", "abuja", "lagos", "kano", "boko haram"] },
   { code: "ZA", name: "South Africa", lat: -30.56, lng: 22.94, keywords: ["south africa", "south african", "johannesburg", "cape town", "pretoria", "anc"] },
   { code: "ET", name: "Ethiopia", lat: 9.15, lng: 40.49, keywords: ["ethiopia", "ethiopian", "addis ababa", "tigray"] },
@@ -93,14 +103,31 @@ const COUNTRIES: CountryInfo[] = [
   { code: "TH", name: "Thailand", lat: 15.87, lng: 100.99, keywords: ["thailand", "thai", "bangkok"] },
   { code: "PH", name: "Philippines", lat: 12.88, lng: 121.77, keywords: ["philippines", "philippine", "manila", "mindanao", "duterte", "marcos"] },
   { code: "ID", name: "Indonesia", lat: -0.79, lng: 113.92, keywords: ["indonesia", "indonesian", "jakarta"] },
+  { code: "VN", name: "Vietnam", lat: 14.06, lng: 108.28, keywords: ["vietnam", "vietnamese", "hanoi", "ho chi minh", "saigon"] },
+  { code: "MY", name: "Malaysia", lat: 4.21, lng: 101.97, keywords: ["malaysia", "malaysian", "kuala lumpur"] },
+  { code: "KH", name: "Cambodia", lat: 12.57, lng: 104.99, keywords: ["cambodia", "cambodian", "phnom penh", "khmer"] },
   { code: "EG", name: "Egypt", lat: 26.82, lng: 30.80, keywords: ["egypt", "egyptian", "cairo", "sinai", "sisi"] },
   { code: "MA", name: "Morocco", lat: 31.79, lng: -7.09, keywords: ["morocco", "moroccan", "rabat", "casablanca"] },
   { code: "DZ", name: "Algeria", lat: 28.03, lng: 1.66, keywords: ["algeria", "algerian", "algiers"] },
   { code: "TN", name: "Tunisia", lat: 33.89, lng: 9.54, keywords: ["tunisia", "tunisian", "tunis"] },
   { code: "GH", name: "Ghana", lat: 7.95, lng: -1.02, keywords: ["ghana", "ghanaian", "accra"] },
   { code: "KE", name: "Kenya", lat: -0.02, lng: 37.91, keywords: ["kenya", "kenyan", "nairobi"] },
+  { code: "TZ", name: "Tanzania", lat: -6.37, lng: 34.89, keywords: ["tanzania", "tanzanian", "dar es salaam", "dodoma"] },
+  { code: "UG", name: "Uganda", lat: 1.37, lng: 32.29, keywords: ["uganda", "ugandan", "kampala"] },
+  { code: "RW", name: "Rwanda", lat: -1.94, lng: 29.87, keywords: ["rwanda", "rwandan", "kigali"] },
+  { code: "MZ", name: "Mozambique", lat: -18.67, lng: 35.53, keywords: ["mozambique", "mozambican", "maputo", "cabo delgado"] },
+  { code: "ZW", name: "Zimbabwe", lat: -19.02, lng: 29.15, keywords: ["zimbabwe", "zimbabwean", "harare"] },
+  { code: "AO", name: "Angola", lat: -11.20, lng: 17.87, keywords: ["angola", "angolan", "luanda"] },
+  { code: "CM", name: "Cameroon", lat: 7.37, lng: 12.35, keywords: ["cameroon", "cameroonian", "yaounde", "douala"] },
+  { code: "CI", name: "Ivory Coast", lat: 7.54, lng: -5.55, keywords: ["ivory coast", "ivorian", "abidjan", "cote d'ivoire", "côte d'ivoire"] },
+  { code: "SN", name: "Senegal", lat: 14.50, lng: -14.45, keywords: ["senegal", "senegalese", "dakar"] },
+  { code: "BF", name: "Burkina Faso", lat: 12.36, lng: -1.53, keywords: ["burkina faso", "burkinabe", "ouagadougou"] },
+  { code: "NE", name: "Niger", lat: 17.61, lng: 8.08, keywords: ["nigerien", "niamey", "niger republic"] },
   { code: "UZ", name: "Uzbekistan", lat: 41.38, lng: 64.58, keywords: ["uzbekistan", "uzbek", "tashkent"] },
   { code: "KZ", name: "Kazakhstan", lat: 48.02, lng: 66.92, keywords: ["kazakhstan", "kazakh", "astana", "almaty"] },
+  { code: "GE", name: "Georgia", lat: 42.32, lng: 43.36, keywords: ["georgia", "georgian", "tbilisi", "abkhazia", "south ossetia"] },
+  { code: "AM", name: "Armenia", lat: 40.07, lng: 45.04, keywords: ["armenia", "armenian", "yerevan", "nagorno-karabakh", "karabakh"] },
+  { code: "AZ", name: "Azerbaijan", lat: 40.14, lng: 47.58, keywords: ["azerbaijan", "azerbaijani", "baku"] },
   { code: "IT", name: "Italy", lat: 41.87, lng: 12.57, keywords: ["italy", "italian", "rome", "milan", "naples"] },
   { code: "ES", name: "Spain", lat: 40.46, lng: -3.75, keywords: ["spain", "spanish", "madrid", "barcelona", "catalonia"] },
   { code: "GR", name: "Greece", lat: 39.07, lng: 21.82, keywords: ["greece", "greek", "athens"] },
@@ -167,9 +194,24 @@ const RSS_SOURCES = [
   // ── Specialist / humanitarian ──────────────────────────────────────────────
   { name: "ReliefWeb",  url: "https://reliefweb.int/updates/rss.xml" },
   { name: "UN News",    url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml" },
+  // ── Near-realtime conflict monitoring (no API key required) ────────────────
+  // GDELT monitors millions of global news articles and surfaces conflict events
+  // within hours. No rate limits. timespan=6h aligns with our baseline window.
+  { name: "GDELT", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+conflict+OR+war+OR+explosion)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
+  // ── Community / social signal (no API key required) ────────────────────────
+  // Reddit r/worldnews and r/geopolitics users post breaking news within minutes
+  // of events occurring — often faster than traditional RSS feeds.
+  // Note: X/Twitter would be ideal but requires a paid API subscription.
+  { name: "Reddit WorldNews",   url: "https://www.reddit.com/r/worldnews/new/.rss" },
+  { name: "Reddit Geopolitics", url: "https://www.reddit.com/r/geopolitics/new/.rss" },
 ];
 
 const ARTICLES_PER_FEED = 20;
+
+/** Outlet name patterns that contain country keywords and must be stripped from
+ *  content snippets before full-text country detection to prevent false attribution.
+ *  "France 24" → contains "france"; all other current sources are safe. */
+const OUTLET_NAME_RE = /\bfrance\s*24\b/gi;
 
 // ── Classification keyword lists ─────────────────────────────────────────────
 const HIGH_VIOLENT = [
@@ -229,8 +271,10 @@ const MEDIUM_EXTREMISM = [
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
 const RETENTION_HOURS = 48;
-/** Events within this window contribute to the trending score */
-const TRENDING_WINDOW_HOURS = 2;
+/** "Breaking" window: events within this many hours are scored as recent */
+const TRENDING_RECENT_HOURS = 1;
+/** Baseline window: the hours beyond TRENDING_RECENT_HOURS used to measure ongoing coverage */
+const TRENDING_BASELINE_HOURS = 5;
 
 function matchesAny(text: string, keywords: string[]): boolean {
   return keywords.some((kw) => text.includes(kw));
@@ -260,13 +304,50 @@ function isWithinRetentionWindow(isoTime: string): boolean {
 }
 
 function computeTrending(events: NewsEvent[]): Set<string> {
-  const scores: Record<string, number> = {};
-  const cutoff = Date.now() - TRENDING_WINDOW_HOURS * 3_600_000;
+  const now = Date.now();
+  const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
+  const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
+
+  const recentScores:   Record<string, number> = {};
+  const baselineScores: Record<string, number> = {};
+
+  // Per-country story dedup across the full window: prevents the same story
+  // repeated across sources from inflating any country's score.
+  const seenPerCountry = new Map<string, Set<string>>();
+
   for (const ev of events) {
-    if (new Date(ev.time).getTime() < cutoff) continue;
-    scores[ev.countryCode] = (scores[ev.countryCode] ?? 0) + SEVERITY_WEIGHTS[ev.severity];
+    const evTime = new Date(ev.time).getTime();
+    if (evTime < baselineCutoff) continue;
+
+    const storyKey = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    let seen = seenPerCountry.get(ev.countryCode);
+    if (!seen) { seen = new Set(); seenPerCountry.set(ev.countryCode, seen); }
+    if (seen.has(storyKey)) continue;
+    seen.add(storyKey);
+
+    const weight = SEVERITY_WEIGHTS[ev.severity];
+    if (evTime >= recentCutoff) {
+      recentScores[ev.countryCode]   = (recentScores[ev.countryCode]   ?? 0) + weight;
+    } else {
+      baselineScores[ev.countryCode] = (baselineScores[ev.countryCode] ?? 0) + weight;
+    }
   }
-  return new Set(Object.keys(scores).filter((code) => scores[code] >= TRENDING_THRESHOLD));
+
+  // Velocity = recent score relative to the per-hour baseline rate.
+  // A country whose coverage is suddenly spiking (new conflict) will have a
+  // far higher velocity than one with steady ongoing coverage (e.g. Ukraine),
+  // ensuring genuinely breaking events win over persistent background noise.
+  let topCode: string | null = null;
+  let topVelocity = 0;
+  for (const [code, recentScore] of Object.entries(recentScores)) {
+    if (recentScore < TRENDING_THRESHOLD) continue;
+    const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
+    // Divide by at least 1 so a country with zero baseline still scores well.
+    const velocity = recentScore / Math.max(baselineRate, 1);
+    if (velocity > topVelocity) { topVelocity = velocity; topCode = code; }
+  }
+
+  return topCode ? new Set([topCode]) : new Set();
 }
 
 function aggregateCountries(events: NewsEvent[]): CountryNewsData[] {
@@ -353,10 +434,17 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
       const events: NewsEvent[] = [];
       for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
         if (!item.title || !item.link) continue;
-        const text = `${item.title} ${item.contentSnippet ?? item.content ?? ""}`;
+        const snippet = item.contentSnippet ?? item.content ?? "";
+        const text = `${item.title} ${snippet}`;
         const cls = classifyEvent(text);
         if (!cls) continue;
-        const country = detectCountry(text);
+        // Try title-only detection first: prevents an outlet's own country
+        // (appearing in the snippet/byline) from overriding the country named
+        // in the headline (e.g. Indian paper reporting on Bolivia).
+        // For the full-text fallback, strip outlet names that contain country
+        // keywords (e.g. "France 24" contains "france"; "Al Jazeera" is safe).
+        const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
+        const country = detectCountry(item.title) ?? detectCountry(`${item.title} ${cleanedSnippet}`);
         if (!country) continue;
         // isoDate is normalised by rss-parser; pubDate can be in any locale format
         const rawTime = item.isoDate ?? item.pubDate;
