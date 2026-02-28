@@ -614,10 +614,10 @@ function generateMockData(): NewsMapData {
   return { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
 }
 
-// ── Module-level response cache (5-minute TTL) ───────────────────────────────
+// ── Module-level response cache (10-minute TTL) ──────────────────────────────
 let _cache: NewsMapData | null = null;
 let _cacheExpiresAt = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 const parser = new Parser({
   // Reduce per-feed timeout from the 60-second default to 10 seconds.
@@ -839,7 +839,7 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
   // Serve cached result if still fresh
   if (_cache && Date.now() < _cacheExpiresAt) {
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=300");
     res.end(JSON.stringify(_cache));
     return;
   }
@@ -855,7 +855,7 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
     _cacheExpiresAt = Date.now() + CACHE_TTL_MS;
 
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=300");
     res.end(JSON.stringify(data));
   } catch {
     // On unexpected error return mock data so the map is never blank

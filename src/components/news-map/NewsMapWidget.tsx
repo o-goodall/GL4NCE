@@ -5,7 +5,6 @@ import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
-import { useTheme } from "../../context/ThemeContext";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
 // The worldMill dataset encodes French Guiana (South America) as a subpath of
@@ -34,7 +33,6 @@ const worldMill = (() => {
 })();
 
 const HOVER_FILL = "#F7931A";
-const DARK_DEFAULT_FILL = "#344054";
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Map marker fill colour by alert level — used imperatively via addMarker() */
@@ -134,7 +132,6 @@ const StableMap = memo(function StableMap({
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
-  const { theme } = useTheme();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -143,6 +140,9 @@ export default function NewsMapWidget() {
 
   // Keep latest country lookup in a ref so the stable handler can access it
   const countryByCodeRef = useRef(new Map<string, CountryNewsData>());
+
+  // Track previously highlighted codes so paintRegions only touches changed paths
+  const prevHighlightedRef = useRef<Set<string>>(new Set());
 
   const allCountries = useMemo(() => data?.countries ?? [], [data]);
 
@@ -244,43 +244,52 @@ export default function NewsMapWidget() {
   }, []);
 
   /**
-   * Paint all jVectorMap region SVG paths with the correct fill using inline
-   * styles. jVectorMap sets fills via the SVG `fill` *attribute*, which CSS
-   * class rules can override because CSS properties beat SVG presentation
-   * attributes in the cascade. Setting fill via element.style (inline style)
-   * wins over class-based CSS rules without requiring !important hacks.
+   * Delta-paint jVectorMap region fills using inline styles.
    *
-   * We read jVectorMap's own fill *attribute* as ground truth: after
-   * setSelectedRegions() the selected paths have fill=HOVER_FILL, others
-   * have the initial fill.  We then mirror those values as inline styles.
-   * Scoped to the specific map container to avoid interfering with other maps.
+   * jVectorMap sets fills via SVG `fill` *attributes*, which lose to CSS
+   * property rules in the cascade. Inline styles win without !important hacks.
+   *
+   * Instead of scanning all ~300 region paths on every change, we use the
+   * `data-code` attribute (set by jVectorMap on every region path) to target
+   * only the codes that changed between renders:
+   *   - Newly highlighted codes → set fill: HOVER_FILL !important
+   *   - Newly de-highlighted codes → remove inline fill (CSS restores the
+   *     correct default via .fill-gray-300 / dark:.fill-gray-700 classes)
+   *
+   * CSS dark-mode classes (.dark\:fill-gray-700) handle non-highlighted
+   * regions' theme-aware default fill automatically, so theme changes require
+   * no extra DOM work here.
    */
-  const paintRegions = useCallback((isDark: boolean) => {
+  const paintRegions = useCallback((toHighlight: string[]) => {
     const container = mapContainerRef.current;
     if (!container) return;
-    const defaultFill = isDark ? DARK_DEFAULT_FILL : LIGHT_DEFAULT_FILL;
-    container
-      .querySelectorAll<SVGPathElement>(".jvectormap-region.jvectormap-element")
-      .forEach((el) => {
-        el.style.setProperty(
-          "fill",
-          el.getAttribute("fill") === HOVER_FILL ? HOVER_FILL : defaultFill,
-          "important"
-        );
-      });
+    const newSet = new Set(toHighlight);
+    const prevSet = prevHighlightedRef.current;
+    const added   = toHighlight.filter((c) => !prevSet.has(c));
+    const removed = [...prevSet].filter((c) => !newSet.has(c));
+    for (const code of added) {
+      container.querySelectorAll<SVGPathElement>(`[data-code="${code}"]`)
+        .forEach((el) => el.style.setProperty("fill", HOVER_FILL, "important"));
+    }
+    for (const code of removed) {
+      container.querySelectorAll<SVGPathElement>(`[data-code="${code}"]`)
+        .forEach((el) => el.style.removeProperty("fill"));
+    }
+    prevHighlightedRef.current = newSet;
   }, []);
 
-  // Update selected regions via jVectorMap's own API, then force-paint inline
-  // styles to override any CSS cascade issues.
+  // Update selected regions via jVectorMap's own API, then delta-paint inline
+  // styles to win the CSS cascade for highlighted regions.
+  // theme is intentionally omitted: CSS dark-mode classes handle non-highlighted
+  // regions automatically, so a theme change needs no DOM work here.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     map.clearSelectedRegions();
     const toSelect = tappedCode ? [...trendingCodes, tappedCode] : trendingCodes;
     if (toSelect.length > 0) map.setSelectedRegions(toSelect);
-    // jVectorMap has now updated fill *attributes*; paint inline styles on top.
-    paintRegions(theme === "dark");
-  }, [trendingCodes, tappedCode, theme, paintRegions]);
+    paintRegions(toSelect);
+  }, [trendingCodes, tappedCode, paintRegions]);
 
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
