@@ -198,6 +198,9 @@ const RSS_SOURCES = [
   // GDELT monitors millions of global news articles and surfaces conflict events
   // within hours. No rate limits. timespan=6h aligns with our baseline window.
   { name: "GDELT", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+conflict+OR+war+OR+explosion)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
+  // A second GDELT feed scoped to the last 1 hour ensures the trending window
+  // always has enough recent articles even if the broader baseline feed is sparse.
+  { name: "GDELT Breaking", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+explosion+OR+shooting+OR+casualties)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=1h" },
   // ── Community / social signal (no API key required) ────────────────────────
   // Reddit r/worldnews and r/geopolitics users post breaking news within minutes
   // of events occurring — often faster than traditional RSS feeds.
@@ -208,10 +211,49 @@ const RSS_SOURCES = [
 
 const ARTICLES_PER_FEED = 20;
 
+/** Shared fetch timeout (ms) applied to all non-RSS sources */
+const FETCH_TIMEOUT = 10_000;
+
+/** Shared User-Agent used in the RSS parser, Telegram scraper, and Reddit JSON fetcher */
+const NEWS_MAP_UA = "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)";
+
 /** Outlet name patterns that contain country keywords and must be stripped from
- *  content snippets before full-text country detection to prevent false attribution.
- *  "France 24" → contains "france"; all other current sources are safe. */
+ *  both titles and content snippets before country detection to prevent false
+ *  attribution.  "France 24" → contains "france"; all other current sources are safe. */
 const OUTLET_NAME_RE = /\bfrance\s*24\b/gi;
+
+// ── Telegram public channels ─────────────────────────────────────────────────
+// t.me/s/{channel} returns a public HTML page — no login or API key required.
+// These outlets post breaking news to Telegram within minutes of events, often
+// ahead of their own RSS feeds.  HTML scraping is used since Telegram has no
+// public RSS endpoint for channels.
+//
+// Selected for English-language reliability and geopolitical breadth:
+//   alarabiya_en  – Al Arabiya English (Middle East / Asia focus)
+//   trtworld      – TRT World (broad international coverage)
+//   bbcnews       – BBC News (global)
+//   reutersagency – Reuters (newswire, fast turnaround)
+const TELEGRAM_CHANNELS = [
+  { name: "Al Arabiya (Telegram)", channel: "alarabiya_en" },
+  { name: "TRT World (Telegram)",  channel: "trtworld" },
+  { name: "BBC News (Telegram)",   channel: "bbcnews" },
+  { name: "Reuters (Telegram)",    channel: "reutersagency" },
+];
+
+// ── Reddit JSON subreddits ───────────────────────────────────────────────────
+// Reddit's public /new.json endpoint requires no API key.  We target subreddits
+// not already covered by the RSS feeds above, and filter by score ≥ 20 so only
+// community-upvoted (more likely accurate) posts are included.
+//
+// r/worldnews and r/geopolitics are already in RSS_SOURCES; these extend coverage:
+//   UkrainianConflict – focused conflict subreddit, high signal-to-noise
+//   MiddleEastNews    – regional specialist
+//   BreakingNews      – multi-topic, fast but noisier → higher score threshold
+const REDDIT_JSON_SUBREDDITS = [
+  { name: "Reddit UkrainianConflict", sub: "UkrainianConflict", minScore: 20 },
+  { name: "Reddit MiddleEastNews",    sub: "MiddleEastNews",    minScore: 20 },
+  { name: "Reddit BreakingNews",      sub: "BreakingNews",      minScore: 50 },
+];
 
 // ── Classification keyword lists ─────────────────────────────────────────────
 const HIGH_VIOLENT = [
@@ -372,36 +414,36 @@ function aggregateCountries(events: NewsEvent[]): CountryNewsData[] {
 function generateMockData(): NewsMapData {
   const now = new Date();
   const h = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
-  const raw: Array<Omit<NewsEvent, "countryCode"> & { countryName: string }> = [
-    { title: "Explosion near government building kills several", source: "Al Jazeera", time: h(1),  country: "Iraq",         countryName: "Iraq",         severity: "high",   category: "violent"  },
-    { title: "Airstrike targets militant positions in northern region",  source: "BBC",        time: h(2),  country: "Syria",        countryName: "Syria",        severity: "high",   category: "violent"  },
-    { title: "Missile strike reported on port city",                     source: "Al Jazeera", time: h(1.5),country: "Yemen",        countryName: "Yemen",        severity: "high",   category: "violent"  },
-    { title: "Casualties reported after drone strike",                   source: "BBC",        time: h(3),  country: "Ukraine",      countryName: "Ukraine",      severity: "high",   category: "violent"  },
-    { title: "Bombing attack on market leaves dozens dead",              source: "Guardian",   time: h(4),  country: "Afghanistan",  countryName: "Afghanistan",  severity: "high",   category: "violent"  },
-    { title: "Mass protests turn violent in capital",                    source: "DW",         time: h(5),  country: "Iran",         countryName: "Iran",         severity: "high",   category: "violent"  },
-    { title: "Stock market crash wipes billions off exchange",           source: "BBC",        time: h(2),  country: "China",        countryName: "China",        severity: "high",   category: "economic" },
-    { title: "Currency collapses amid economic meltdown",               source: "Guardian",   time: h(6),  country: "Venezuela",    countryName: "Venezuela",    severity: "high",   category: "economic" },
-    { title: "Banking crisis deepens as runs continue",                  source: "BBC",        time: h(8),  country: "Nigeria",      countryName: "Nigeria",      severity: "high",   category: "economic" },
-    { title: "Trade embargo escalates trade war tensions",               source: "Al Jazeera", time: h(3),  country: "Russia",       countryName: "Russia",       severity: "high",   category: "economic" },
-    { title: "Riot police clash with demonstrators downtown",            source: "Guardian",   time: h(7),  country: "France",       countryName: "France",       severity: "medium", category: "violent"  },
-    { title: "Armed confrontation near disputed border",                 source: "BBC",        time: h(10), country: "India",        countryName: "India",        severity: "medium", category: "violent"  },
-    { title: "Kidnapping of journalists reported in conflict zone",      source: "Al Jazeera", time: h(12), country: "Libya",        countryName: "Libya",        severity: "medium", category: "violent"  },
-    { title: "Thousands march in peaceful climate demonstration",        source: "BBC",        time: h(4),  country: "Germany",      countryName: "Germany",      severity: "low",    category: "minor"    },
-    { title: "Civil unrest follows disputed election results",           source: "Al Jazeera", time: h(11), country: "Ethiopia",     countryName: "Ethiopia",     severity: "low",    category: "minor"    },
-    { title: "Evacuation ordered after minor earthquake",               source: "DW",         time: h(15), country: "Japan",        countryName: "Japan",        severity: "low",    category: "minor"    },
-    { title: "Food shortage worsens amid supply chain collapse",         source: "Al Jazeera", time: h(6),  country: "Sudan",        countryName: "Sudan",        severity: "high",   category: "economic" },
-    { title: "Mass casualties in coordinated terrorist attack",          source: "BBC",        time: h(2),  country: "Somalia",      countryName: "Somalia",      severity: "high",   category: "violent"  },
-    { title: "Tensions rise as military buildup continues",              source: "DW",         time: h(8),  country: "North Korea",  countryName: "North Korea",  severity: "low",    category: "minor"      },
-    { title: "Violent clashes erupt at border crossing",                source: "Al Jazeera", time: h(16), country: "Myanmar",      countryName: "Myanmar",      severity: "medium", category: "violent"    },
-    { title: "Neo-nazi march through city centre draws counter-protests", source: "Guardian",  time: h(5),  country: "Germany",      countryName: "Germany",      severity: "medium", category: "extremism"  },
-    { title: "Antisemitic attack on synagogue injures worshippers",      source: "BBC",        time: h(3),  country: "France",       countryName: "France",       severity: "high",   category: "extremism"  },
-    { title: "White supremacist rally triggers clashes with antifa",     source: "Guardian",   time: h(9),  country: "United States", countryName: "United States",  severity: "medium", category: "extremism"  },
-    { title: "Far-right extremist group banned after hate march",        source: "BBC",        time: h(14), country: "United Kingdom", countryName: "United Kingdom", severity: "medium", category: "extremism"  },
+  const raw: Omit<NewsEvent, "countryCode">[] = [
+    { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent"   },
+    { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent"   },
+    { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"   },
+    { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"   },
+    { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"   },
+    { title: "Mass protests turn violent in capital",                      source: "DW",         time: h(5),   country: "Iran",          severity: "high",   category: "violent"   },
+    { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic"  },
+    { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic"  },
+    { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic"  },
+    { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic"  },
+    { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"   },
+    { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"   },
+    { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"   },
+    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"     },
+    { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"     },
+    { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"     },
+    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic"  },
+    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"   },
+    { title: "Tensions rise as military buildup continues",                source: "DW",         time: h(8),   country: "North Korea",   severity: "low",    category: "minor"     },
+    { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"   },
+    { title: "Neo-nazi march through city centre draws counter-protests",  source: "Guardian",   time: h(5),   country: "Germany",       severity: "medium", category: "extremism" },
+    { title: "Antisemitic attack on synagogue injures worshippers",        source: "BBC",        time: h(3),   country: "France",        severity: "high",   category: "extremism" },
+    { title: "White supremacist rally triggers clashes with antifa",       source: "Guardian",   time: h(9),   country: "United States", severity: "medium", category: "extremism" },
+    { title: "Far-right extremist group banned after hate march",          source: "BBC",        time: h(14),  country: "United Kingdom",severity: "medium", category: "extremism" },
   ];
   const events: NewsEvent[] = raw
     .map((e) => {
-      const info = KEYWORD_MAP.get(e.countryName.toLowerCase());
-      return info ? { title: e.title, source: e.source, time: e.time, country: e.country, countryCode: info.code, severity: e.severity, category: e.category } : null;
+      const info = KEYWORD_MAP.get(e.country.toLowerCase());
+      return info ? { ...e, countryCode: info.code } : null;
     })
     .filter((e): e is NewsEvent => e !== null);
   return { countries: aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
@@ -422,14 +464,16 @@ const parser = new Parser({
   headers: {
     // A descriptive but browser-compatible User-Agent reduces bot-detection
     // blocks from sites like Al Jazeera that filter automated UA strings.
-    "User-Agent": "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)",
+    "User-Agent": NEWS_MAP_UA,
     "Accept": "application/rss+xml, application/xml, text/xml, */*",
   },
 });
 
 async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
-  const results = await Promise.allSettled(
-    RSS_SOURCES.map(async (src) => {
+  // Run RSS feeds, Telegram channels, and Reddit JSON subreddits concurrently.
+  // Each group uses Promise.allSettled so a failed source never blocks others.
+  const [rssResults, telegramResults, redditResults] = await Promise.all([
+    Promise.allSettled(RSS_SOURCES.map(async (src) => {
       const feed = await parser.parseURL(src.url);
       const events: NewsEvent[] = [];
       for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
@@ -441,10 +485,13 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         // Try title-only detection first: prevents an outlet's own country
         // (appearing in the snippet/byline) from overriding the country named
         // in the headline (e.g. Indian paper reporting on Bolivia).
-        // For the full-text fallback, strip outlet names that contain country
-        // keywords (e.g. "France 24" contains "france"; "Al Jazeera" is safe).
+        // Strip outlet names that contain country keywords from BOTH the title
+        // and snippet before detection — e.g. "France 24" in a headline like
+        // "France 24 reporter killed in Gaza" would otherwise map the event to
+        // France instead of the real country.
+        const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
         const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
-        const country = detectCountry(item.title) ?? detectCountry(`${item.title} ${cleanedSnippet}`);
+        const country = detectCountry(cleanedTitle) ?? detectCountry(`${cleanedTitle} ${cleanedSnippet}`);
         if (!country) continue;
         // isoDate is normalised by rss-parser; pubDate can be in any locale format
         const rawTime = item.isoDate ?? item.pubDate;
@@ -464,13 +511,18 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         });
       }
       return events;
-    })
-  );
-  // Deduplicate by title (same story from multiple feeds)
+    })),
+    Promise.allSettled(TELEGRAM_CHANNELS.map(fetchTelegramChannel)),
+    Promise.allSettled(REDDIT_JSON_SUBREDDITS.map(fetchRedditJSON)),
+  ]);
+
+  // Merge all results; track succeeded count across all source types
   const seen = new Set<string>();
   const all: NewsEvent[] = [];
   let succeeded = 0;
-  for (const r of results) {
+  const total = RSS_SOURCES.length + TELEGRAM_CHANNELS.length + REDDIT_JSON_SUBREDDITS.length;
+
+  for (const r of [...rssResults, ...telegramResults, ...redditResults]) {
     if (r.status !== "fulfilled") continue;
     succeeded++;
     for (const ev of r.value) {
@@ -478,7 +530,143 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
       if (!seen.has(key)) { seen.add(key); all.push(ev); }
     }
   }
-  return { events: all, feedStats: { succeeded, total: RSS_SOURCES.length } };
+  return { events: all, feedStats: { succeeded, total } };
+}
+
+// ── Telegram channel scraper ─────────────────────────────────────────────────
+// t.me/s/{channel} is a public, no-login HTML page listing recent messages.
+// We extract message text + timestamps via regex; no external HTML parser needed.
+
+async function fetchTelegramChannel(src: { name: string; channel: string }): Promise<NewsEvent[]> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
+  try {
+    const res = await fetch(`https://t.me/s/${src.channel}`, {
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": NEWS_MAP_UA,
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+
+    // Extract (text, datetime) pairs.  Telegram embeds message text inside
+    // <div class="tgme_widget_message_text …">…</div> and a <time datetime="…">
+    // element inside the same message wrapper.  We match them in document order.
+    // Note: the simple tag-stripping regex is adequate for Telegram's controlled
+    // message HTML (no `>` inside attribute values in message content).
+    const msgRe  = /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
+    const timeRe = /<time\s+datetime="([^"]+)"/g;
+
+    const texts: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = msgRe.exec(html)) !== null) {
+      // Strip HTML tags; collapse whitespace
+      const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      if (text.length > 20) texts.push(text);
+    }
+    // If the page yielded no messages, the channel is private, empty, or the
+    // HTML structure changed — bail early so the failure is visible in feedStats.
+    if (texts.length === 0) return [];
+
+    const times: string[] = [];
+    while ((m = timeRe.exec(html)) !== null) times.push(m[1]);
+
+    const events: NewsEvent[] = [];
+    const limit = Math.min(texts.length, ARTICLES_PER_FEED);
+    for (let i = 0; i < limit; i++) {
+      const text = texts[i];
+      const cls  = classifyEvent(text);
+      if (!cls) continue;
+      const cleanedText = text.replace(OUTLET_NAME_RE, "");
+      const country     = detectCountry(cleanedText);
+      if (!country) continue;
+      // Use the per-message timestamp when available; fall back to now if the
+      // times array is shorter than the texts array (shouldn't happen with valid
+      // Telegram HTML but defensive here so we never assign a wrong timestamp).
+      const rawTime    = times[i];
+      const parsedDate = rawTime ? new Date(rawTime) : null;
+      const time = parsedDate && !isNaN(parsedDate.getTime())
+        ? parsedDate.toISOString()
+        : new Date().toISOString();
+      events.push({
+        title: text.slice(0, 200),
+        source: src.name,
+        time,
+        country: country.name,
+        countryCode: country.code,
+        severity: cls.severity,
+        category: cls.category,
+      });
+    }
+    return events;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Reddit JSON fetch ────────────────────────────────────────────────────────
+// Reddit's /new.json endpoint requires no API key for public subreddits.
+// We filter by minimum score to reduce low-quality posts, then apply the same
+// classify/detect pipeline as RSS articles.
+
+interface RedditPost {
+  data: {
+    title: string;
+    url: string;
+    selftext: string;
+    created_utc: number;
+    score: number;
+  };
+}
+
+async function fetchRedditJSON(
+  src: { name: string; sub: string; minScore: number }
+): Promise<NewsEvent[]> {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
+  try {
+    const res = await fetch(
+      `https://www.reddit.com/r/${src.sub}/new.json?limit=25`,
+      {
+        signal: ctrl.signal,
+        headers: {
+          "User-Agent": NEWS_MAP_UA,
+          "Accept": "application/json",
+        },
+      }
+    );
+    if (!res.ok) return [];
+    const json = await res.json() as { data?: { children?: RedditPost[] } };
+    const posts = json?.data?.children ?? [];
+    const events: NewsEvent[] = [];
+    for (const post of posts.slice(0, ARTICLES_PER_FEED)) {
+      const { title, url, selftext, created_utc, score } = post.data;
+      if (!title || score < src.minScore) continue;
+      const text = `${title} ${selftext ?? ""}`;
+      const cls  = classifyEvent(text);
+      if (!cls) continue;
+      const cleanedTitle = title.replace(OUTLET_NAME_RE, "");
+      const cleanedBody  = (selftext ?? "").replace(OUTLET_NAME_RE, "");
+      const country = detectCountry(cleanedTitle) ?? detectCountry(`${cleanedTitle} ${cleanedBody}`);
+      if (!country) continue;
+      events.push({
+        title,
+        source: src.name,
+        time: new Date(created_utc * 1000).toISOString(),
+        country: country.name,
+        countryCode: country.code,
+        severity: cls.severity,
+        category: cls.category,
+        link: url,
+      });
+    }
+    return events;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Vercel serverless handler ────────────────────────────────────────────────
