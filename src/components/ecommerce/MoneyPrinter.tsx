@@ -137,9 +137,9 @@ export default function MoneyPrinter() {
         >
           🖨️
         </span>
-        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           Money Printer
-        </span>
+        </h3>
       </div>
 
       {/* Central bank rows */}
