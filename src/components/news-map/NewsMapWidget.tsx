@@ -32,13 +32,13 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#6522CC"; // brand-500 electric indigo — used for hover AND trending region highlight
+const HOVER_FILL = "#FFD300"; // brand-500 gold — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Default ping colour for all event markers — matches the hover/trending region fill */
-const EVENT_PING_FILL = "#6522CC";   // brand-500 electric indigo
+const EVENT_PING_FILL = "#FFD300";   // brand-500 gold
 /** Ping colour for trending-country markers */
-const TRENDING_PING_FILL = "#A78BFA"; // brand-300 bright electric lavender
+const TRENDING_PING_FILL = "#E5A900"; // brand-600 amber
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
