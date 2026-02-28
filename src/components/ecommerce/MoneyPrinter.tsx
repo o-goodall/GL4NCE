@@ -177,10 +177,6 @@ export default function MoneyPrinter() {
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
                   …
                 </span>
-              ) : s.status === "error" ? (
-                <Badge color="light" size="sm">
-                  N/A
-                </Badge>
               ) : (
                 <Badge color={isOn ? "success" : "light"} size="sm">
                   <span
