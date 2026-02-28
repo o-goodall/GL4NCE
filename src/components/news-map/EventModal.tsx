@@ -17,7 +17,7 @@ const CATEGORY_STYLES: Record<EventCategory, string> = {
 const ALERT_LEVEL_META: Record<AlertLevel, { label: string; className: string }> = {
   critical: { label: "CRITICAL",  className: "bg-error-800 text-white animate-pulse" },
   high:     { label: "HIGH",      className: "bg-warning-800 text-white" },
-  medium:   { label: "MEDIUM",    className: "bg-brand-500 text-white" },
+  medium:   { label: "MEDIUM",    className: "bg-brand-500 text-gray-900" },
   watch:    { label: "WATCH",     className: "bg-gray-600 text-white" },
 };
 
