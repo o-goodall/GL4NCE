@@ -198,6 +198,9 @@ const RSS_SOURCES = [
   // GDELT monitors millions of global news articles and surfaces conflict events
   // within hours. No rate limits. timespan=6h aligns with our baseline window.
   { name: "GDELT", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+conflict+OR+war+OR+explosion)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
+  // A second GDELT feed scoped to the last 1 hour ensures the trending window
+  // always has enough recent articles even if the broader baseline feed is sparse.
+  { name: "GDELT Breaking", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+explosion+OR+shooting+OR+casualties)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=1h" },
   // ── Community / social signal (no API key required) ────────────────────────
   // Reddit r/worldnews and r/geopolitics users post breaking news within minutes
   // of events occurring — often faster than traditional RSS feeds.
@@ -209,9 +212,42 @@ const RSS_SOURCES = [
 const ARTICLES_PER_FEED = 20;
 
 /** Outlet name patterns that contain country keywords and must be stripped from
- *  content snippets before full-text country detection to prevent false attribution.
- *  "France 24" → contains "france"; all other current sources are safe. */
+ *  both titles and content snippets before country detection to prevent false
+ *  attribution.  "France 24" → contains "france"; all other current sources are safe. */
 const OUTLET_NAME_RE = /\bfrance\s*24\b/gi;
+
+// ── Telegram public channels ─────────────────────────────────────────────────
+// t.me/s/{channel} returns a public HTML page — no login or API key required.
+// These outlets post breaking news to Telegram within minutes of events, often
+// ahead of their own RSS feeds.  HTML scraping is used since Telegram has no
+// public RSS endpoint for channels.
+//
+// Selected for English-language reliability and geopolitical breadth:
+//   alarabiya_en  – Al Arabiya English (Middle East / Asia focus)
+//   trtworld      – TRT World (broad international coverage)
+//   bbcnews       – BBC News (global)
+//   reutersagency – Reuters (newswire, fast turnaround)
+const TELEGRAM_CHANNELS = [
+  { name: "Al Arabiya (Telegram)", channel: "alarabiya_en" },
+  { name: "TRT World (Telegram)",  channel: "trtworld" },
+  { name: "BBC News (Telegram)",   channel: "bbcnews" },
+  { name: "Reuters (Telegram)",    channel: "reutersagency" },
+];
+
+// ── Reddit JSON subreddits ───────────────────────────────────────────────────
+// Reddit's public /new.json endpoint requires no API key.  We target subreddits
+// not already covered by the RSS feeds above, and filter by score ≥ 20 so only
+// community-upvoted (more likely accurate) posts are included.
+//
+// r/worldnews and r/geopolitics are already in RSS_SOURCES; these extend coverage:
+//   UkrainianConflict – focused conflict subreddit, high signal-to-noise
+//   MiddleEastNews    – regional specialist
+//   BreakingNews      – multi-topic, fast but noisier → higher score threshold
+const REDDIT_JSON_SUBREDDITS = [
+  { name: "Reddit UkrainianConflict", sub: "UkrainianConflict", minScore: 20 },
+  { name: "Reddit MiddleEastNews",    sub: "MiddleEastNews",    minScore: 20 },
+  { name: "Reddit BreakingNews",      sub: "BreakingNews",      minScore: 50 },
+];
 
 // ── Classification keyword lists ─────────────────────────────────────────────
 const HIGH_VIOLENT = [
@@ -428,8 +464,10 @@ const parser = new Parser({
 });
 
 async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
-  const results = await Promise.allSettled(
-    RSS_SOURCES.map(async (src) => {
+  // Run RSS feeds, Telegram channels, and Reddit JSON subreddits concurrently.
+  // Each group uses Promise.allSettled so a failed source never blocks others.
+  const [rssResults, telegramResults, redditResults] = await Promise.all([
+    Promise.allSettled(RSS_SOURCES.map(async (src) => {
       const feed = await parser.parseURL(src.url);
       const events: NewsEvent[] = [];
       for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
@@ -441,10 +479,13 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         // Try title-only detection first: prevents an outlet's own country
         // (appearing in the snippet/byline) from overriding the country named
         // in the headline (e.g. Indian paper reporting on Bolivia).
-        // For the full-text fallback, strip outlet names that contain country
-        // keywords (e.g. "France 24" contains "france"; "Al Jazeera" is safe).
+        // Strip outlet names that contain country keywords from BOTH the title
+        // and snippet before detection — e.g. "France 24" in a headline like
+        // "France 24 reporter killed in Gaza" would otherwise map the event to
+        // France instead of the real country.
+        const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
         const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
-        const country = detectCountry(item.title) ?? detectCountry(`${item.title} ${cleanedSnippet}`);
+        const country = detectCountry(cleanedTitle) ?? detectCountry(`${cleanedTitle} ${cleanedSnippet}`);
         if (!country) continue;
         // isoDate is normalised by rss-parser; pubDate can be in any locale format
         const rawTime = item.isoDate ?? item.pubDate;
@@ -464,13 +505,18 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         });
       }
       return events;
-    })
-  );
-  // Deduplicate by title (same story from multiple feeds)
+    })),
+    Promise.allSettled(TELEGRAM_CHANNELS.map(fetchTelegramChannel)),
+    Promise.allSettled(REDDIT_JSON_SUBREDDITS.map(fetchRedditJSON)),
+  ]);
+
+  // Merge all results; track succeeded count across all source types
   const seen = new Set<string>();
   const all: NewsEvent[] = [];
   let succeeded = 0;
-  for (const r of results) {
+  const total = RSS_SOURCES.length + TELEGRAM_CHANNELS.length + REDDIT_JSON_SUBREDDITS.length;
+
+  for (const r of [...rssResults, ...telegramResults, ...redditResults]) {
     if (r.status !== "fulfilled") continue;
     succeeded++;
     for (const ev of r.value) {
@@ -478,7 +524,145 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
       if (!seen.has(key)) { seen.add(key); all.push(ev); }
     }
   }
-  return { events: all, feedStats: { succeeded, total: RSS_SOURCES.length } };
+  return { events: all, feedStats: { succeeded, total } };
+}
+
+// ── Telegram channel scraper ─────────────────────────────────────────────────
+// t.me/s/{channel} is a public, no-login HTML page listing recent messages.
+// We extract message text + timestamps via regex; no external HTML parser needed.
+const TELEGRAM_FETCH_TIMEOUT = 10_000;
+
+async function fetchTelegramChannel(src: { name: string; channel: string }): Promise<NewsEvent[]> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TELEGRAM_FETCH_TIMEOUT);
+  try {
+    const res = await fetch(`https://t.me/s/${src.channel}`, {
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+
+    // Extract (text, datetime) pairs.  Telegram embeds message text inside
+    // <div class="tgme_widget_message_text …">…</div> and a <time datetime="…">
+    // element inside the same message wrapper.  We match them in document order.
+    // Note: the simple tag-stripping regex is adequate for Telegram's controlled
+    // message HTML (no `>` inside attribute values in message content).
+    const msgRe  = /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
+    const timeRe = /<time\s+datetime="([^"]+)"/g;
+
+    const texts: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = msgRe.exec(html)) !== null) {
+      // Strip HTML tags; collapse whitespace
+      const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      if (text.length > 20) texts.push(text);
+    }
+    // If the page yielded no messages, the channel is private, empty, or the
+    // HTML structure changed — bail early so the failure is visible in feedStats.
+    if (texts.length === 0) return [];
+
+    const times: string[] = [];
+    while ((m = timeRe.exec(html)) !== null) times.push(m[1]);
+
+    const events: NewsEvent[] = [];
+    const limit = Math.min(texts.length, ARTICLES_PER_FEED);
+    for (let i = 0; i < limit; i++) {
+      const text = texts[i];
+      const cls  = classifyEvent(text);
+      if (!cls) continue;
+      const cleanedText = text.replace(OUTLET_NAME_RE, "");
+      const country     = detectCountry(cleanedText);
+      if (!country) continue;
+      // Use the per-message timestamp when available; fall back to now if the
+      // times array is shorter than the texts array (shouldn't happen with valid
+      // Telegram HTML but defensive here so we never assign a wrong timestamp).
+      const rawTime    = times[i];
+      const parsedDate = rawTime ? new Date(rawTime) : null;
+      const time = parsedDate && !isNaN(parsedDate.getTime())
+        ? parsedDate.toISOString()
+        : new Date().toISOString();
+      events.push({
+        title: text.slice(0, 200),
+        source: src.name,
+        time,
+        country: country.name,
+        countryCode: country.code,
+        severity: cls.severity,
+        category: cls.category,
+      });
+    }
+    return events;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Reddit JSON fetch ────────────────────────────────────────────────────────
+// Reddit's /new.json endpoint requires no API key for public subreddits.
+// We filter by minimum score to reduce low-quality posts, then apply the same
+// classify/detect pipeline as RSS articles.
+const REDDIT_JSON_TIMEOUT = 10_000;
+
+interface RedditPost {
+  data: {
+    title: string;
+    url: string;
+    selftext: string;
+    created_utc: number;
+    score: number;
+  };
+}
+
+async function fetchRedditJSON(
+  src: { name: string; sub: string; minScore: number }
+): Promise<NewsEvent[]> {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REDDIT_JSON_TIMEOUT);
+  try {
+    const res = await fetch(
+      `https://www.reddit.com/r/${src.sub}/new.json?limit=25`,
+      {
+        signal: ctrl.signal,
+        headers: {
+          "User-Agent": "GL4NCE-NewsMap/1.0 (compatible; +https://github.com/o-goodall/GL4NCE)",
+          "Accept": "application/json",
+        },
+      }
+    );
+    if (!res.ok) return [];
+    const json = await res.json() as { data?: { children?: RedditPost[] } };
+    const posts = json?.data?.children ?? [];
+    const events: NewsEvent[] = [];
+    for (const post of posts.slice(0, ARTICLES_PER_FEED)) {
+      const { title, url, selftext, created_utc, score } = post.data;
+      if (!title || score < src.minScore) continue;
+      const text = `${title} ${selftext ?? ""}`;
+      const cls  = classifyEvent(text);
+      if (!cls) continue;
+      const cleanedTitle = title.replace(OUTLET_NAME_RE, "");
+      const cleanedBody  = (selftext ?? "").replace(OUTLET_NAME_RE, "");
+      const country = detectCountry(cleanedTitle) ?? detectCountry(`${cleanedTitle} ${cleanedBody}`);
+      if (!country) continue;
+      events.push({
+        title,
+        source: src.name,
+        time: new Date(created_utc * 1000).toISOString(),
+        country: country.name,
+        countryCode: country.code,
+        severity: cls.severity,
+        category: cls.category,
+        link: url,
+      });
+    }
+    return events;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Vercel serverless handler ────────────────────────────────────────────────

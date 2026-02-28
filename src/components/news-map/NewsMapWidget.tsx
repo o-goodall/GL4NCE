@@ -1,11 +1,37 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject } from "@react-jvectormap/core/dist/types";
-import { worldMill } from "@react-jvectormap/world";
+import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
 import { useTheme } from "../../context/ThemeContext";
+
+// ── Map patch — remove French Guiana from France's SVG path ──────────────────
+// The worldMill dataset encodes French Guiana (South America) as a subpath of
+// the France (FR) region.  On hover, jVectorMap highlights the entire FR path,
+// causing an orange region to appear in South America when the user hovers over
+// mainland France — and vice-versa.  We strip the South-American subpath at
+// import time so only the two European polygons (mainland + Corsica) remain.
+const FRENCH_GUIANA_SUBPATH_START = "M289.01,278.39";
+const worldMill = (() => {
+  const fr = rawWorldMill.content.paths["FR"] as { path: string; name: string } | undefined;
+  if (!fr?.path.includes(FRENCH_GUIANA_SUBPATH_START)) return rawWorldMill;
+  const patchedPath = fr.path
+    .split(/(?=M)/)
+    .filter((seg) => !seg.startsWith(FRENCH_GUIANA_SUBPATH_START))
+    .join("");
+  return {
+    ...rawWorldMill,
+    content: {
+      ...rawWorldMill.content,
+      paths: {
+        ...rawWorldMill.content.paths,
+        FR: { ...fr, path: patchedPath },
+      },
+    },
+  } as typeof rawWorldMill;
+})();
 
 const HOVER_FILL = "#F7931A";
 const DARK_DEFAULT_FILL = "#344054";
@@ -62,9 +88,11 @@ const FILTER_LABELS: Record<CategoryFilter, string> = {
 const StableMap = memo(function StableMap({
   mapRef,
   onRegionClick,
+  onRegionTipShow,
 }: {
   mapRef: React.MutableRefObject<IMapObject | null>;
   onRegionClick: (e: Event, code: string) => void;
+  onRegionTipShow: (e: Event) => void;
 }) {
   return (
     <VectorMap
@@ -81,6 +109,7 @@ const StableMap = memo(function StableMap({
       // the actual jVectorMap runtime interface (missing overloads / `const`
       // object compatibility).  No runtime impact.
       onRegionClick={onRegionClick as any}
+      onRegionTipShow={onRegionTipShow as any}
       regionStyle={REGION_STYLE as any}
       regionLabelStyle={REGION_LABEL_STYLE as any}
       markerStyle={MARKER_STYLE as any}
@@ -152,6 +181,13 @@ export default function NewsMapWidget() {
       setSelected(country);
       setTappedCode(upperCode);
     }
+  }, []);
+
+  // Suppress jVectorMap's built-in region tooltips — the widget uses click-based
+  // modals instead, and the default tooltip causes confusion for multi-polygon
+  // regions (e.g. it would otherwise float over the wrong continent).
+  const handleRegionTipShow = useCallback((e: Event) => {
+    e.preventDefault();
   }, []);
 
   // Stable close handler — clears both the modal and the tap highlight
@@ -263,7 +299,7 @@ export default function NewsMapWidget() {
       {/* Map container */}
       <div className="relative overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
         <div ref={mapContainerRef} className="h-[300px] sm:h-[360px] xl:h-[420px]">
-          <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} />
+          <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} onRegionTipShow={handleRegionTipShow} />
         </div>
 
         {!loading && countries.length === 0 && (
