@@ -5,6 +5,10 @@ import { ApexOptions } from "apexcharts";
 // ── Constants ─────────────────────────────────────────────────────────────────
 const GOLD_POLL_MS = 10 * 60 * 1000; // 10 minutes
 
+// All-time high BTC/Gold ratio — source: BTC $106,182 / Gold $2,632 on 17 Dec 2024
+const ATH_RATIO = 40.33;
+const ATH_DATE  = "17 Dec 2024";
+
 // ── Historical BTC/Gold ratio (oz) — monthly averages Mar 2025 – Feb 2026 ────
 // BTC avg (USD): 83471, 89488, 102055, 107547, 115709, 113267, 111800, 107532, 94841, 87761, 82886, 69485
 // Gold avg (USD/oz): 2983, 3208, 3278, 3352, 3338, 3363, 3665, 4053, 4083, 4290, 4745, 5278
@@ -63,6 +67,27 @@ const chartOptions: ApexOptions = {
     y: { formatter: (v: number) => `${v} oz / BTC` },
   },
   legend: { show: false },
+  annotations: {
+    yaxis: [
+      {
+        y: ATH_RATIO,
+        borderColor: "#F59E0B",
+        borderWidth: 1,
+        strokeDashArray: 4,
+        label: {
+          text: `ATH ${ATH_RATIO} oz`,
+          position: "right",
+          offsetX: -4,
+          style: {
+            fontSize: "10px",
+            color: "#92400E",
+            background: "#FEF3C7",
+            padding: { top: 2, bottom: 2, left: 4, right: 4 },
+          },
+        },
+      },
+    ],
+  },
 };
 
 const chartSeries = [{ name: "BTC/Gold (oz)", data: HISTORY_RATIOS }];
@@ -171,6 +196,13 @@ export default function BtcGoldRatio() {
           </span>
         </span>
         <span className="text-gray-300 dark:text-gray-600">12-month history</span>
+        <span>
+          ATH{" "}
+          <span className="text-amber-500 dark:text-amber-400 font-medium">
+            {ATH_RATIO} oz
+          </span>
+          <span className="text-gray-400 dark:text-gray-500"> ({ATH_DATE})</span>
+        </span>
       </div>
 
       {/* Bar chart */}
