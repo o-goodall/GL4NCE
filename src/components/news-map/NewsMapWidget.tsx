@@ -444,86 +444,103 @@ export default function NewsMapWidget() {
       </div>
 
       {data && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {/* Alert-level summary — labelled badges so the meaning is immediately clear */}
-          <div className="flex items-center gap-2">
-            {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
-              alertCounts[level] > 0 ? (
-                <span
-                  key={level}
-                  className="inline-flex items-center gap-1 text-xs font-medium"
-                >
-                  <span
-                    className={`inline-flex h-2 w-2 rounded-full ${
-                      level === "critical" ? "bg-error-500 animate-pulse" :
-                      level === "high"     ? "bg-warning-500" :
-                                            "bg-brand-500"
-                    }`}
-                  />
-                  <span className="text-gray-500 dark:text-gray-400">
-                    {alertCounts[level]} {level}
-                  </span>
-                </span>
-              ) : null
-            )}
+        <div className="mt-3 space-y-2">
+          {/* Row 1: count summary + timestamp */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
+            </span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+              {data.usingMockData && " · demo data"}
+            </span>
           </div>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
-          </span>
-          {(activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
-            <>
-              <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {/* Conflict group pills — e.g. "🇮🇷 Iran × 🇮🇱 Israel" */}
-                {activeConflictGroupData.map((members) => (
-                  <span
-                    key={members.map((m) => m.code).join("-")}
-                    className="inline-flex items-center rounded-full border border-error-500/20 bg-error-500/10 dark:border-error-500/20 dark:bg-error-500/20"
-                  >
-                    {members.map((m, i) => (
-                      <span key={m.code} className="inline-flex items-center">
-                        {i > 0 && (
-                          <span className="select-none px-0.5 text-xs font-bold text-error-400 dark:text-error-500">
-                            ×
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handlePillClick(m)}
-                          className="inline-flex cursor-pointer items-center gap-1 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:text-error-900 dark:text-error-400 dark:hover:text-error-200"
-                        >
-                          <span aria-label={m.name}>{countryFlag(m.code)}</span>
-                          {m.name}
-                        </button>
+
+          {/* Row 2: alert-level key + trending pills (only when content exists) */}
+          {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0 ||
+            activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Alert-level badges */}
+              {(["critical", "high", "medium"] as AlertLevel[]).some((l) => alertCounts[l] > 0) && (
+                <div className="flex items-center gap-2">
+                  {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
+                    alertCounts[level] > 0 ? (
+                      <span key={level} className="inline-flex items-center gap-1 text-xs font-medium">
+                        <span
+                          className={`inline-flex h-2 w-2 rounded-full ${
+                            level === "critical" ? "bg-error-500 animate-pulse" :
+                            level === "high"     ? "bg-warning-500" :
+                                                  "bg-brand-500"
+                          }`}
+                        />
+                        <span className="text-gray-500 dark:text-gray-400">
+                          {alertCounts[level]} {level}
+                        </span>
                       </span>
-                    ))}
+                    ) : null
+                  )}
+                </div>
+              )}
+
+              {/* Separator between alert badges and trending pills */}
+              {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0) &&
+                (activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
+                <span className="text-gray-200 dark:text-gray-700" aria-hidden="true">|</span>
+              )}
+
+              {/* Trending section */}
+              {(activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                    Trending
                   </span>
-                ))}
-                {/* Solo trending pills — ordered by rank, rank shown as prominent "#N" prefix */}
-                {soloTrendingCountries.map((c) => (
-                  <button
-                    key={c.code}
-                    onClick={() => handlePillClick(c)}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
-                  >
-                    {c.trendingRank !== undefined && (
-                      <span
-                        className="shrink-0 font-bold underline text-error-500 dark:text-error-400"
-                        aria-label={`Rank ${c.trendingRank}`}
-                      >
-                        #{c.trendingRank}
-                      </span>
-                    )}
-                    <span aria-label={c.name}>{countryFlag(c.code)}</span>
-                    {c.name}
-                  </button>
-                ))}
-              </div>
-            </>
+                  {/* Conflict group pills — e.g. "🇮🇷 Iran × 🇮🇱 Israel" */}
+                  {activeConflictGroupData.map((members) => (
+                    <span
+                      key={members.map((m) => m.code).join("-")}
+                      className="inline-flex items-center rounded-full border border-error-500/20 bg-error-500/10 dark:border-error-500/20 dark:bg-error-500/20"
+                    >
+                      {members.map((m, i) => (
+                        <span key={m.code} className="inline-flex items-center">
+                          {i > 0 && (
+                            <span className="select-none px-0.5 text-xs font-bold text-error-400 dark:text-error-500">
+                              ×
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handlePillClick(m)}
+                            className="inline-flex cursor-pointer items-center gap-1 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:text-error-900 dark:text-error-400 dark:hover:text-error-200"
+                          >
+                            <span aria-label={m.name}>{countryFlag(m.code)}</span>
+                            {m.name}
+                          </button>
+                        </span>
+                      ))}
+                    </span>
+                  ))}
+                  {/* Solo trending pills — ordered by rank with #N prefix */}
+                  {soloTrendingCountries.map((c) => (
+                    <button
+                      key={c.code}
+                      onClick={() => handlePillClick(c)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
+                    >
+                      {c.trendingRank !== undefined && (
+                        <span
+                          className="shrink-0 font-bold underline text-error-500 dark:text-error-400"
+                          aria-label={`Rank ${c.trendingRank}`}
+                        >
+                          #{c.trendingRank}
+                        </span>
+                      )}
+                      <span aria-label={c.name}>{countryFlag(c.code)}</span>
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-          <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
-            Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-            {data.usingMockData && " · demo data"}
-          </span>
         </div>
       )}
 
