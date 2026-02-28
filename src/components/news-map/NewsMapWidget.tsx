@@ -35,10 +35,21 @@ const worldMill = (() => {
 const HOVER_FILL = "#FFD300"; // brand-500 gold — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
-/** Default ping colour for all event markers — matches the hover/trending region fill */
-const EVENT_PING_FILL = "#FFD300";   // brand-500 gold
-/** Ping colour for trending-country markers */
-const TRENDING_PING_FILL = "#E5A900"; // brand-600 amber
+/** Marker fill colour keyed by alert level — matches the legend dots in the footer */
+const ALERT_LEVEL_MARKER_FILL: Record<string, string> = {
+  critical: "#F04438", // error-500 red
+  high:     "#F79009", // warning-500 orange
+  medium:   "#FFD300", // brand-500 gold
+  watch:    "#98A2B3", // gray-400
+};
+
+/** Marker radius (px in SVG units) keyed by alert level */
+const ALERT_LEVEL_MARKER_RADIUS: Record<string, number> = {
+  critical: 7,
+  high:     6,
+  medium:   5,
+  watch:    4,
+};
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -47,9 +58,9 @@ const REGION_STYLE = {
   selectedHover: { fill: HOVER_FILL, fillOpacity: 0.8 },
 } as const;
 
-// Default marker style — individual marker colours are overridden imperatively via addMarker()
+// Default marker style — individual marker colours and radii are overridden per-marker via addMarker()
 const MARKER_STYLE = {
-  initial: { fill: EVENT_PING_FILL, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
+  initial: { fill: ALERT_LEVEL_MARKER_FILL.medium, stroke: "#ffffff", "stroke-width": 1.5, r: 5 },
   hover: { stroke: HOVER_FILL, cursor: "pointer" },
   selected: {},
   selectedHover: {},
@@ -298,26 +309,60 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
-  // Trending country markers are shown in a lighter terra cotta; all other events use the default fill.
+  // Marker colour and radius vary by alertLevel; critical markers get an
+  // expanding "ping ring" ghost circle (same effect as the notification bell).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || countries.length === 0) return;
+    const container = mapContainerRef.current;
+    if (!map || !container) return;
+
+    // Remove previously injected ping-ring ghost circles before re-syncing
+    container.querySelectorAll<SVGCircleElement>(".map-ping-ring").forEach((el) => el.remove());
+
     map.removeAllMarkers();
+    if (countries.length === 0) return;
+
     countries.forEach((country) => {
-      const isTrending = country.trending;
+      const alertLevel = country.alertLevel ?? "watch";
+      const fill = ALERT_LEVEL_MARKER_FILL[alertLevel] ?? ALERT_LEVEL_MARKER_FILL.watch;
+      const r = (ALERT_LEVEL_MARKER_RADIUS[alertLevel] ?? ALERT_LEVEL_MARKER_RADIUS.watch) + (country.trending ? 1 : 0);
+
       map.addMarker(
         country.code,
         {
           name: country.name,
           latLng: [country.lat, country.lng],
           style: {
-            fill: isTrending ? TRENDING_PING_FILL : EVENT_PING_FILL,
+            fill,
             stroke: "#ffffff",
-            r: isTrending ? 6 : 4,
+            "stroke-width": 1.5,
+            r,
           } as React.CSSProperties,
         },
         []
       );
+
+      // Inject an expanding ping-ring for critical markers, matching the
+      // notification-bell animate-ping pattern: a ghost circle that expands
+      // and fades while the main circle stays static.
+      if (alertLevel === "critical") {
+        container.querySelectorAll<SVGCircleElement>(`[data-index="${country.code}"]`).forEach((markerEl) => {
+          const cx = markerEl.getAttribute("cx") ?? "0";
+          const cy = markerEl.getAttribute("cy") ?? "0";
+          const parent = markerEl.parentElement;
+          if (parent) {
+            const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            ring.setAttribute("cx", cx);
+            ring.setAttribute("cy", cy);
+            ring.setAttribute("r", String(r));
+            ring.setAttribute("fill", fill);
+            ring.setAttribute("pointer-events", "none");
+            ring.classList.add("map-ping-ring");
+            // Insert before the main circle so the ring renders underneath it
+            parent.insertBefore(ring, markerEl);
+          }
+        });
+      }
     });
   }, [countries]);
 
