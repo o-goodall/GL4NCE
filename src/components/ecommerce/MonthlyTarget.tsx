@@ -264,6 +264,7 @@ export default function MonthlyTarget() {
           }}
         >
           <Chart
+            key={color}
             options={options}
             series={[chartValue]}
             type="radialBar"
@@ -271,10 +272,6 @@ export default function MonthlyTarget() {
           />
         </div>
 
-        {/* Sub-label */}
-        <p className="mx-auto mt-10 w-full max-w-[380px] text-center text-sm text-gray-500 dark:text-gray-400 sm:text-base">
-          AUD · Fortnightly DCA
-        </p>
       </div>
 
       {/* Signals footer */}
