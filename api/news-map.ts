@@ -36,6 +36,11 @@ interface NewsMapData {
   usingMockData?: boolean;
   /** Feed health — how many sources responded successfully out of total attempted */
   feedStats?: { succeeded: number; total: number };
+  /**
+   * Groups of ISO-3166 country codes trending together because they are directly
+   * involved in the same active conflict.  Each inner array has ≥ 2 codes.
+   */
+  conflictGroups?: string[][];
 }
 
 // ── Country database ─────────────────────────────────────────────────────────
@@ -318,6 +323,23 @@ const TRENDING_RECENT_HOURS = 1;
 /** Baseline window: the hours beyond TRENDING_RECENT_HOURS used to measure ongoing coverage */
 const TRENDING_BASELINE_HOURS = 5;
 
+/**
+ * Known active conflicts / wars.  When the top-trending country is a member of
+ * one of these groups AND the partner country(ies) also have recent events, all
+ * active members are surfaced as trending together.
+ */
+const CONFLICT_GROUPS: readonly (readonly string[])[] = [
+  ["RU", "UA"],     // Russia – Ukraine
+  ["IL", "IR"],     // Israel – Iran
+  ["IL", "PS"],     // Israel – Palestine / Gaza
+  ["IL", "LB"],     // Israel – Hezbollah / Lebanon
+  ["US", "CN"],     // US – China
+  ["IN", "PK"],     // India – Pakistan
+  ["KP", "KR"],     // North Korea – South Korea
+  ["AM", "AZ"],     // Armenia – Azerbaijan
+  ["SD", "SS"],     // Sudan – South Sudan
+] as const;
+
 function matchesAny(text: string, keywords: string[]): boolean {
   return keywords.some((kw) => text.includes(kw));
 }
@@ -345,7 +367,7 @@ function isWithinRetentionWindow(isoTime: string): boolean {
   return Date.now() - new Date(isoTime).getTime() <= RETENTION_HOURS * 3_600_000;
 }
 
-function computeTrending(events: NewsEvent[]): Set<string> {
+function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflictGroups: string[][] } {
   const now = Date.now();
   const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
   const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
@@ -376,28 +398,47 @@ function computeTrending(events: NewsEvent[]): Set<string> {
   }
 
   // Velocity = recent score relative to the per-hour baseline rate.
-  // A country whose coverage is suddenly spiking (new conflict) will have a
-  // far higher velocity than one with steady ongoing coverage (e.g. Ukraine),
-  // ensuring genuinely breaking events win over persistent background noise.
   let topCode: string | null = null;
   let topVelocity = 0;
   for (const [code, recentScore] of Object.entries(recentScores)) {
     if (recentScore < TRENDING_THRESHOLD) continue;
     const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
-    // Divide by at least 1 so a country with zero baseline still scores well.
     const velocity = recentScore / Math.max(baselineRate, 1);
     if (velocity > topVelocity) { topVelocity = velocity; topCode = code; }
   }
 
-  return topCode ? new Set([topCode]) : new Set();
+  if (!topCode) return { trending: new Set(), conflictGroups: [] };
+
+  const trending = new Set([topCode]);
+
+  // Set of all country codes that have any event in the full baseline window.
+  const codesWithEvents = new Set(
+    events
+      .filter((e) => new Date(e.time).getTime() >= baselineCutoff)
+      .map((e) => e.countryCode)
+  );
+
+  // Check each known conflict group.  If the top-trending country belongs to a
+  // group and ≥ 2 members have recent events, surface the whole active sub-group.
+  const activeConflictGroups: string[][] = [];
+  for (const group of CONFLICT_GROUPS) {
+    if (!group.includes(topCode)) continue;
+    const activeMembers = (group as readonly string[]).filter((code) => codesWithEvents.has(code));
+    if (activeMembers.length >= 2) {
+      activeMembers.forEach((c) => trending.add(c));
+      activeConflictGroups.push(activeMembers);
+    }
+  }
+
+  return { trending, conflictGroups: activeConflictGroups };
 }
 
-function aggregateCountries(events: NewsEvent[]): CountryNewsData[] {
+function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]; conflictGroups?: string[][] } {
   const recent = events.filter((e) => isWithinRetentionWindow(e.time));
-  const trending = computeTrending(recent);
+  const { trending, conflictGroups } = computeTrending(recent);
   const byCode: Record<string, NewsEvent[]> = {};
   for (const ev of recent) (byCode[ev.countryCode] ??= []).push(ev);
-  return Object.entries(byCode).map(([code, evs]) => {
+  const countries = Object.entries(byCode).map(([code, evs]) => {
     const info = KEYWORD_MAP.get(code.toLowerCase());
     return {
       code,
@@ -408,6 +449,7 @@ function aggregateCountries(events: NewsEvent[]): CountryNewsData[] {
       events: evs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()),
     };
   });
+  return { countries, ...(conflictGroups.length > 0 ? { conflictGroups } : {}) };
 }
 
 // ── Mock data — shown when all RSS feeds are unavailable ─────────────────────
@@ -415,12 +457,18 @@ function generateMockData(): NewsMapData {
   const now = new Date();
   const h = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
   const raw: Omit<NewsEvent, "countryCode">[] = [
+    // Iran + Israel events timestamped within the last hour so the conflict
+    // trending algorithm fires and shows "🇮🇷 Iran × 🇮🇱 Israel" in demo mode.
+    { title: "Iran fires ballistic missiles toward Israeli-linked targets in latest escalation", source: "Al Jazeera", time: h(0.3), country: "Iran",   severity: "high",   category: "violent"   },
+    { title: "IRGC deploys additional strike forces as regional tensions surge",                 source: "BBC",        time: h(0.6), country: "Iran",   severity: "high",   category: "violent"   },
+    { title: "Mass protests turn violent outside Tehran parliament building",                    source: "DW",         time: h(0.9), country: "Iran",   severity: "high",   category: "violent"   },
+    { title: "IDF launches retaliatory airstrikes on Iranian proxy positions in Syria",          source: "BBC",        time: h(0.4), country: "Israel", severity: "high",   category: "violent"   },
+    { title: "Israeli cabinet convenes emergency security meeting after missile barrage",        source: "Guardian",   time: h(0.8), country: "Israel", severity: "high",   category: "violent"   },
     { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent"   },
     { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent"   },
     { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"   },
     { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"   },
     { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"   },
-    { title: "Mass protests turn violent in capital",                      source: "DW",         time: h(5),   country: "Iran",          severity: "high",   category: "violent"   },
     { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic"  },
     { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic"  },
     { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic"  },
@@ -446,7 +494,7 @@ function generateMockData(): NewsMapData {
       return info ? { ...e, countryCode: info.code } : null;
     })
     .filter((e): e is NewsEvent => e !== null);
-  return { countries: aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
+  return { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
 }
 
 // ── Module-level response cache (5-minute TTL) ───────────────────────────────
@@ -683,7 +731,7 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
     const { events, feedStats } = await fetchAllEvents();
     const data: NewsMapData =
       events.length > 0
-        ? { countries: aggregateCountries(events), lastUpdated: new Date().toISOString(), feedStats }
+        ? { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), feedStats }
         : { ...generateMockData(), feedStats };
 
     _cache = data;
