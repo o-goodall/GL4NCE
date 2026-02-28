@@ -44,7 +44,7 @@ export default function UserAddressCard() {
                   Postal Code
                 </p>
                 <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                  ERT 2489
+                  85001
                 </p>
               </div>
 
@@ -53,7 +53,7 @@ export default function UserAddressCard() {
                   TAX ID
                 </p>
                 <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                  AS4568384
+                  00-0000000
                 </p>
               </div>
             </div>
@@ -107,12 +107,12 @@ export default function UserAddressCard() {
 
                 <div>
                   <Label>Postal Code</Label>
-                  <Input type="text" value="ERT 2489" />
+                  <Input type="text" value="85001" />
                 </div>
 
                 <div>
                   <Label>TAX ID</Label>
-                  <Input type="text" value="AS4568384" />
+                  <Input type="text" value="00-0000000" />
                 </div>
               </div>
             </div>
