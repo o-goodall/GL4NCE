@@ -211,6 +211,12 @@ const RSS_SOURCES = [
 
 const ARTICLES_PER_FEED = 20;
 
+/** Shared fetch timeout (ms) applied to all non-RSS sources */
+const FETCH_TIMEOUT = 10_000;
+
+/** Shared User-Agent used in the RSS parser, Telegram scraper, and Reddit JSON fetcher */
+const NEWS_MAP_UA = "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)";
+
 /** Outlet name patterns that contain country keywords and must be stripped from
  *  both titles and content snippets before country detection to prevent false
  *  attribution.  "France 24" → contains "france"; all other current sources are safe. */
@@ -408,36 +414,36 @@ function aggregateCountries(events: NewsEvent[]): CountryNewsData[] {
 function generateMockData(): NewsMapData {
   const now = new Date();
   const h = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
-  const raw: Array<Omit<NewsEvent, "countryCode"> & { countryName: string }> = [
-    { title: "Explosion near government building kills several", source: "Al Jazeera", time: h(1),  country: "Iraq",         countryName: "Iraq",         severity: "high",   category: "violent"  },
-    { title: "Airstrike targets militant positions in northern region",  source: "BBC",        time: h(2),  country: "Syria",        countryName: "Syria",        severity: "high",   category: "violent"  },
-    { title: "Missile strike reported on port city",                     source: "Al Jazeera", time: h(1.5),country: "Yemen",        countryName: "Yemen",        severity: "high",   category: "violent"  },
-    { title: "Casualties reported after drone strike",                   source: "BBC",        time: h(3),  country: "Ukraine",      countryName: "Ukraine",      severity: "high",   category: "violent"  },
-    { title: "Bombing attack on market leaves dozens dead",              source: "Guardian",   time: h(4),  country: "Afghanistan",  countryName: "Afghanistan",  severity: "high",   category: "violent"  },
-    { title: "Mass protests turn violent in capital",                    source: "DW",         time: h(5),  country: "Iran",         countryName: "Iran",         severity: "high",   category: "violent"  },
-    { title: "Stock market crash wipes billions off exchange",           source: "BBC",        time: h(2),  country: "China",        countryName: "China",        severity: "high",   category: "economic" },
-    { title: "Currency collapses amid economic meltdown",               source: "Guardian",   time: h(6),  country: "Venezuela",    countryName: "Venezuela",    severity: "high",   category: "economic" },
-    { title: "Banking crisis deepens as runs continue",                  source: "BBC",        time: h(8),  country: "Nigeria",      countryName: "Nigeria",      severity: "high",   category: "economic" },
-    { title: "Trade embargo escalates trade war tensions",               source: "Al Jazeera", time: h(3),  country: "Russia",       countryName: "Russia",       severity: "high",   category: "economic" },
-    { title: "Riot police clash with demonstrators downtown",            source: "Guardian",   time: h(7),  country: "France",       countryName: "France",       severity: "medium", category: "violent"  },
-    { title: "Armed confrontation near disputed border",                 source: "BBC",        time: h(10), country: "India",        countryName: "India",        severity: "medium", category: "violent"  },
-    { title: "Kidnapping of journalists reported in conflict zone",      source: "Al Jazeera", time: h(12), country: "Libya",        countryName: "Libya",        severity: "medium", category: "violent"  },
-    { title: "Thousands march in peaceful climate demonstration",        source: "BBC",        time: h(4),  country: "Germany",      countryName: "Germany",      severity: "low",    category: "minor"    },
-    { title: "Civil unrest follows disputed election results",           source: "Al Jazeera", time: h(11), country: "Ethiopia",     countryName: "Ethiopia",     severity: "low",    category: "minor"    },
-    { title: "Evacuation ordered after minor earthquake",               source: "DW",         time: h(15), country: "Japan",        countryName: "Japan",        severity: "low",    category: "minor"    },
-    { title: "Food shortage worsens amid supply chain collapse",         source: "Al Jazeera", time: h(6),  country: "Sudan",        countryName: "Sudan",        severity: "high",   category: "economic" },
-    { title: "Mass casualties in coordinated terrorist attack",          source: "BBC",        time: h(2),  country: "Somalia",      countryName: "Somalia",      severity: "high",   category: "violent"  },
-    { title: "Tensions rise as military buildup continues",              source: "DW",         time: h(8),  country: "North Korea",  countryName: "North Korea",  severity: "low",    category: "minor"      },
-    { title: "Violent clashes erupt at border crossing",                source: "Al Jazeera", time: h(16), country: "Myanmar",      countryName: "Myanmar",      severity: "medium", category: "violent"    },
-    { title: "Neo-nazi march through city centre draws counter-protests", source: "Guardian",  time: h(5),  country: "Germany",      countryName: "Germany",      severity: "medium", category: "extremism"  },
-    { title: "Antisemitic attack on synagogue injures worshippers",      source: "BBC",        time: h(3),  country: "France",       countryName: "France",       severity: "high",   category: "extremism"  },
-    { title: "White supremacist rally triggers clashes with antifa",     source: "Guardian",   time: h(9),  country: "United States", countryName: "United States",  severity: "medium", category: "extremism"  },
-    { title: "Far-right extremist group banned after hate march",        source: "BBC",        time: h(14), country: "United Kingdom", countryName: "United Kingdom", severity: "medium", category: "extremism"  },
+  const raw: Omit<NewsEvent, "countryCode">[] = [
+    { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent"   },
+    { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent"   },
+    { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"   },
+    { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"   },
+    { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"   },
+    { title: "Mass protests turn violent in capital",                      source: "DW",         time: h(5),   country: "Iran",          severity: "high",   category: "violent"   },
+    { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic"  },
+    { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic"  },
+    { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic"  },
+    { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic"  },
+    { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"   },
+    { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"   },
+    { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"   },
+    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"     },
+    { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"     },
+    { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"     },
+    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic"  },
+    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"   },
+    { title: "Tensions rise as military buildup continues",                source: "DW",         time: h(8),   country: "North Korea",   severity: "low",    category: "minor"     },
+    { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"   },
+    { title: "Neo-nazi march through city centre draws counter-protests",  source: "Guardian",   time: h(5),   country: "Germany",       severity: "medium", category: "extremism" },
+    { title: "Antisemitic attack on synagogue injures worshippers",        source: "BBC",        time: h(3),   country: "France",        severity: "high",   category: "extremism" },
+    { title: "White supremacist rally triggers clashes with antifa",       source: "Guardian",   time: h(9),   country: "United States", severity: "medium", category: "extremism" },
+    { title: "Far-right extremist group banned after hate march",          source: "BBC",        time: h(14),  country: "United Kingdom",severity: "medium", category: "extremism" },
   ];
   const events: NewsEvent[] = raw
     .map((e) => {
-      const info = KEYWORD_MAP.get(e.countryName.toLowerCase());
-      return info ? { title: e.title, source: e.source, time: e.time, country: e.country, countryCode: info.code, severity: e.severity, category: e.category } : null;
+      const info = KEYWORD_MAP.get(e.country.toLowerCase());
+      return info ? { ...e, countryCode: info.code } : null;
     })
     .filter((e): e is NewsEvent => e !== null);
   return { countries: aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
@@ -458,7 +464,7 @@ const parser = new Parser({
   headers: {
     // A descriptive but browser-compatible User-Agent reduces bot-detection
     // blocks from sites like Al Jazeera that filter automated UA strings.
-    "User-Agent": "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)",
+    "User-Agent": NEWS_MAP_UA,
     "Accept": "application/rss+xml, application/xml, text/xml, */*",
   },
 });
@@ -530,16 +536,15 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
 // ── Telegram channel scraper ─────────────────────────────────────────────────
 // t.me/s/{channel} is a public, no-login HTML page listing recent messages.
 // We extract message text + timestamps via regex; no external HTML parser needed.
-const TELEGRAM_FETCH_TIMEOUT = 10_000;
 
 async function fetchTelegramChannel(src: { name: string; channel: string }): Promise<NewsEvent[]> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TELEGRAM_FETCH_TIMEOUT);
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
   try {
     const res = await fetch(`https://t.me/s/${src.channel}`, {
       signal: ctrl.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)",
+        "User-Agent": NEWS_MAP_UA,
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.9",
       },
@@ -606,7 +611,6 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
 // Reddit's /new.json endpoint requires no API key for public subreddits.
 // We filter by minimum score to reduce low-quality posts, then apply the same
 // classify/detect pipeline as RSS articles.
-const REDDIT_JSON_TIMEOUT = 10_000;
 
 interface RedditPost {
   data: {
@@ -622,14 +626,14 @@ async function fetchRedditJSON(
   src: { name: string; sub: string; minScore: number }
 ): Promise<NewsEvent[]> {
   const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), REDDIT_JSON_TIMEOUT);
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
   try {
     const res = await fetch(
       `https://www.reddit.com/r/${src.sub}/new.json?limit=25`,
       {
         signal: ctrl.signal,
         headers: {
-          "User-Agent": "GL4NCE-NewsMap/1.0 (compatible; +https://github.com/o-goodall/GL4NCE)",
+          "User-Agent": NEWS_MAP_UA,
           "Accept": "application/json",
         },
       }

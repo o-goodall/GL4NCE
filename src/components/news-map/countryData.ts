@@ -145,9 +145,13 @@ export function latLngToPercent(lat: number, lng: number): { x: number; y: numbe
 }
 
 /** Deduplicate the country list (some codes appear twice due to copy-paste) */
-const seen = new Set<string>();
-export const UNIQUE_COUNTRIES = COUNTRIES.filter((c) => {
-  if (seen.has(c.code)) return false;
-  seen.add(c.code);
-  return true;
-});
+export const UNIQUE_COUNTRIES = COUNTRIES.filter(
+  (() => {
+    const seen = new Set<string>();
+    return (c: CountryInfo) => {
+      if (seen.has(c.code)) return false;
+      seen.add(c.code);
+      return true;
+    };
+  })()
+);

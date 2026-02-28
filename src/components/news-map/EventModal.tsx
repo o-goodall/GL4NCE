@@ -1,4 +1,4 @@
-import type { CountryNewsData, NewsEvent, EventCategory } from "./types";
+import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity } from "./types";
 
 interface EventModalProps {
   country: CountryNewsData | null;
@@ -12,7 +12,7 @@ const CATEGORY_STYLES: Record<EventCategory, string> = {
   extremism: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
-const SEVERITY_DOT: Record<string, string> = {
+const SEVERITY_DOT: Record<EventSeverity, string> = {
   high: "bg-error-500",
   medium: "bg-warning-500",
   low: "bg-success-500",
@@ -31,7 +31,7 @@ function EventRow({ event }: { event: NewsEvent }) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0 dark:border-gray-800">
       <span
-        className={`mt-1.5 shrink-0 h-2 w-2 rounded-full ${SEVERITY_DOT[event.severity] ?? "bg-gray-400"}`}
+        className={`mt-1.5 shrink-0 h-2 w-2 rounded-full ${SEVERITY_DOT[event.severity]}`}
         title={event.severity}
       />
       <div className="flex-1 min-w-0">
@@ -109,7 +109,7 @@ export default function EventModal({ country, onClose }: EventModalProps) {
         {/* Event list */}
         <div className="overflow-y-auto flex-1 px-5 custom-scrollbar">
           {country.events.map((ev) => (
-            <EventRow key={ev.title} event={ev} />
+            <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
           ))}
         </div>
       </div>

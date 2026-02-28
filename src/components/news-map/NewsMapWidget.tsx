@@ -129,7 +129,7 @@ export default function NewsMapWidget() {
   // Keep latest country lookup in a ref so the stable handler can access it
   const countryByCodeRef = useRef(new Map<string, CountryNewsData>());
 
-  const allCountries = data?.countries ?? [];
+  const allCountries = useMemo(() => data?.countries ?? [], [data]);
 
   // Compute which categories have at least one live event
   const activeCategories = useMemo<Set<CategoryFilter>>(() => {
@@ -158,14 +158,14 @@ export default function NewsMapWidget() {
       .filter((c) => c.events.length > 0);
   }, [allCountries, categoryFilter]);
 
-  const trendingCodes = useMemo(
-    () => countries.filter((c) => c.trending).map((c) => c.code),
-    [countries]
-  );
-
   const trendingCountries = useMemo(
     () => countries.filter((c) => c.trending),
     [countries]
+  );
+
+  const trendingCodes = useMemo(
+    () => trendingCountries.map((c) => c.code),
+    [trendingCountries]
   );
 
   countryByCodeRef.current = useMemo(
