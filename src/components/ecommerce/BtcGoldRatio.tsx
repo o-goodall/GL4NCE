@@ -1,18 +1,9 @@
 import { useEffect, useState } from "react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const BTC_POLL_MS  = 30 * 1000;      // 30 seconds
 const GOLD_POLL_MS = 10 * 60 * 1000; // 10 minutes
 
-// ── Fetch helpers ─────────────────────────────────────────────────────────────
-async function fetchBtcPrice(signal: AbortSignal): Promise<number> {
-  const res = await fetch("/api/btc-price", { signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = (await res.json()) as { price: number };
-  if (!data.price || isNaN(data.price)) throw new Error("Invalid BTC price");
-  return data.price;
-}
-
+// ── Gold price fetch ──────────────────────────────────────────────────────────
 async function fetchGoldPrice(signal: AbortSignal): Promise<number> {
   const res = await fetch("/api/gold-price", { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -26,17 +17,34 @@ export default function BtcGoldRatio() {
   const [btcPrice,  setBtcPrice]  = useState<number | null>(null);
   const [goldPrice, setGoldPrice] = useState<number | null>(null);
 
-  // Poll BTC price every 30 s
+  // Live BTC price via Binance WebSocket (same stream as BitcoinTicker)
   useEffect(() => {
-    const ctrl = new AbortController();
-    const poll = () =>
-      fetchBtcPrice(ctrl.signal).then(setBtcPrice).catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        if (import.meta.env.DEV) console.error("[BtcGoldRatio] BTC fetch error:", err);
-      });
-    poll();
-    const id = setInterval(poll, BTC_POLL_MS);
-    return () => { ctrl.abort(); clearInterval(id); };
+    const ws = new WebSocket(
+      "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker"
+    );
+
+    ws.onmessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data as string) as {
+          stream: string;
+          data: Record<string, string>;
+        };
+        if (msg.stream === "btcusdt@ticker") {
+          const price = parseFloat(msg.data["c"]);
+          if (!isNaN(price)) setBtcPrice(price);
+        }
+      } catch { /* ignore malformed frames */ }
+    };
+
+    ws.onerror = () => {
+      if (import.meta.env.DEV) console.error("[BtcGoldRatio] WebSocket error");
+    };
+
+    return () => {
+      if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+        ws.close();
+      }
+    };
   }, []);
 
   // Poll gold price every 10 min
