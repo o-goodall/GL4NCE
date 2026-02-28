@@ -5,9 +5,8 @@ import { ApexOptions } from "apexcharts";
 // ── Constants ─────────────────────────────────────────────────────────────────
 const GOLD_POLL_MS = 10 * 60 * 1000; // 10 minutes
 
-// All-time high BTC/Gold ratio — source: BTC $106,182 / Gold $2,632 on 17 Dec 2024
-const ATH_RATIO = 40.33;
-const ATH_DATE  = "17 Dec 2024";
+// Known all-time high — BTC $106,182 / Gold $2,632 on 17 Dec 2024
+const INITIAL_ATH = { ratio: 40.33, date: "17 Dec 2024" };
 
 // ── Historical BTC/Gold ratio (oz) — monthly averages Mar 2025 – Feb 2026 ────
 // BTC avg (USD): 83471, 89488, 102055, 107547, 115709, 113267, 111800, 107532, 94841, 87761, 82886, 69485
@@ -44,20 +43,15 @@ const chartOptions: ApexOptions = {
     axisBorder: { show: false },
     axisTicks: { show: false },
     labels: {
-      style: { fontSize: "12px", colors: "#6B7280" },
-      rotate: -30,
-      rotateAlways: false,
+      style: { fontSize: "11px", colors: "#6B7280" },
+      rotate: 0,
     },
     tooltip: { enabled: false },
   },
   yaxis: {
     labels: {
       style: { fontSize: "12px", colors: ["#6B7280"] },
-      formatter: (v: number) => `${v} oz`,
-    },
-    title: {
-      text: "oz per BTC",
-      style: { fontSize: "11px", color: "#9CA3AF", fontFamily: "Inter, sans-serif" },
+      formatter: (v: number) => `${v}`,
     },
   },
   grid: { yaxis: { lines: { show: true } } },
@@ -67,27 +61,6 @@ const chartOptions: ApexOptions = {
     y: { formatter: (v: number) => `${v} oz / BTC` },
   },
   legend: { show: false },
-  annotations: {
-    yaxis: [
-      {
-        y: ATH_RATIO,
-        borderColor: "#F59E0B",
-        borderWidth: 1,
-        strokeDashArray: 4,
-        label: {
-          text: `ATH ${ATH_RATIO} oz`,
-          position: "right",
-          offsetX: -4,
-          style: {
-            fontSize: "10px",
-            color: "#92400E",
-            background: "#FEF3C7",
-            padding: { top: 2, bottom: 2, left: 4, right: 4 },
-          },
-        },
-      },
-    ],
-  },
 };
 
 const chartSeries = [{ name: "BTC/Gold (oz)", data: HISTORY_RATIOS }];
@@ -105,6 +78,7 @@ async function fetchGoldPrice(signal: AbortSignal): Promise<number> {
 export default function BtcGoldRatio() {
   const [btcPrice,  setBtcPrice]  = useState<number | null>(null);
   const [goldPrice, setGoldPrice] = useState<number | null>(null);
+  const [ath, setAth] = useState(INITIAL_ATH);
 
   // Live BTC price via Binance WebSocket (same stream as BitcoinTicker)
   useEffect(() => {
@@ -152,6 +126,18 @@ export default function BtcGoldRatio() {
   const ratio =
     btcPrice !== null && goldPrice !== null ? btcPrice / goldPrice : null;
 
+  // Update ATH whenever a new high is reached
+  useEffect(() => {
+    if (ratio === null) return;
+    setAth((prev) => {
+      if (ratio <= prev.ratio) return prev;
+      const date = new Date().toLocaleDateString("en-GB", {
+        day: "numeric", month: "short", year: "numeric",
+      });
+      return { ratio: parseFloat(ratio.toFixed(2)), date };
+    });
+  }, [ratio]);
+
   const fmt = (n: number, decimals = 2) =>
     n.toLocaleString("en-US", {
       minimumFractionDigits: decimals,
@@ -160,24 +146,32 @@ export default function BtcGoldRatio() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
+    <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+      {/* Badge */}
+      <span className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+        3
+      </span>
+
       {/* Header row */}
       <div className="flex items-start justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            3
-          </span>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            BTC / Gold
-          </h3>
-        </div>
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+          BTC / Gold
+        </h3>
 
-        {/* Live ratio */}
-        <div className="flex items-baseline gap-1 text-right">
-          <span className="text-2xl font-bold text-gray-800 dark:text-white/90">
-            {ratio !== null ? fmt(ratio, 1) : "—"}
-          </span>
-          <span className="text-sm text-gray-500 dark:text-gray-400">oz</span>
+        {/* Live ratio + ATH — leave room for the badge */}
+        <div className="text-right mr-8">
+          <div className="flex items-baseline gap-1 justify-end">
+            <span className="text-2xl font-bold text-gray-800 dark:text-white/90">
+              {ratio !== null ? fmt(ratio, 1) : "—"}
+            </span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">oz</span>
+          </div>
+          <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+            ATH{" "}
+            <span className="text-amber-500 dark:text-amber-400 font-medium">
+              {ath.ratio} oz
+            </span>
+          </div>
         </div>
       </div>
 
@@ -196,18 +190,11 @@ export default function BtcGoldRatio() {
           </span>
         </span>
         <span className="text-gray-300 dark:text-gray-600">12-month history</span>
-        <span>
-          ATH{" "}
-          <span className="text-amber-500 dark:text-amber-400 font-medium">
-            {ATH_RATIO} oz
-          </span>
-          <span className="text-gray-400 dark:text-gray-500"> ({ATH_DATE})</span>
-        </span>
       </div>
 
       {/* Bar chart */}
-      <div className="max-w-full overflow-x-auto custom-scrollbar">
-        <div className="-ml-4 min-w-[500px] xl:min-w-full">
+      <div className="overflow-x-auto">
+        <div className="min-w-[480px]">
           <Chart options={chartOptions} series={chartSeries} type="bar" height={160} />
         </div>
       </div>
