@@ -358,12 +358,43 @@ export default function NewsMapWidget() {
             ring.setAttribute("fill", fill);
             ring.setAttribute("pointer-events", "none");
             ring.classList.add("map-ping-ring");
+            ring.dataset.country = country.code;
             // Insert before the main circle so the ring renders underneath it
             parent.insertBefore(ring, markerEl);
           }
         });
       }
     });
+
+    // jVectorMap calls repositionMarkers() on every zoom/pan, which updates
+    // the cx/cy attributes of marker circles directly rather than transforming
+    // their parent group.  The ping rings have static cx/cy captured at
+    // creation time and therefore drift away from their markers on zoom.
+    // A MutationObserver watching each marker's cx/cy attribute fixes this
+    // without hooking into jVectorMap internals.
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        const target = mutation.target as Element;
+        const code = target.getAttribute("data-index");
+        if (!code) continue;
+        const ring = container.querySelector<SVGCircleElement>(
+          `.map-ping-ring[data-country="${code}"]`
+        );
+        if (!ring) continue;
+        const cx = target.getAttribute("cx");
+        const cy = target.getAttribute("cy");
+        if (cx !== null) ring.setAttribute("cx", cx);
+        if (cy !== null) ring.setAttribute("cy", cy);
+      }
+    });
+
+    container
+      .querySelectorAll<Element>("[data-index]")
+      .forEach((markerEl) => {
+        observer.observe(markerEl, { attributes: true, attributeFilter: ["cx", "cy"] });
+      });
+
+    return () => observer.disconnect();
   }, [countries]);
 
   const totalEvents = useMemo(
