@@ -20,8 +20,8 @@ const BOOST_DIFF_DROP    = 10;
 const BOOST_HALVING      = 10;
 
 // Chart style tokens
-const CHART_FONT     = "Outfit, sans-serif";
-const CHART_TRACK_BG = "#E4E7EC"; // light-mode track; matches gray-200
+const CHART_FONT     = "Inter, sans-serif";
+const CHART_TRACK_BG = "#E5E5E7"; // light-mode track; matches gray-200
 
 function roundToNearest50(n: number): number {
   return Math.round(n / 50) * 50;

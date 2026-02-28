@@ -32,11 +32,11 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#465fff"; // brand-500 blue — used for hover AND trending region highlight
+const HOVER_FILL = "#A63A1E"; // brand-500 terra cotta — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Default ping colour for all event markers — matches the hover/trending region fill */
-const EVENT_PING_FILL = "#465fff";   // brand-500 blue
+const EVENT_PING_FILL = "#A63A1E";   // brand-500 terra cotta
 /** Ping colour for trending-country markers */
 const TRENDING_PING_FILL = "#f04438"; // error-500 (red)
 

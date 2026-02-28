@@ -6,9 +6,9 @@ import { MoreDotIcon } from "../../icons";
 import { useState } from "react";
 
 const options: ApexOptions = {
-  colors: ["#465FFF"],
+  colors: ["#A63A1E"],
   chart: {
-    fontFamily: "Outfit, sans-serif",
+    fontFamily: "Inter, sans-serif",
     type: "bar",
     height: 180,
     toolbar: {
@@ -57,7 +57,7 @@ const options: ApexOptions = {
     show: true,
     position: "top",
     horizontalAlign: "left",
-    fontFamily: "Outfit",
+    fontFamily: "Inter",
   },
   yaxis: {
     title: {

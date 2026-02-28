@@ -7,9 +7,9 @@ const options: ApexOptions = {
     position: "top",
     horizontalAlign: "left",
   },
-  colors: ["#465FFF", "#9CB9FF"],
+  colors: ["#A63A1E", "#C6C6CC"],
   chart: {
-    fontFamily: "Outfit, sans-serif",
+    fontFamily: "Inter, sans-serif",
     height: 310,
     type: "line",
     toolbar: {

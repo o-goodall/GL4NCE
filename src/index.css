@@ -1,4 +1,6 @@
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap")
+@import url("https://api.fontshare.com/v2/css?f[]=euclid-circular-a@400,500&display=swap")
+layer(base);
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap")
 layer(base);
 
 @import "tailwindcss";
@@ -7,7 +9,8 @@ layer(base);
 
 @theme {
   --font-*: initial;
-  --font-outfit: Outfit, sans-serif;
+  --font-euclid: "Euclid Circular A", "Plus Jakarta Sans", sans-serif;
+  --font-inter: Inter, sans-serif;
 
   --breakpoint-*: initial;
   --breakpoint-2xsm: 375px;
@@ -39,20 +42,20 @@ layer(base);
   --color-current: currentColor;
   --color-transparent: transparent;
   --color-white: #ffffff;
-  --color-black: #101828;
+  --color-black: #121212;
 
-  --color-brand-25: #f2f7ff;
-  --color-brand-50: #ecf3ff;
-  --color-brand-100: #dde9ff;
-  --color-brand-200: #c2d6ff;
-  --color-brand-300: #9cb9ff;
-  --color-brand-400: #7592ff;
-  --color-brand-500: #465fff;
-  --color-brand-600: #3641f5;
-  --color-brand-700: #2a31d8;
-  --color-brand-800: #252dae;
-  --color-brand-900: #262e89;
-  --color-brand-950: #161950;
+  --color-brand-25: #FEF7F5;
+  --color-brand-50: #FBF0EE;
+  --color-brand-100: #F5DCDA;
+  --color-brand-200: #EABBB5;
+  --color-brand-300: #D88D82;
+  --color-brand-400: #C46050;
+  --color-brand-500: #A63A1E;
+  --color-brand-600: #8E2F18;
+  --color-brand-700: #732511;
+  --color-brand-800: #591B0C;
+  --color-brand-900: #431308;
+  --color-brand-950: #2B0C05;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -68,18 +71,18 @@ layer(base);
   --color-blue-light-950: #062c41;
 
   --color-gray-25: #fcfcfd;
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f2f4f7;
-  --color-gray-200: #e4e7ec;
+  --color-gray-50: #F6F6F7;
+  --color-gray-100: #EFEFEF;
+  --color-gray-200: #E5E5E7;
   --color-gray-300: #d0d5dd;
-  --color-gray-400: #98a2b3;
+  --color-gray-400: #C6C6CC;
   --color-gray-500: #667085;
-  --color-gray-600: #475467;
+  --color-gray-600: #444449;
   --color-gray-700: #344054;
-  --color-gray-800: #1d2939;
-  --color-gray-900: #101828;
+  --color-gray-800: #262629;
+  --color-gray-900: #111112;
   --color-gray-950: #0c111d;
-  --color-gray-dark: #1a2231;
+  --color-gray-dark: #18181B;
 
   --color-orange-25: #fffaf5;
   --color-orange-50: #fff6ed;
@@ -146,8 +149,8 @@ layer(base);
   --shadow-theme-xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.05);
   --shadow-theme-xl: 0px 20px 24px -4px rgba(16, 24, 40, 0.08),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
-  --shadow-datepicker: -5px 0 0 #262d3c, 5px 0 0 #262d3c;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(70, 95, 255, 0.12);
+  --shadow-datepicker: -5px 0 0 #18181B, 5px 0 0 #18181B;
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(166, 58, 30, 0.12);
   --shadow-slider-navigation: 0px 1px 2px 0px rgba(16, 24, 40, 0.1),
     0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip: 0px 4px 6px -2px rgba(16, 24, 40, 0.05),
@@ -186,7 +189,14 @@ layer(base);
     cursor: pointer;
   }
   body {
-    @apply relative font-normal font-outfit z-1 bg-gray-50;
+    @apply relative font-normal font-inter z-1 bg-gray-50;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-euclid);
+    letter-spacing: -0.01em;
+  }
+  p {
+    line-height: 1.65;
   }
 }
 
@@ -523,13 +533,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #465fff;
+  background: #A63A1E;
   @apply !border-brand-500 !bg-brand-500 hover:!border-brand-500 hover:!bg-brand-500;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #465fff;
+  box-shadow: -10px 0 0 #A63A1E;
 }
 
 .flatpickr-months .flatpickr-prev-month svg,
