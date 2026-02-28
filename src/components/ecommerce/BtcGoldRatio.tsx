@@ -6,7 +6,10 @@ import { ApexOptions } from "apexcharts";
 const GOLD_POLL_MS = 10 * 60 * 1000; // 10 minutes
 
 // ── Historical BTC/Gold ratio (oz) — monthly averages Mar 2025 – Feb 2026 ────
-const HISTORY_MONTHS = ["Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb"];
+const HISTORY_MONTHS = [
+  "Mar '25","Apr '25","May '25","Jun '25","Jul '25","Aug '25",
+  "Sep '25","Oct '25","Nov '25","Dec '25","Jan '26","Feb '26",
+];
 const HISTORY_RATIOS = [28.1, 27.6, 31.4, 32.8, 36.2, 31.5, 22.9, 24.1, 33.5, 36.8, 36.1, 32.4];
 
 // ── Chart config ──────────────────────────────────────────────────────────────
@@ -15,7 +18,7 @@ const chartOptions: ApexOptions = {
   chart: {
     fontFamily: "Inter, sans-serif",
     type: "bar",
-    height: 160,
+    height: 180,
     toolbar: { show: false },
     background: "transparent",
   },
@@ -23,7 +26,7 @@ const chartOptions: ApexOptions = {
     bar: {
       horizontal: false,
       columnWidth: "39%",
-      borderRadius: 4,
+      borderRadius: 5,
       borderRadiusApplication: "end",
     },
   },
@@ -33,19 +36,28 @@ const chartOptions: ApexOptions = {
     categories: HISTORY_MONTHS,
     axisBorder: { show: false },
     axisTicks: { show: false },
-    labels: { style: { fontSize: "11px", colors: "#9CA3AF" } },
+    labels: {
+      style: { fontSize: "12px", colors: "#6B7280" },
+      rotate: -30,
+      rotateAlways: false,
+    },
+    tooltip: { enabled: false },
   },
   yaxis: {
     labels: {
-      style: { fontSize: "11px", colors: ["#9CA3AF"] },
-      formatter: (v: number) => `${v}oz`,
+      style: { fontSize: "12px", colors: ["#6B7280"] },
+      formatter: (v: number) => `${v} oz`,
+    },
+    title: {
+      text: "oz per BTC",
+      style: { fontSize: "11px", color: "#9CA3AF", fontFamily: "Inter, sans-serif" },
     },
   },
-  grid: { yaxis: { lines: { show: true } }, borderColor: "#F3F4F6" },
+  grid: { yaxis: { lines: { show: true } } },
   fill: { opacity: 1 },
   tooltip: {
-    x: { show: false },
-    y: { formatter: (v: number) => `${v} oz` },
+    x: { show: true },
+    y: { formatter: (v: number) => `${v} oz / BTC` },
   },
   legend: { show: false },
 };
