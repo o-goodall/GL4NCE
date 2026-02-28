@@ -1,5 +1,6 @@
 import BitcoinTicker from "./BitcoinTicker";
 import MoneyPrinter from "./MoneyPrinter";
+import BtcGoldRatio from "./BtcGoldRatio";
 
 export default function EcommerceMetrics() {
   return (
@@ -9,6 +10,11 @@ export default function EcommerceMetrics() {
 
       {/* <!-- Tile 2: Money Printer (Central Bank QE Monitor) --> */}
       <MoneyPrinter />
+
+      {/* <!-- Tile 3: BTC/Gold Hard Money Ratio --> */}
+      <div className="sm:col-span-2">
+        <BtcGoldRatio />
+      </div>
     </div>
   );
 }
