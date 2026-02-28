@@ -140,10 +140,6 @@ export default function MoneyPrinter() {
         <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
           Money Printer
         </span>
-        <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          Live
-        </span>
       </div>
 
       {/* Central bank rows */}
