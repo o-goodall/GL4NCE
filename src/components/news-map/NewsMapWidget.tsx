@@ -32,7 +32,7 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#F7931A";
+const HOVER_FILL = "#465fff"; // brand-500 blue — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Default ping colour for all event markers */
