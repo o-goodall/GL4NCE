@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
-import type { IMapObject } from "@react-jvectormap/core/dist/types";
+import type { IMapObject, ISVGElementStyleAttributes, IVectorMapProps } from "@react-jvectormap/core/dist/types";
 import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { useNewsMap } from "./useNewsMap";
@@ -51,25 +51,25 @@ const ALERT_LEVEL_MARKER_RADIUS: Record<string, number> = {
   watch:    4,
 };
 
-const REGION_STYLE = {
+const REGION_STYLE: ISVGElementStyleAttributes = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
   hover: { fillOpacity: 0.7, cursor: "pointer", fill: HOVER_FILL, stroke: "none" },
   selected: { fill: HOVER_FILL },
   selectedHover: { fill: HOVER_FILL, fillOpacity: 0.8 },
-} as const;
+};
 
 // Default marker style — individual marker colours and radii are overridden per-marker via addMarker()
-const MARKER_STYLE = {
-  initial: { fill: ALERT_LEVEL_MARKER_FILL.medium, stroke: "#ffffff", "stroke-width": 1.5, r: 5 },
+const MARKER_STYLE: ISVGElementStyleAttributes = {
+  initial: { fill: ALERT_LEVEL_MARKER_FILL.medium, stroke: "#ffffff", strokeWidth: 1.5 },
   hover: { stroke: HOVER_FILL, cursor: "pointer" },
   selected: {},
   selectedHover: {},
 };
 
-const REGION_LABEL_STYLE = {
+const REGION_LABEL_STYLE: ISVGElementStyleAttributes = {
   initial: { fill: "#35373e", fontWeight: 500, fontSize: "13px", stroke: "none" },
   hover: {}, selected: {}, selectedHover: {},
-} as const;
+};
 
 /** Convert an ISO-3166-1 alpha-2 country code to a flag emoji.
  *  Returns an empty string for invalid codes (non-alpha or wrong length). */
@@ -118,14 +118,14 @@ const StableMap = memo(function StableMap({
       zoomAnimate={true}
       zoomStep={1.5}
       markersSelectable={false}
-      // `as any` needed: @react-jvectormap type definitions are narrower than
-      // the actual jVectorMap runtime interface (missing overloads / `const`
-      // object compatibility).  No runtime impact.
-      onRegionClick={onRegionClick as any}
-      onRegionTipShow={onRegionTipShow as any}
-      regionStyle={REGION_STYLE as any}
-      regionLabelStyle={REGION_LABEL_STYLE as any}
-      markerStyle={MARKER_STYLE as any}
+      // `as unknown as` needed: @react-jvectormap type definitions reference
+      // JQuery.Event which is not available as a direct dependency; the actual
+      // runtime callbacks are fully compatible at the call site.
+      onRegionClick={onRegionClick as unknown as IVectorMapProps["onRegionClick"]}
+      onRegionTipShow={onRegionTipShow as unknown as IVectorMapProps["onRegionTipShow"]}
+      regionStyle={REGION_STYLE}
+      regionLabelStyle={REGION_LABEL_STYLE}
+      markerStyle={MARKER_STYLE}
     />
   );
 });
