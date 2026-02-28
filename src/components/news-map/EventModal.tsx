@@ -1,4 +1,4 @@
-import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity } from "./types";
+import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
 
 interface EventModalProps {
   country: CountryNewsData | null;
@@ -6,10 +6,19 @@ interface EventModalProps {
 }
 
 const CATEGORY_STYLES: Record<EventCategory, string> = {
-  violent:   "bg-error-100 text-error-700 dark:bg-error-900/30 dark:text-error-400",
-  minor:     "bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400",
-  economic:  "bg-blue-light-100 text-blue-light-700 dark:bg-blue-light-900/30 dark:text-blue-light-400",
-  extremism: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  violent:    "bg-error-100 text-error-700 dark:bg-error-900/30 dark:text-error-400",
+  minor:      "bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400",
+  economic:   "bg-blue-light-100 text-blue-light-700 dark:bg-blue-light-900/30 dark:text-blue-light-400",
+  extremism:  "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  escalation: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+};
+
+/** Alert level badge label + colour */
+const ALERT_LEVEL_META: Record<AlertLevel, { label: string; className: string }> = {
+  critical: { label: "CRITICAL",  className: "bg-error-500 text-white animate-pulse" },
+  high:     { label: "HIGH",      className: "bg-warning-500 text-white" },
+  medium:   { label: "MEDIUM",    className: "bg-brand-500 text-white" },
+  watch:    { label: "WATCH",     className: "bg-gray-400 text-white" },
 };
 
 const SEVERITY_DOT: Record<EventSeverity, string> = {
@@ -80,14 +89,21 @@ export default function EventModal({ country, onClose }: EventModalProps) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
-          <div className="flex items-center gap-2">
-            {country.trending && (
-              <span className="inline-flex h-2 w-2 rounded-full bg-error-500 animate-pulse" />
+          <div className="flex items-center gap-2 min-w-0">
+            {country.alertLevel !== "watch" && (
+              <span
+                className={`shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${ALERT_LEVEL_META[country.alertLevel].className}`}
+              >
+                {ALERT_LEVEL_META[country.alertLevel].label}
+              </span>
             )}
-            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">
+            {country.trending && (
+              <span className="shrink-0 inline-flex h-2 w-2 rounded-full bg-error-500 animate-pulse" />
+            )}
+            <h3 className="truncate text-base font-semibold text-gray-800 dark:text-white/90">
               {country.name}
             </h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
               {country.events.length} event{country.events.length !== 1 ? "s" : ""}
             </span>
           </div>

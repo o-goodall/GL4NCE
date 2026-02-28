@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject } from "@react-jvectormap/core/dist/types";
 import { worldMill as rawWorldMill } from "@react-jvectormap/world";
-import type { CountryNewsData, EventCategory } from "./types";
+import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
 import { useTheme } from "../../context/ThemeContext";
@@ -36,8 +36,22 @@ const worldMill = (() => {
 const HOVER_FILL = "#F7931A";
 const DARK_DEFAULT_FILL = "#344054";
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
-const PING_DEFAULT = "#ffffff";
-const PING_TRENDING = "#f04438";
+
+/** Map marker fill colour by alert level — used imperatively via addMarker() */
+const ALERT_PING: Record<AlertLevel, string> = {
+  critical: "#f04438", // error-500
+  high:     "#f79009", // warning-500
+  medium:   "#465fff", // brand-500
+  watch:    "#98a2b3", // gray-400
+};
+
+/** Marker radius by alert level */
+const ALERT_RADIUS: Record<AlertLevel, number> = {
+  critical: 8,
+  high:     6,
+  medium:   5,
+  watch:    4,
+};
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -46,9 +60,9 @@ const REGION_STYLE = {
   selectedHover: { fill: HOVER_FILL, fillOpacity: 0.8 },
 } as const;
 
-// Default marker style — individual marker colours are set imperatively via addMarker()
+// Default marker style — individual marker colours are overridden imperatively via addMarker()
 const MARKER_STYLE = {
-  initial: { fill: PING_DEFAULT, stroke: "#667085", "stroke-width": 1.5, r: 4 },
+  initial: { fill: ALERT_PING.watch, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
   hover: { stroke: HOVER_FILL, cursor: "pointer" },
   selected: {},
   selectedHover: {},
@@ -72,11 +86,12 @@ function countryFlag(code: string): string {
 type CategoryFilter = "all" | EventCategory;
 
 const FILTER_LABELS: Record<CategoryFilter, string> = {
-  all:       "All",
-  violent:   "Violent",
-  economic:  "Economic",
-  minor:     "Minor",
-  extremism: "Extremism",
+  all:        "All",
+  violent:    "Violent",
+  economic:   "Economic",
+  minor:      "Minor",
+  extremism:  "Extremism",
+  escalation: "Escalation",
 };
 
 /**
@@ -196,6 +211,38 @@ export default function NewsMapWidget() {
     setTappedCode(null);
   }, []);
 
+  // Open modal for a country and highlight it on the map (used by trending pills)
+  const handlePillClick = useCallback((country: CountryNewsData) => {
+    setSelected(country);
+    setTappedCode(country.code);
+  }, []);
+
+  // ── Desktop zoom controls ───────────────────────────────────────────────────
+  // jVectorMap exposes `setFocus({ scale, animate })` for programmatic zoom.
+  // The `scale` property is not part of the public IMapObject type but is a
+  // reliable runtime field on the underlying jVectorMap instance.  We use a
+  // type guard so the fallback value of 1 is used if the field is absent.
+  const getMapScale = (map: IMapObject): number => {
+    const raw = (map as unknown as Record<string, unknown>).scale;
+    return typeof raw === "number" ? raw : 1;
+  };
+
+  const handleZoomIn = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setFocus({ scale: Math.min(getMapScale(map) * 1.5, 12), animate: true });
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setFocus({ scale: Math.max(getMapScale(map) / 1.5, 1), animate: true });
+  }, []);
+
+  const handleZoomReset = useCallback(() => {
+    mapRef.current?.reset();
+  }, []);
+
   /**
    * Paint all jVectorMap region SVG paths with the correct fill using inline
    * styles. jVectorMap sets fills via the SVG `fill` *attribute*, which CSS
@@ -235,20 +282,23 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
+  // Marker size and colour reflect the country's alertLevel for a visual urgency
+  // gradient: critical (red/large) → high (amber) → medium (brand) → watch (gray).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || countries.length === 0) return;
     map.removeAllMarkers();
     countries.forEach((country) => {
+      const level = (country.alertLevel ?? "watch") as AlertLevel;
       map.addMarker(
         country.code,
         {
           name: country.name,
           latLng: [country.lat, country.lng],
           style: {
-            fill: country.trending ? PING_TRENDING : PING_DEFAULT,
-            stroke: country.trending ? "#ffffff" : "#667085",
-            r: country.trending ? 6 : 4,
+            fill: ALERT_PING[level],
+            stroke: "#ffffff",
+            r: ALERT_RADIUS[level],
           } as React.CSSProperties,
         },
         []
@@ -259,6 +309,38 @@ export default function NewsMapWidget() {
   const totalEvents = useMemo(
     () => countries.reduce((sum, c) => sum + c.events.length, 0),
     [countries]
+  );
+
+  /** Count of countries at each alert level — shown in the footer summary */
+  const alertCounts = useMemo(() => {
+    const counts: Record<AlertLevel, number> = { critical: 0, high: 0, medium: 0, watch: 0 };
+    for (const c of countries) counts[(c.alertLevel ?? "watch") as AlertLevel]++;
+    return counts;
+  }, [countries]);
+
+  // Resolve conflict groups from the data payload into CountryNewsData arrays,
+  // filtering to only groups where ≥ 2 trending members are present.
+  const activeConflictGroupData = useMemo<CountryNewsData[][]>(() => {
+    const groups = data?.conflictGroups ?? [];
+    return groups
+      .map((group) =>
+        group
+          .map((code) => trendingCountries.find((c) => c.code === code))
+          .filter((c): c is CountryNewsData => c !== undefined)
+      )
+      .filter((members) => members.length >= 2);
+  }, [data?.conflictGroups, trendingCountries]);
+
+  // Codes that are already shown inside a conflict group pill
+  const conflictGroupCodes = useMemo(
+    () => new Set(activeConflictGroupData.flatMap((g) => g.map((c) => c.code))),
+    [activeConflictGroupData]
+  );
+
+  // Trending countries that are NOT part of any conflict group (shown solo)
+  const soloTrendingCountries = useMemo(
+    () => trendingCountries.filter((c) => !conflictGroupCodes.has(c.code)),
+    [trendingCountries, conflictGroupCodes]
   );
 
   return (
@@ -298,7 +380,7 @@ export default function NewsMapWidget() {
 
       {/* Map container */}
       <div className="relative overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
-        <div ref={mapContainerRef} className="h-[300px] sm:h-[360px] xl:h-[420px]">
+        <div ref={mapContainerRef} className="h-[420px] sm:h-[520px] xl:h-[620px]">
           <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} onRegionTipShow={handleRegionTipShow} />
         </div>
 
@@ -307,25 +389,111 @@ export default function NewsMapWidget() {
             <p className="text-sm text-gray-400 dark:text-gray-500">No events detected</p>
           </div>
         )}
+
+        {/* Desktop zoom controls — hidden on mobile where pinch-to-zoom is native */}
+        <div className="absolute bottom-3 right-3 z-10 hidden sm:flex flex-col gap-1">
+          <button
+            onClick={handleZoomIn}
+            aria-label="Zoom in"
+            title="Zoom in"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200/80 bg-white/90 shadow-sm backdrop-blur-sm transition-all hover:border-gray-300 hover:bg-white dark:border-gray-700/80 dark:bg-gray-800/90 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+          >
+            <svg className="h-4 w-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m16 16 4 4M11 8v6M8 11h6" strokeLinecap="round" />
+            </svg>
+          </button>
+          <button
+            onClick={handleZoomOut}
+            aria-label="Zoom out"
+            title="Zoom out"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200/80 bg-white/90 shadow-sm backdrop-blur-sm transition-all hover:border-gray-300 hover:bg-white dark:border-gray-700/80 dark:bg-gray-800/90 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+          >
+            <svg className="h-4 w-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m16 16 4 4M8 11h6" strokeLinecap="round" />
+            </svg>
+          </button>
+          <button
+            onClick={handleZoomReset}
+            aria-label="Reset view"
+            title="Reset view"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200/80 bg-white/90 shadow-sm backdrop-blur-sm transition-all hover:border-gray-300 hover:bg-white dark:border-gray-700/80 dark:bg-gray-800/90 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+          >
+            <svg className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {data && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          {/* Alert-level summary dots */}
+          <div className="flex items-center gap-1.5">
+            {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
+              alertCounts[level] > 0 ? (
+                <span
+                  key={level}
+                  title={`${alertCounts[level]} ${level}`}
+                  className="inline-flex items-center gap-1 text-xs font-medium"
+                >
+                  <span
+                    className={`inline-flex h-2 w-2 rounded-full ${
+                      level === "critical" ? "bg-error-500 animate-pulse" :
+                      level === "high"     ? "bg-warning-500" :
+                                            "bg-brand-500"
+                    }`}
+                  />
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {alertCounts[level]}
+                  </span>
+                </span>
+              ) : null
+            )}
+          </div>
           <span className="text-xs text-gray-400 dark:text-gray-500">
             {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
           </span>
-          {trendingCountries.length > 0 && (
+          {(activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
             <>
               <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
               <div className="flex flex-wrap items-center gap-1.5">
-                {trendingCountries.map((c) => (
+                {/* Conflict group pills — e.g. "🇮🇷 Iran × 🇮🇱 Israel" */}
+                {activeConflictGroupData.map((members) => (
                   <span
+                    key={members.map((m) => m.code).join("-")}
+                    className="inline-flex items-center rounded-full border border-error-500/20 bg-error-500/10 dark:border-error-500/20 dark:bg-error-500/20"
+                  >
+                    {members.map((m, i) => (
+                      <span key={m.code} className="inline-flex items-center">
+                        {i > 0 && (
+                          <span className="select-none px-0.5 text-xs font-bold text-error-400 dark:text-error-500">
+                            ×
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handlePillClick(m)}
+                          className="inline-flex cursor-pointer items-center gap-1 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:text-error-900 dark:text-error-400 dark:hover:text-error-200"
+                        >
+                          <span aria-label={m.name}>{countryFlag(m.code)}</span>
+                          {m.name}
+                        </button>
+                      </span>
+                    ))}
+                  </span>
+                ))}
+                {/* Solo trending pills */}
+                {soloTrendingCountries.map((c) => (
+                  <button
                     key={c.code}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-brand-500/10 text-brand-600 dark:bg-brand-500/20 dark:text-brand-400 border border-brand-500/20"
+                    onClick={() => handlePillClick(c)}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-brand-500/20 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/20 dark:bg-brand-500/20 dark:text-brand-400 dark:hover:bg-brand-500/30"
                   >
                     <span aria-label={c.name}>{countryFlag(c.code)}</span>
                     {c.name}
-                  </span>
+                  </button>
                 ))}
               </div>
             </>

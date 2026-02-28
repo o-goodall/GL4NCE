@@ -14,6 +14,10 @@ export default function Intel() {
         description="GL4NCE - Intel Dashboard"
       />
       <div className="grid grid-cols-12 gap-4 md:gap-6">
+        <div className="col-span-12">
+          <NewsMapWidget />
+        </div>
+
         <div className="col-span-12 space-y-6 xl:col-span-7">
           <EcommerceMetrics />
 
@@ -26,10 +30,6 @@ export default function Intel() {
 
         <div className="col-span-12">
           <StatisticsChart />
-        </div>
-
-        <div className="col-span-12">
-          <NewsMapWidget />
         </div>
 
         <div className="col-span-12">

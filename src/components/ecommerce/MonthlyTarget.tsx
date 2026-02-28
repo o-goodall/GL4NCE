@@ -243,13 +243,7 @@ export default function MonthlyTarget() {
         },
         dataLabels: {
           name: { show: false },
-          value: {
-            fontSize: "32px",
-            fontWeight: "600",
-            offsetY: -40,
-            color,
-            formatter: () => centerLabel,
-          },
+          value: { show: false },
         },
       },
     },
@@ -270,10 +264,6 @@ export default function MonthlyTarget() {
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
             DCA signal
           </h3>
-          <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Live
-          </span>
         </div>
 
         {/* Radial bar — allocation % */}
@@ -281,15 +271,41 @@ export default function MonthlyTarget() {
           style={{
             transform: animate ? "scale(1.02)" : "scale(1)",
             transition: "transform 0.3s ease",
+            position: "relative",
           }}
         >
           <Chart
-            key={color}
             options={options}
             series={[chartValue]}
             type="radialBar"
             height={330}
           />
+          {/* Centre label rendered as HTML so colour always matches the bar.
+               bottom: ~40px positions the label just above the gauge baseline
+               for a half-circle gauge of height 330px with sparkline mode. */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: "40px",
+              left: 0,
+              right: 0,
+              textAlign: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <span
+              style={{
+                color,
+                fontSize: "32px",
+                fontWeight: 600,
+                fontFamily: CHART_FONT,
+                lineHeight: 1,
+                transition: "color 0.3s ease",
+              }}
+            >
+              {centerLabel}
+            </span>
+          </div>
         </div>
 
         {/* Sub-label */}
