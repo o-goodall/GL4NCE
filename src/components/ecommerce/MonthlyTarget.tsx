@@ -264,6 +264,7 @@ export default function MonthlyTarget() {
           }}
         >
           <Chart
+            key={color}
             options={options}
             series={[chartValue]}
             type="radialBar"
