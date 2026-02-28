@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Link } from "react-router";
 import { useSidebar } from "../context/SidebarContext";
@@ -11,17 +11,17 @@ const AppHeader: React.FC = () => {
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
-  const handleToggle = () => {
+  const handleToggle = useCallback(() => {
     if (window.innerWidth >= 1024) {
       toggleSidebar();
     } else {
       toggleMobileSidebar();
     }
-  };
+  }, [toggleSidebar, toggleMobileSidebar]);
 
-  const toggleApplicationMenu = () => {
-    setApplicationMenuOpen(!isApplicationMenuOpen);
-  };
+  const toggleApplicationMenu = useCallback(() => {
+    setApplicationMenuOpen((prev) => !prev);
+  }, []);
 
   const inputRef = useRef<HTMLInputElement>(null);
 

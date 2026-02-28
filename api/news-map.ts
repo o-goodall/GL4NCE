@@ -142,7 +142,7 @@ const COUNTRIES: CountryInfo[] = [
   { code: "SE", name: "Sweden", lat: 60.13, lng: 18.64, keywords: ["sweden", "swedish", "stockholm"] },
   { code: "NO", name: "Norway", lat: 60.47, lng: 8.47, keywords: ["norway", "norwegian", "oslo"] },
   { code: "CA", name: "Canada", lat: 56.13, lng: -106.35, keywords: ["canada", "canadian", "ottawa", "toronto", "trudeau"] },
-  { code: "AU", name: "Australia", lat: -25.27, lng: 133.78, keywords: ["australia", "australian", "canberra", "sydney", "melbourne"] },
+  { code: "AU", name: "Australia", lat: -25.27, lng: 133.78, keywords: ["australia", "australian", "canberra", "sydney", "melbourne", "perth", "brisbane", "western australia", "wa police", "roger cook", "queensland", "new south wales", "victoria"] },
   { code: "NZ", name: "New Zealand", lat: -40.90, lng: 174.89, keywords: ["new zealand", "kiwi", "wellington", "auckland"] },
   { code: "PT", name: "Portugal", lat: 39.40, lng: -8.22, keywords: ["portugal", "portuguese", "lisbon"] },
   { code: "NL", name: "Netherlands", lat: 52.13, lng: 5.29, keywords: ["netherlands", "dutch", "amsterdam", "the hague", "hague"] },

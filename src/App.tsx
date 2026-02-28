@@ -1,31 +1,34 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router";
-import SignIn from "./pages/AuthPages/SignIn";
-import SignUp from "./pages/AuthPages/SignUp";
-import NotFound from "./pages/OtherPage/NotFound";
-import UserProfiles from "./pages/UserProfiles";
-import Videos from "./pages/UiElements/Videos";
-import Images from "./pages/UiElements/Images";
-import Alerts from "./pages/UiElements/Alerts";
-import Badges from "./pages/UiElements/Badges";
-import Avatars from "./pages/UiElements/Avatars";
-import Buttons from "./pages/UiElements/Buttons";
-import LineChart from "./pages/Charts/LineChart";
-import BarChart from "./pages/Charts/BarChart";
-import Calendar from "./pages/Calendar";
-import BasicTables from "./pages/Tables/BasicTables";
-import FormElements from "./pages/Forms/FormElements";
-import Blank from "./pages/Blank";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
-import Home from "./pages/Dashboard/Home";
-import Portfolio from "./pages/Dashboard/Portfolio";
-import Intel from "./pages/Dashboard/Intel";
+
+const Home = lazy(() => import("./pages/Dashboard/Home"));
+const Portfolio = lazy(() => import("./pages/Dashboard/Portfolio"));
+const Intel = lazy(() => import("./pages/Dashboard/Intel"));
+const UserProfiles = lazy(() => import("./pages/UserProfiles"));
+const Calendar = lazy(() => import("./pages/Calendar"));
+const Blank = lazy(() => import("./pages/Blank"));
+const FormElements = lazy(() => import("./pages/Forms/FormElements"));
+const BasicTables = lazy(() => import("./pages/Tables/BasicTables"));
+const Alerts = lazy(() => import("./pages/UiElements/Alerts"));
+const Avatars = lazy(() => import("./pages/UiElements/Avatars"));
+const Badges = lazy(() => import("./pages/UiElements/Badges"));
+const Buttons = lazy(() => import("./pages/UiElements/Buttons"));
+const Images = lazy(() => import("./pages/UiElements/Images"));
+const Videos = lazy(() => import("./pages/UiElements/Videos"));
+const LineChart = lazy(() => import("./pages/Charts/LineChart"));
+const BarChart = lazy(() => import("./pages/Charts/BarChart"));
+const SignIn = lazy(() => import("./pages/AuthPages/SignIn"));
+const SignUp = lazy(() => import("./pages/AuthPages/SignUp"));
+const NotFound = lazy(() => import("./pages/OtherPage/NotFound"));
 
 export default function App() {
   return (
     <Router>
       <ScrollToTop />
-      <Routes>
+      <Suspense fallback={<div className="min-h-screen bg-white dark:bg-gray-900" />}>
+        <Routes>
           {/* Dashboard Layout */}
           <Route element={<AppLayout />}>
             <Route index path="/" element={<Home />} />
@@ -63,6 +66,7 @@ export default function App() {
           {/* Fallback Route */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+      </Suspense>
     </Router>
   );
 }

@@ -32,24 +32,13 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#F7931A";
+const HOVER_FILL = "#465fff"; // brand-500 blue — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
-/** Map marker fill colour by alert level — used imperatively via addMarker() */
-const ALERT_PING: Record<AlertLevel, string> = {
-  critical: "#f04438", // error-500
-  high:     "#f79009", // warning-500
-  medium:   "#465fff", // brand-500
-  watch:    "#98a2b3", // gray-400
-};
-
-/** Marker radius by alert level */
-const ALERT_RADIUS: Record<AlertLevel, number> = {
-  critical: 8,
-  high:     6,
-  medium:   5,
-  watch:    4,
-};
+/** Default ping colour for all event markers — matches the hover/trending region fill */
+const EVENT_PING_FILL = "#465fff";   // brand-500 blue
+/** Ping colour for trending-country markers */
+const TRENDING_PING_FILL = "#f04438"; // error-500 (red)
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -60,7 +49,7 @@ const REGION_STYLE = {
 
 // Default marker style — individual marker colours are overridden imperatively via addMarker()
 const MARKER_STYLE = {
-  initial: { fill: ALERT_PING.watch, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
+  initial: { fill: EVENT_PING_FILL, stroke: "#ffffff", "stroke-width": 1.5, r: 4 },
   hover: { stroke: HOVER_FILL, cursor: "pointer" },
   selected: {},
   selectedHover: {},
@@ -174,7 +163,9 @@ export default function NewsMapWidget() {
   }, [allCountries, categoryFilter]);
 
   const trendingCountries = useMemo(
-    () => countries.filter((c) => c.trending),
+    () => countries
+      .filter((c) => c.trending)
+      .sort((a, b) => (a.trendingRank ?? 99) - (b.trendingRank ?? 99)),
     [countries]
   );
 
@@ -218,26 +209,39 @@ export default function NewsMapWidget() {
   }, []);
 
   // ── Desktop zoom controls ───────────────────────────────────────────────────
-  // jVectorMap exposes `setFocus({ scale, animate })` for programmatic zoom.
-  // The `scale` property is not part of the public IMapObject type but is a
-  // reliable runtime field on the underlying jVectorMap instance.  We use a
-  // type guard so the fallback value of 1 is used if the field is absent.
-  const getMapScale = (map: IMapObject): number => {
-    const raw = (map as unknown as Record<string, unknown>).scale;
-    return typeof raw === "number" ? raw : 1;
-  };
+  // jVectorMap's `setFocus({ scale })` without position params corrupts transX/transY
+  // to undefined when animating.  We call `setScale` directly — the same approach used
+  // by jVectorMap's own built-in +/- buttons — anchoring at the viewport centre.
+  const mapSetScale = useCallback((newScale: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const raw = map as unknown as Record<string, unknown>;
+    const w = typeof raw.width  === "number" ? raw.width  : 0;
+    const h = typeof raw.height === "number" ? raw.height : 0;
+    if (typeof raw.setScale === "function") {
+      (raw.setScale as (s: number, x: number, y: number, c: boolean, a: boolean) => void)(
+        newScale, w / 2, h / 2, false, true
+      );
+    }
+  }, []);
 
   const handleZoomIn = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setFocus({ scale: Math.min(getMapScale(map) * 1.5, 12), animate: true });
-  }, []);
+    const raw = map as unknown as Record<string, unknown>;
+    const cur = typeof raw.scale === "number" ? raw.scale : 1;
+    const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
+    mapSetScale(Math.min(cur * 1.5, 12 * base));
+  }, [mapSetScale]);
 
   const handleZoomOut = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setFocus({ scale: Math.max(getMapScale(map) / 1.5, 1), animate: true });
-  }, []);
+    const raw = map as unknown as Record<string, unknown>;
+    const cur = typeof raw.scale === "number" ? raw.scale : 1;
+    const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
+    mapSetScale(Math.max(cur / 1.5, 1 * base));
+  }, [mapSetScale]);
 
   const handleZoomReset = useCallback(() => {
     mapRef.current?.reset();
@@ -294,23 +298,22 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
-  // Marker size and colour reflect the country's alertLevel for a visual urgency
-  // gradient: critical (red/large) → high (amber) → medium (brand) → watch (gray).
+  // Trending country markers are shown in red; all other events use the default gray.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || countries.length === 0) return;
     map.removeAllMarkers();
     countries.forEach((country) => {
-      const level = (country.alertLevel ?? "watch") as AlertLevel;
+      const isTrending = country.trending;
       map.addMarker(
         country.code,
         {
           name: country.name,
           latLng: [country.lat, country.lng],
           style: {
-            fill: ALERT_PING[level],
+            fill: isTrending ? TRENDING_PING_FILL : EVENT_PING_FILL,
             stroke: "#ffffff",
-            r: ALERT_RADIUS[level],
+            r: isTrending ? 6 : 4,
           } as React.CSSProperties,
         },
         []
@@ -330,30 +333,7 @@ export default function NewsMapWidget() {
     return counts;
   }, [countries]);
 
-  // Resolve conflict groups from the data payload into CountryNewsData arrays,
-  // filtering to only groups where ≥ 2 trending members are present.
-  const activeConflictGroupData = useMemo<CountryNewsData[][]>(() => {
-    const groups = data?.conflictGroups ?? [];
-    return groups
-      .map((group) =>
-        group
-          .map((code) => trendingCountries.find((c) => c.code === code))
-          .filter((c): c is CountryNewsData => c !== undefined)
-      )
-      .filter((members) => members.length >= 2);
-  }, [data?.conflictGroups, trendingCountries]);
 
-  // Codes that are already shown inside a conflict group pill
-  const conflictGroupCodes = useMemo(
-    () => new Set(activeConflictGroupData.flatMap((g) => g.map((c) => c.code))),
-    [activeConflictGroupData]
-  );
-
-  // Trending countries that are NOT part of any conflict group (shown solo)
-  const soloTrendingCountries = useMemo(
-    () => trendingCountries.filter((c) => !conflictGroupCodes.has(c.code)),
-    [trendingCountries, conflictGroupCodes]
-  );
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
@@ -441,79 +421,78 @@ export default function NewsMapWidget() {
       </div>
 
       {data && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {/* Alert-level summary dots */}
-          <div className="flex items-center gap-1.5">
-            {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
-              alertCounts[level] > 0 ? (
-                <span
-                  key={level}
-                  title={`${alertCounts[level]} ${level}`}
-                  className="inline-flex items-center gap-1 text-xs font-medium"
-                >
-                  <span
-                    className={`inline-flex h-2 w-2 rounded-full ${
-                      level === "critical" ? "bg-error-500 animate-pulse" :
-                      level === "high"     ? "bg-warning-500" :
-                                            "bg-brand-500"
-                    }`}
-                  />
-                  <span className="text-gray-500 dark:text-gray-400">
-                    {alertCounts[level]}
-                  </span>
-                </span>
-              ) : null
-            )}
+        <div className="mt-3 space-y-2">
+          {/* Row 1: count summary + timestamp */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
+            </span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+              {data.usingMockData && " · demo data"}
+            </span>
           </div>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
-          </span>
-          {(activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
-            <>
-              <span className="text-xs text-gray-300 dark:text-gray-600">·</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {/* Conflict group pills — e.g. "🇮🇷 Iran × 🇮🇱 Israel" */}
-                {activeConflictGroupData.map((members) => (
-                  <span
-                    key={members.map((m) => m.code).join("-")}
-                    className="inline-flex items-center rounded-full border border-error-500/20 bg-error-500/10 dark:border-error-500/20 dark:bg-error-500/20"
-                  >
-                    {members.map((m, i) => (
-                      <span key={m.code} className="inline-flex items-center">
-                        {i > 0 && (
-                          <span className="select-none px-0.5 text-xs font-bold text-error-400 dark:text-error-500">
-                            ×
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handlePillClick(m)}
-                          className="inline-flex cursor-pointer items-center gap-1 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:text-error-900 dark:text-error-400 dark:hover:text-error-200"
-                        >
-                          <span aria-label={m.name}>{countryFlag(m.code)}</span>
-                          {m.name}
-                        </button>
+
+          {/* Row 2: alert-level key + trending pills (only when content exists) */}
+          {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0 ||
+            trendingCountries.length > 0) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Alert-level badges */}
+              {(["critical", "high", "medium"] as AlertLevel[]).some((l) => alertCounts[l] > 0) && (
+                <div className="flex items-center gap-2">
+                  {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
+                    alertCounts[level] > 0 ? (
+                      <span key={level} className="inline-flex items-center gap-1 text-xs font-medium">
+                        <span
+                          className={`inline-flex h-2 w-2 rounded-full ${
+                            level === "critical" ? "bg-error-500 animate-pulse" :
+                            level === "high"     ? "bg-warning-500" :
+                                                  "bg-brand-500"
+                          }`}
+                        />
+                        <span className="text-gray-500 dark:text-gray-400">
+                          {alertCounts[level]} {level}
+                        </span>
                       </span>
-                    ))}
+                    ) : null
+                  )}
+                </div>
+              )}
+
+              {/* Separator between alert badges and trending pills */}
+              {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0) &&
+                trendingCountries.length > 0 && (
+                <span className="text-gray-200 dark:text-gray-700" aria-hidden="true">|</span>
+              )}
+
+              {/* Trending section — all trending countries as individual ranked pills */}
+              {trendingCountries.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                    Trending
                   </span>
-                ))}
-                {/* Solo trending pills */}
-                {soloTrendingCountries.map((c) => (
-                  <button
-                    key={c.code}
-                    onClick={() => handlePillClick(c)}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-brand-500/20 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/20 dark:bg-brand-500/20 dark:text-brand-400 dark:hover:bg-brand-500/30"
-                  >
-                    <span aria-label={c.name}>{countryFlag(c.code)}</span>
-                    {c.name}
-                  </button>
-                ))}
-              </div>
-            </>
+                  {trendingCountries.map((c) => (
+                    <button
+                      key={c.code}
+                      onClick={() => handlePillClick(c)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
+                    >
+                      {c.trendingRank !== undefined && (
+                        <span
+                          className="shrink-0 font-bold underline text-error-500 dark:text-error-400"
+                          aria-label={`Rank ${c.trendingRank}`}
+                        >
+                          #{c.trendingRank}
+                        </span>
+                      )}
+                      <span aria-label={c.name}>{countryFlag(c.code)}</span>
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-          <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
-            Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-            {data.usingMockData && " · demo data"}
-          </span>
         </div>
       )}
 

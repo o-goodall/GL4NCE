@@ -132,7 +132,7 @@ const DEDUP_TITLE_LENGTH = 40;
 /** All countries with velocity ≥ this fraction of the leader are co-trending */
 const VELOCITY_FLOOR = 1.2;
 /** Hard cap on concurrent trending countries (keeps UI scannable) */
-const MAX_TRENDING = 5;
+const MAX_TRENDING = 3;
 
 /**
  * Known active conflicts / wars.  When any trending country is a member of one
@@ -223,7 +223,7 @@ function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel
  * This replaces the previous single-winner approach, giving much earlier
  * simultaneous warning across multiple active crises.
  */
-function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflictGroups: string[][] } {
+function computeTrending(events: NewsEvent[]): { trending: Set<string>; trendingRanks: Map<string, number>; conflictGroups: string[][] } {
   const now = Date.now();
   const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
   const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
@@ -260,7 +260,7 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     eligible.push({ code, velocity });
   }
 
-  if (eligible.length === 0) return { trending: new Set(), conflictGroups: [] };
+  if (eligible.length === 0) return { trending: new Set(), trendingRanks: new Map(), conflictGroups: [] };
 
   // Sort by velocity descending; keep all countries above the absolute floor
   // and cap at MAX_TRENDING so the UI stays scannable.
@@ -270,6 +270,8 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     .slice(0, MAX_TRENDING);
 
   const trending = new Set(trendingList.map((e) => e.code));
+  // 1-based rank map for the ordered trending list
+  const trendingRanks = new Map(trendingList.map((e, i) => [e.code, i + 1]));
 
   // Set of country codes with any event in the full baseline window —
   // used to decide whether a conflict partner is "active" enough to link.
@@ -297,13 +299,13 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     }
   }
 
-  return { trending, conflictGroups: activeConflictGroups };
+  return { trending, trendingRanks, conflictGroups: activeConflictGroups };
 }
 
 /** Aggregate events into per-country data */
 export function aggregateCountries(events: NewsEvent[]): NewsMapData {
   const recent = events.filter((e) => isWithinRetentionWindow(e.time));
-  const { trending, conflictGroups } = computeTrending(recent);
+  const { trending, trendingRanks, conflictGroups } = computeTrending(recent);
 
   const byCode: Record<string, NewsEvent[]> = {};
   for (const ev of recent) {
@@ -319,6 +321,7 @@ export function aggregateCountries(events: NewsEvent[]): NewsMapData {
       lat: info?.lat ?? 0,
       lng: info?.lng ?? 0,
       trending: isTrending,
+      trendingRank: isTrending ? (trendingRanks.get(code) ?? undefined) : undefined,
       alertLevel: computeAlertLevel(evs, isTrending),
       events: evs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()),
     };
@@ -340,6 +343,9 @@ export function generateMockData(): NewsMapData {
   const h = (hours: number) => new Date(now.getTime() - hours * 3600_000).toISOString();
 
   const mockEvents: Omit<NewsEvent, "countryCode">[] = [
+    // ── Australia: WA Police foil terror attack ───────────────────────────────
+    { title: "WA police foil alleged mass terror attack linked to white supremacist group", source: "Guardian", time: h(0.5), country: "Australia", severity: "high", category: "extremism" },
+    { title: "Roger Cook condemns dog whistling after police lay charges against white supremacist", source: "Guardian", time: h(0.7), country: "Australia", severity: "medium", category: "extremism" },
     // ── Iran × Israel: active conflict (fires conflict-group trending) ──────────
     { title: "Iran fires ballistic missiles toward Israeli-linked targets in latest escalation", source: "Al Jazeera", time: h(0.3), country: "Iran",          severity: "high",   category: "violent"    },
     { title: "IRGC deploys additional strike forces as regional tensions surge",                 source: "BBC",        time: h(0.6), country: "Iran",          severity: "high",   category: "escalation" },
