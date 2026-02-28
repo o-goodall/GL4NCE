@@ -262,8 +262,11 @@ export default function NewsMapWidget() {
     container
       .querySelectorAll<SVGPathElement>(".jvectormap-region.jvectormap-element")
       .forEach((el) => {
-        el.style.fill =
-          el.getAttribute("fill") === HOVER_FILL ? HOVER_FILL : defaultFill;
+        el.style.setProperty(
+          "fill",
+          el.getAttribute("fill") === HOVER_FILL ? HOVER_FILL : defaultFill,
+          "important"
+        );
       });
   }, []);
 
