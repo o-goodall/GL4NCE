@@ -281,12 +281,12 @@ export default function MonthlyTarget() {
             height={330}
           />
           {/* Centre label rendered as HTML so colour always matches the bar.
-               bottom: ~70px aligns with the chart's hollow centre at offsetY -40
+               bottom: ~40px positions the label just above the gauge baseline
                for a half-circle gauge of height 330px with sparkline mode. */}
           <div
             style={{
               position: "absolute",
-              bottom: "70px",
+              bottom: "40px",
               left: 0,
               right: 0,
               textAlign: "center",
