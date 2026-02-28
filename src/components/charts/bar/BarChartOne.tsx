@@ -4,7 +4,7 @@ import { ApexOptions } from "apexcharts";
 const options: ApexOptions = {
   colors: ["#F7931A"],
   chart: {
-    fontFamily: "Outfit, sans-serif",
+    fontFamily: "Inter, sans-serif",
     type: "bar",
     height: 180,
     toolbar: {
@@ -53,7 +53,7 @@ const options: ApexOptions = {
     show: true,
     position: "top",
     horizontalAlign: "left",
-    fontFamily: "Outfit",
+    fontFamily: "Inter",
   },
   yaxis: {
     title: {

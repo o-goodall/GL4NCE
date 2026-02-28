@@ -32,13 +32,13 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#465fff"; // brand-500 blue — used for hover AND trending region highlight
+const HOVER_FILL = "#FFD300"; // brand-500 gold — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Default ping colour for all event markers — matches the hover/trending region fill */
-const EVENT_PING_FILL = "#465fff";   // brand-500 blue
+const EVENT_PING_FILL = "#FFD300";   // brand-500 gold
 /** Ping colour for trending-country markers */
-const TRENDING_PING_FILL = "#f04438"; // error-500 (red)
+const TRENDING_PING_FILL = "#E5A900"; // brand-600 amber
 
 const REGION_STYLE = {
   initial: { fill: LIGHT_DEFAULT_FILL, fillOpacity: 1, stroke: "none", strokeWidth: 0, strokeOpacity: 0 },
@@ -298,7 +298,7 @@ export default function NewsMapWidget() {
   // Sync ping markers imperatively so they are rendered inside jVectorMap's SVG
   // and move correctly with the map when the user zooms or pans on mobile.
   // removeAllMarkers + re-add is the safest approach given jVectorMap's API.
-  // Trending country markers are shown in red; all other events use the default gray.
+  // Trending country markers are shown in a lighter terra cotta; all other events use the default fill.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || countries.length === 0) return;
@@ -340,7 +340,7 @@ export default function NewsMapWidget() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
             6
           </span>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
@@ -358,7 +358,7 @@ export default function NewsMapWidget() {
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 categoryFilter === f
                   ? "bg-brand-500 text-white"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
               }`}
             >
               {FILTER_LABELS[f]}
@@ -479,7 +479,7 @@ export default function NewsMapWidget() {
                     >
                       {c.trendingRank !== undefined && (
                         <span
-                          className="shrink-0 font-bold underline text-error-500 dark:text-error-400"
+                          className="shrink-0 font-bold underline text-error-800 dark:text-error-300"
                           aria-label={`Rank ${c.trendingRank}`}
                         >
                           #{c.trendingRank}

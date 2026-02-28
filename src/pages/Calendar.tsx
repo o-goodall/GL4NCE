@@ -201,7 +201,7 @@ const Calendar: React.FC = () => {
                             />
                             <span className="flex items-center justify-center w-5 h-5 mr-2 border border-gray-300 rounded-full box dark:border-gray-700">
                               <span
-                                className={`h-2 w-2 rounded-full bg-white ${
+                                className={`h-2 w-2 rounded-full bg-gray-900 ${
                                   eventLevel === key ? "block" : "hidden"
                                 }`}
                               ></span>

@@ -6,19 +6,19 @@ interface EventModalProps {
 }
 
 const CATEGORY_STYLES: Record<EventCategory, string> = {
-  violent:    "bg-error-100 text-error-700 dark:bg-error-900/30 dark:text-error-400",
-  minor:      "bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400",
-  economic:   "bg-blue-light-100 text-blue-light-700 dark:bg-blue-light-900/30 dark:text-blue-light-400",
-  extremism:  "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  escalation: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+  violent:    "bg-error-100 text-error-900 dark:bg-error-900/30 dark:text-error-300",
+  minor:      "bg-warning-100 text-warning-900 dark:bg-warning-900/30 dark:text-warning-400",
+  economic:   "bg-blue-light-100 text-blue-light-900 dark:bg-blue-light-900/30 dark:text-blue-light-300",
+  extremism:  "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200",
+  escalation: "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-300",
 };
 
 /** Alert level badge label + colour */
 const ALERT_LEVEL_META: Record<AlertLevel, { label: string; className: string }> = {
-  critical: { label: "CRITICAL",  className: "bg-error-500 text-white animate-pulse" },
-  high:     { label: "HIGH",      className: "bg-warning-500 text-white" },
+  critical: { label: "CRITICAL",  className: "bg-error-800 text-white animate-pulse" },
+  high:     { label: "HIGH",      className: "bg-warning-800 text-white" },
   medium:   { label: "MEDIUM",    className: "bg-brand-500 text-white" },
-  watch:    { label: "WATCH",     className: "bg-gray-400 text-white" },
+  watch:    { label: "WATCH",     className: "bg-gray-600 text-white" },
 };
 
 const SEVERITY_DOT: Record<EventSeverity, string> = {
@@ -49,7 +49,7 @@ function EventRow({ event }: { event: NewsEvent }) {
             href={event.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-medium text-gray-800 dark:text-white/90 hover:text-brand-500 dark:hover:text-brand-400 line-clamp-2"
+            className="text-sm font-medium text-gray-800 dark:text-white/90 hover:text-brand-500 dark:hover:text-brand-200 line-clamp-2"
           >
             {event.title}
           </a>

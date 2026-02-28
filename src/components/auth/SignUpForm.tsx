@@ -88,7 +88,7 @@ export default function SignUpForm() {
                   {/* <!-- First Name --> */}
                   <div className="sm:col-span-1">
                     <Label>
-                      First Name<span className="text-error-500">*</span>
+                      First Name<span className="text-error-800">*</span>
                     </Label>
                     <Input
                       type="text"
@@ -100,7 +100,7 @@ export default function SignUpForm() {
                   {/* <!-- Last Name --> */}
                   <div className="sm:col-span-1">
                     <Label>
-                      Last Name<span className="text-error-500">*</span>
+                      Last Name<span className="text-error-800">*</span>
                     </Label>
                     <Input
                       type="text"
@@ -113,7 +113,7 @@ export default function SignUpForm() {
                 {/* <!-- Email --> */}
                 <div>
                   <Label>
-                    Email<span className="text-error-500">*</span>
+                    Email<span className="text-error-800">*</span>
                   </Label>
                   <Input
                     type="email"
@@ -125,7 +125,7 @@ export default function SignUpForm() {
                 {/* <!-- Password --> */}
                 <div>
                   <Label>
-                    Password<span className="text-error-500">*</span>
+                    Password<span className="text-error-800">*</span>
                   </Label>
                   <div className="relative">
                     <Input
@@ -176,7 +176,7 @@ export default function SignUpForm() {
                 Already have an account? {""}
                 <Link
                   to="/signin"
-                  className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
+                  className="text-brand-500 hover:text-brand-600 dark:text-brand-200"
                 >
                   Sign In
                 </Link>
