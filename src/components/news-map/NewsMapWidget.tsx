@@ -333,30 +333,7 @@ export default function NewsMapWidget() {
     return counts;
   }, [countries]);
 
-  // Resolve conflict groups from the data payload into CountryNewsData arrays,
-  // filtering to only groups where ≥ 2 trending members are present.
-  const activeConflictGroupData = useMemo<CountryNewsData[][]>(() => {
-    const groups = data?.conflictGroups ?? [];
-    return groups
-      .map((group) =>
-        group
-          .map((code) => trendingCountries.find((c) => c.code === code))
-          .filter((c): c is CountryNewsData => c !== undefined)
-      )
-      .filter((members) => members.length >= 2);
-  }, [data?.conflictGroups, trendingCountries]);
 
-  // Codes that are already shown inside a conflict group pill
-  const conflictGroupCodes = useMemo(
-    () => new Set(activeConflictGroupData.flatMap((g) => g.map((c) => c.code))),
-    [activeConflictGroupData]
-  );
-
-  // Trending countries that are NOT part of any conflict group (shown solo)
-  const soloTrendingCountries = useMemo(
-    () => trendingCountries.filter((c) => !conflictGroupCodes.has(c.code)),
-    [trendingCountries, conflictGroupCodes]
-  );
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
@@ -458,7 +435,7 @@ export default function NewsMapWidget() {
 
           {/* Row 2: alert-level key + trending pills (only when content exists) */}
           {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0 ||
-            activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
+            trendingCountries.length > 0) && (
             <div className="flex flex-wrap items-center gap-3">
               {/* Alert-level badges */}
               {(["critical", "high", "medium"] as AlertLevel[]).some((l) => alertCounts[l] > 0) && (
@@ -484,42 +461,17 @@ export default function NewsMapWidget() {
 
               {/* Separator between alert badges and trending pills */}
               {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0) &&
-                (activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
+                trendingCountries.length > 0 && (
                 <span className="text-gray-200 dark:text-gray-700" aria-hidden="true">|</span>
               )}
 
-              {/* Trending section */}
-              {(activeConflictGroupData.length > 0 || soloTrendingCountries.length > 0) && (
+              {/* Trending section — all trending countries as individual ranked pills */}
+              {trendingCountries.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
                     Trending
                   </span>
-                  {/* Conflict group pills — e.g. "🇮🇷 Iran × 🇮🇱 Israel" */}
-                  {activeConflictGroupData.map((members) => (
-                    <span
-                      key={members.map((m) => m.code).join("-")}
-                      className="inline-flex items-center rounded-full border border-error-500/20 bg-error-500/10 dark:border-error-500/20 dark:bg-error-500/20"
-                    >
-                      {members.map((m, i) => (
-                        <span key={m.code} className="inline-flex items-center">
-                          {i > 0 && (
-                            <span className="select-none px-0.5 text-xs font-bold text-error-400 dark:text-error-500">
-                              ×
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handlePillClick(m)}
-                            className="inline-flex cursor-pointer items-center gap-1 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:text-error-900 dark:text-error-400 dark:hover:text-error-200"
-                          >
-                            <span aria-label={m.name}>{countryFlag(m.code)}</span>
-                            {m.name}
-                          </button>
-                        </span>
-                      ))}
-                    </span>
-                  ))}
-                  {/* Solo trending pills — ordered by rank with #N prefix */}
-                  {soloTrendingCountries.map((c) => (
+                  {trendingCountries.map((c) => (
                     <button
                       key={c.code}
                       onClick={() => handlePillClick(c)}
