@@ -202,7 +202,7 @@ export default function MonthlyTarget() {
     chart: {
       fontFamily: CHART_FONT,
       type: "radialBar",
-      height: 280,
+      height: 340,
       sparkline: { enabled: true },
     },
     plotOptions: {
@@ -252,15 +252,15 @@ export default function MonthlyTarget() {
             options={options}
             series={[chartValue]}
             type="radialBar"
-            height={280}
+            height={340}
           />
           {/* Centre label rendered as HTML so colour always matches the bar.
-               bottom: ~28px positions the label just above the gauge baseline
-               for a half-circle gauge with sparkline mode. */}
+               bottom: ~34px positions the label just above the gauge baseline
+               for a half-circle gauge with sparkline mode (proportional to 340px height). */}
           <div
             style={{
               position: "absolute",
-              bottom: "28px",
+              bottom: "34px",
               left: 0,
               right: 0,
               textAlign: "center",
@@ -270,7 +270,7 @@ export default function MonthlyTarget() {
             <span
               style={{
                 color,
-                fontSize: "32px",
+                fontSize: "48px",
                 fontWeight: 600,
                 fontFamily: CHART_FONT,
                 lineHeight: 1,
