@@ -27,32 +27,6 @@ function roundToNearest50(n: number): number {
   return Math.round(n / 50) * 50;
 }
 
-// Convert HSL values to a hex color string.
-// ApexCharts requires hex/rgb colors for fill; HSL is not reliably supported.
-function hslToHex(h: number, s: number, l: number): string {
-  const sn = s / 100;
-  const ln = l / 100;
-  const c = (1 - Math.abs(2 * ln - 1)) * sn;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = ln - c / 2;
-  const [r1, g1, b1] =
-    h < 60  ? [c, x, 0] :
-    h < 120 ? [x, c, 0] :
-    h < 180 ? [0, c, x] :
-    h < 240 ? [0, x, c] :
-    h < 300 ? [x, 0, c] :
-              [c, 0, x];
-  const toHex = (v: number) =>
-    Math.round((v + m) * 255).toString(16).padStart(2, "0");
-  return `#${toHex(r1)}${toHex(g1)}${toHex(b1)}`;
-}
-
-function tierColor(alloc: number): string {
-  // alloc is a 0–1 fraction (0 = $0 DCA → red, 1 = $1000 max DCA → green)
-  const hue = Math.round(alloc * 120);
-  return hslToHex(hue, 72, 50);
-}
-
 // ── Signal indicator ───────────────────────────────────────────────────────
 interface SignalItemProps {
   active: boolean;
@@ -215,7 +189,7 @@ export default function MonthlyTarget() {
   const isLoading = recommendedBuy === null;
 
   const buyRatio    = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
-  const color       = isPass || isLoading ? "#98a2b3" : tierColor(buyRatio);
+  const color       = isPass || isLoading ? "#98a2b3" : "#FFD300";
   const chartValue  = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
   const centerLabel = isLoading
     ? "—"
@@ -228,7 +202,7 @@ export default function MonthlyTarget() {
     chart: {
       fontFamily: CHART_FONT,
       type: "radialBar",
-      height: 330,
+      height: 340,
       sparkline: { enabled: true },
     },
     plotOptions: {
@@ -254,7 +228,7 @@ export default function MonthlyTarget() {
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-11 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
+      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-6 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
 
         {/* Header */}
         <div className="flex items-center gap-2">
@@ -278,15 +252,16 @@ export default function MonthlyTarget() {
             options={options}
             series={[chartValue]}
             type="radialBar"
-            height={330}
+            height={340}
           />
           {/* Centre label rendered as HTML so colour always matches the bar.
-               bottom: ~40px positions the label just above the gauge baseline
-               for a half-circle gauge of height 330px with sparkline mode. */}
+               bottom: ~18px sits the label closer to the gauge arc baseline;
+               font-size 56px makes the amount more prominent while chart height
+               stays at 340px so mobile layout is unaffected. */}
           <div
             style={{
               position: "absolute",
-              bottom: "40px",
+              bottom: "18px",
               left: 0,
               right: 0,
               textAlign: "center",
@@ -296,7 +271,7 @@ export default function MonthlyTarget() {
             <span
               style={{
                 color,
-                fontSize: "32px",
+                fontSize: "56px",
                 fontWeight: 600,
                 fontFamily: CHART_FONT,
                 lineHeight: 1,
@@ -307,11 +282,6 @@ export default function MonthlyTarget() {
             </span>
           </div>
         </div>
-
-        {/* Sub-label */}
-        <p className="mx-auto mt-10 w-full max-w-[380px] text-center text-sm text-gray-500 dark:text-gray-400 sm:text-base">
-          AUD · Fortnightly DCA
-        </p>
       </div>
 
       {/* Signals footer */}

@@ -110,7 +110,7 @@ export default function BitcoinTicker() {
   const sparklineSeries = [{ data: sparkline.length > 1 ? sparkline : [0, 0] }];
 
   return (
-    <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+    <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6 flex flex-col h-full">
       <span className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
         1
       </span>
@@ -123,9 +123,9 @@ export default function BitcoinTicker() {
         >
           ₿
         </span>
-        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           Bitcoin
-        </span>
+        </h3>
       </div>
 
       {/* Prices row */}
@@ -146,13 +146,13 @@ export default function BitcoinTicker() {
         )}
       </div>
 
-      {/* Sparkline */}
-      <div className="mt-3 -mx-1">
+      {/* Sparkline — flex-1 so it expands to fill remaining card height */}
+      <div className="mt-3 -mx-1 flex-1 min-h-[80px]">
         <Chart
           options={sparklineOptions}
           series={sparklineSeries}
           type="line"
-          height={50}
+          height="100%"
         />
       </div>
     </div>
