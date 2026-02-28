@@ -15,4 +15,16 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // apexcharts is ~576 kB minified — acknowledge it as a known large vendor
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Bundle apexcharts into a stable, cacheable vendor chunk
+          "vendor-apexcharts": ["apexcharts", "react-apexcharts"],
+        },
+      },
+    },
+  },
 });
