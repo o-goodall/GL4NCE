@@ -35,8 +35,8 @@ const worldMill = (() => {
 const HOVER_FILL = "#465fff"; // brand-500 blue — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
-/** Default ping colour for all event markers */
-const EVENT_PING_FILL = "#98a2b3";  // gray-400
+/** Default ping colour for all event markers — matches the hover/trending region fill */
+const EVENT_PING_FILL = "#465fff";   // brand-500 blue
 /** Ping colour for trending-country markers */
 const TRENDING_PING_FILL = "#f04438"; // error-500 (red)
 
@@ -445,13 +445,12 @@ export default function NewsMapWidget() {
 
       {data && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {/* Alert-level summary dots */}
-          <div className="flex items-center gap-1.5">
+          {/* Alert-level summary — labelled badges so the meaning is immediately clear */}
+          <div className="flex items-center gap-2">
             {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
               alertCounts[level] > 0 ? (
                 <span
                   key={level}
-                  title={`${alertCounts[level]} ${level}`}
                   className="inline-flex items-center gap-1 text-xs font-medium"
                 >
                   <span
@@ -462,7 +461,7 @@ export default function NewsMapWidget() {
                     }`}
                   />
                   <span className="text-gray-500 dark:text-gray-400">
-                    {alertCounts[level]}
+                    {alertCounts[level]} {level}
                   </span>
                 </span>
               ) : null
@@ -499,7 +498,7 @@ export default function NewsMapWidget() {
                     ))}
                   </span>
                 ))}
-                {/* Solo trending pills — ordered by rank with rank badge */}
+                {/* Solo trending pills — ordered by rank, rank shown as prominent "#N" prefix */}
                 {soloTrendingCountries.map((c) => (
                   <button
                     key={c.code}
@@ -508,10 +507,10 @@ export default function NewsMapWidget() {
                   >
                     {c.trendingRank !== undefined && (
                       <span
-                        className="shrink-0 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-error-500 text-white text-[9px] font-bold leading-none"
+                        className="shrink-0 font-bold underline text-error-500 dark:text-error-400"
                         aria-label={`Rank ${c.trendingRank}`}
                       >
-                        {c.trendingRank}
+                        #{c.trendingRank}
                       </span>
                     )}
                     <span aria-label={c.name}>{countryFlag(c.code)}</span>
