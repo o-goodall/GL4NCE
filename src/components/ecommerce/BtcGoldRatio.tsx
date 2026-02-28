@@ -6,7 +6,7 @@ import { ApexOptions } from "apexcharts";
 const GOLD_POLL_MS = 10 * 60 * 1000; // 10 minutes
 
 // Known all-time high — BTC $106,182 / Gold $2,632 on 17 Dec 2024
-const INITIAL_ATH = { ratio: 40.33, date: "17 Dec 2024" };
+const INITIAL_ATH = { ratio: 38.51, date: "17 Dec 2024" };
 
 // ── Historical BTC/Gold ratio (oz) — monthly averages Mar 2025 – Feb 2026 ────
 // BTC avg (USD): 83471, 89488, 102055, 107547, 115709, 113267, 111800, 107532, 94841, 87761, 82886, 69485
