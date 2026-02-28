@@ -298,7 +298,7 @@ export default function NewsMapWidget() {
 
       {/* Map container */}
       <div className="relative overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
-        <div ref={mapContainerRef} className="h-[300px] sm:h-[360px] xl:h-[420px]">
+        <div ref={mapContainerRef} className="h-[420px] sm:h-[520px] xl:h-[620px]">
           <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} onRegionTipShow={handleRegionTipShow} />
         </div>
 
