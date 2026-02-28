@@ -6,11 +6,14 @@ import { ApexOptions } from "apexcharts";
 const GOLD_POLL_MS = 10 * 60 * 1000; // 10 minutes
 
 // ── Historical BTC/Gold ratio (oz) — monthly averages Mar 2025 – Feb 2026 ────
+// BTC avg (USD): 83471, 89488, 102055, 107547, 115709, 113267, 111800, 107532, 94841, 87761, 82886, 69485
+// Gold avg (USD/oz): 2983, 3208, 3278, 3352, 3338, 3363, 3665, 4053, 4083, 4290, 4745, 5278
+// Ratio = BTC / Gold, rounded to 1 dp  (sources: CoinGecko, Trading Economics)
 const HISTORY_MONTHS = [
   "Mar '25","Apr '25","May '25","Jun '25","Jul '25","Aug '25",
   "Sep '25","Oct '25","Nov '25","Dec '25","Jan '26","Feb '26",
 ];
-const HISTORY_RATIOS = [28.1, 27.6, 31.4, 32.8, 36.2, 31.5, 22.9, 24.1, 33.5, 36.8, 36.1, 32.4];
+const HISTORY_RATIOS = [28.0, 27.9, 31.1, 32.1, 34.7, 33.7, 30.5, 26.5, 23.2, 20.5, 17.5, 13.2];
 
 // ── Chart config ──────────────────────────────────────────────────────────────
 const chartOptions: ApexOptions = {
