@@ -34,13 +34,13 @@ function saveHistory(pts: RatioPoint[]): void {
 
 // ── Gold price fetch ──────────────────────────────────────────────────────────
 async function fetchGoldPriceUSD(signal: AbortSignal): Promise<number> {
-  // metals.live — free, no API key, CORS-enabled
-  const res = await fetch("https://api.metals.live/v1/spot/gold", { signal });
+  // Proxied through /api/gold-price (Vercel serverless) to avoid CORS.
+  // Sourced from Yahoo Finance GC=F (gold futures, USD/troy oz).
+  const res = await fetch("/api/gold-price", { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = (await res.json()) as Array<{ gold: number }>;
-  const price = data[0]?.gold;
-  if (!price || isNaN(price)) throw new Error("Invalid gold price response");
-  return price;
+  const data = (await res.json()) as { price: number };
+  if (!data.price || isNaN(data.price)) throw new Error("Invalid gold price response");
+  return data.price;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -155,6 +155,7 @@ export default function BtcGoldRatio() {
       type: "line",
       sparkline: { enabled: true },
       animations: { enabled: false },
+      fontFamily: "Inter, sans-serif",
     },
     stroke: { curve: "smooth", width: 2 },
     colors: [sparklineColor],
@@ -178,12 +179,6 @@ export default function BtcGoldRatio() {
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
-        <span
-          className="w-5 h-5 flex items-center justify-center text-base leading-none"
-          aria-label="Gold"
-        >
-          ⚖️
-        </span>
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           BTC / Gold
         </h3>
