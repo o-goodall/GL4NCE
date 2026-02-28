@@ -47,7 +47,7 @@ layer(base);
   --color-brand-25: #FAF5FF;
   --color-brand-50: #F5F3FF;
   --color-brand-100: #EDE9FE;
-  --color-brand-200: #B095FF;
+  --color-brand-200: #B39AFF;
   --color-brand-300: #A78BFA;
   --color-brand-400: #8B5CF6;
   --color-brand-500: #6522CC;
@@ -76,7 +76,7 @@ layer(base);
   --color-gray-200: #E5E5E7;
   --color-gray-300: #d0d5dd;
   --color-gray-400: #C6C6CC;
-  --color-gray-500: #4B5563;
+  --color-gray-500: #495261;
   --color-gray-600: #444449;
   --color-gray-700: #344054;
   --color-gray-800: #262629;
@@ -550,13 +550,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #6D28D9;
+  background: #6522CC;
   @apply !border-brand-500 !bg-brand-500 hover:!border-brand-500 hover:!bg-brand-500;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #6D28D9;
+  box-shadow: -10px 0 0 #6522CC;
 }
 
 .flatpickr-months .flatpickr-prev-month svg,
