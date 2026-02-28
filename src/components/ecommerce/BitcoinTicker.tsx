@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
+import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
+import Badge from "../ui/badge/Badge";
 
 interface TickerData {
   priceUSD: number | null;
@@ -87,9 +89,6 @@ export default function BitcoinTicker() {
       maximumFractionDigits: decimals,
     });
 
-  const pctColor = (pct: number | null) =>
-    pct === null ? "text-gray-400" : pct >= 0 ? "text-emerald-500" : "text-red-500";
-
   const flashClass =
     flash === "up"
       ? "text-emerald-500"
@@ -104,7 +103,7 @@ export default function BitcoinTicker() {
       animations: { enabled: false },
     },
     stroke: { curve: "smooth", width: 2 },
-    colors: ["#F7931A"],
+    colors: ["#465FFF"],
     tooltip: { enabled: false },
   };
 
@@ -119,7 +118,7 @@ export default function BitcoinTicker() {
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <span
-          className="w-5 h-5 flex items-center justify-center text-lg font-bold text-orange-400 leading-none"
+          className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-500 leading-none"
           aria-label="Bitcoin"
         >
           ₿
@@ -130,21 +129,21 @@ export default function BitcoinTicker() {
       </div>
 
       {/* Prices row */}
-      <div className="flex items-baseline gap-3 flex-wrap">
-        {/* USD */}
+      <div className="flex items-end justify-between mt-5">
         <div className="flex items-baseline gap-1.5">
           <span
             className={`text-2xl font-bold transition-colors duration-300 ${flashClass}`}
           >
             {ticker.priceUSD !== null ? `$${fmt(ticker.priceUSD)}` : "—"}
           </span>
-          {ticker.changePercentUSD !== null && (
-            <span className={`text-sm font-medium ${pctColor(ticker.changePercentUSD)}`}>
-              ({ticker.changePercentUSD >= 0 ? "+" : ""}
-              {fmt(ticker.changePercentUSD)}%)
-            </span>
-          )}
         </div>
+
+        {ticker.changePercentUSD !== null && (
+          <Badge color={ticker.changePercentUSD >= 0 ? "success" : "error"}>
+            {ticker.changePercentUSD >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+            {Math.abs(ticker.changePercentUSD).toFixed(2)}%
+          </Badge>
+        )}
       </div>
 
       {/* Sparkline */}
