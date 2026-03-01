@@ -1,8 +1,27 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Badge from "../ui/badge/Badge";
-import { useNewsMap, DEFAULT_POLL_MINUTES } from "./useNewsMap";
+import { useNewsMap } from "./useNewsMap";
 import { countryFlag } from "./mapUtils";
 import type { AlertLevel, CountryNewsData } from "./types";
+
+/** Counts down to a target timestamp, returning seconds remaining (updates every second). */
+function useCountdownSeconds(targetMs: number | null): number | null {
+  const [secsLeft, setSecsLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (targetMs === null) { setSecsLeft(null); return; }
+    const tick = () => setSecsLeft(Math.max(0, Math.round((targetMs - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [targetMs]);
+  return secsLeft;
+}
+
+function formatCountdown(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 /** Visual priority order for sorting (lower index = more urgent) */
 const ALERT_ORDER: Record<AlertLevel, number> = {
@@ -87,7 +106,8 @@ function CountryRow({ country }: { country: CountryNewsData }) {
 }
 
 export default function GlobalNewsMap() {
-  const { data, loading } = useNewsMap();
+  const { data, loading, nextRefreshAt, refresh } = useNewsMap();
+  const secsLeft = useCountdownSeconds(nextRefreshAt);
 
   const topCountries = useMemo<CountryNewsData[]>(() => {
     if (!data) return [];
@@ -100,10 +120,23 @@ export default function GlobalNewsMap() {
       .slice(0, MAX_ROWS);
   }, [data]);
 
-  const statusLabel = data
+  const updatedAt = data && !data.usingMockData
+    ? new Date(data.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+
+  const countdownText = loading
+    ? "refreshing…"
+    : secsLeft !== null
+    ? `next refresh in ${formatCountdown(secsLeft)}`
+    : null;
+
+  const statusParts: string[] = [];
+  if (updatedAt) statusParts.push(`updated ${updatedAt}`);
+  if (countdownText) statusParts.push(countdownText);
+  const statusText = data
     ? data.usingMockData
       ? "Demo data"
-      : `${data.countries.length} countries · updated ${new Date(data.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · refreshes every ${DEFAULT_POLL_MINUTES} min`
+      : statusParts.join(" · ")
     : null;
 
   return (
@@ -118,10 +151,25 @@ export default function GlobalNewsMap() {
             Global News Map
           </h3>
         </div>
-        {statusLabel && (
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {statusLabel}
-          </span>
+        {statusText && (
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            title="Refresh now"
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              className={`w-3 h-3 shrink-0 ${loading ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            >
+              <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75V6.75a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1 0-1.5h2.44l-.963-.963A5.25 5.25 0 0 0 2.91 6.59a.75.75 0 0 1-1.455-.36A6.75 6.75 0 0 1 12.9 4.215l.936.937V3.227a.75.75 0 0 1 .75-.75ZM2.164 9.5a.75.75 0 0 1 .75.75v1.51l.936-.937a6.75 6.75 0 0 1 11.445-1.635.75.75 0 0 1-1.455.36 5.25 5.25 0 0 0-8.317-1.553l-.963.963h2.44a.75.75 0 0 1 0 1.5H3.164a.75.75 0 0 1-.75-.75V9.5z" clipRule="evenodd" />
+            </svg>
+            {statusText}
+          </button>
         )}
       </div>
 
