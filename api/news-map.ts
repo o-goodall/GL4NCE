@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Parser from "rss-parser";
+import { scoreCountries, calculateConfidence, getCountryByCode } from "./scoringEngine";
 
 // ── Types (mirror src/components/news-map/types.ts) ─────────────────────────
 type EventSeverity = "high" | "medium" | "low";
@@ -20,6 +21,10 @@ interface NewsEvent {
   severity: EventSeverity;
   category: EventCategory;
   link?: string;
+  /** Deterministic score from the scoring engine */
+  score?: number;
+  /** Confidence that this is the correct country (0–1) */
+  confidence?: number;
 }
 
 interface CountryNewsData {
@@ -169,9 +174,6 @@ for (const c of COUNTRIES) {
     if (!KEYWORD_MAP.has(kw)) KEYWORD_MAP.set(kw, c);
   }
 }
-
-// Sorted keywords longest-first for greedy matching
-const SORTED_KEYWORDS = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.length);
 
 // ── RSS sources ──────────────────────────────────────────────────────────────
 // All feeds are fetched concurrently via Promise.allSettled — a single slow or
@@ -426,12 +428,9 @@ function classifyEvent(text: string): { severity: EventSeverity; category: Event
   return null;
 }
 
-function detectCountry(text: string): CountryInfo | null {
-  const lower = text.toLowerCase();
-  for (const kw of SORTED_KEYWORDS) {
-    if (lower.includes(kw)) return KEYWORD_MAP.get(kw)!;
-  }
-  return null;
+/** Look up country info from the scoring-engine database by ISO code */
+function getCountryInfoByCode(code: string) {
+  return getCountryByCode(code) ?? KEYWORD_MAP.get(code.toLowerCase());
 }
 
 function isWithinRetentionWindow(isoTime: string): boolean {
@@ -547,7 +546,7 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
   const byCode: Record<string, NewsEvent[]> = {};
   for (const ev of recent) (byCode[ev.countryCode] ??= []).push(ev);
   const countries = Object.entries(byCode).map(([code, evs]) => {
-    const info = KEYWORD_MAP.get(code.toLowerCase());
+    const info = getCountryInfoByCode(code);
     const isTrending = trending.has(code);
     return {
       code,
@@ -656,8 +655,12 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         // France instead of the real country.
         const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
         const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
-        const country = detectCountry(cleanedTitle) ?? detectCountry(`${cleanedTitle} ${cleanedSnippet}`);
-        if (!country) continue;
+        // Score all countries mentioned; pick the one with the highest score
+        const scored = scoreCountries(cleanedTitle, cleanedSnippet);
+        if (scored.length === 0) continue;
+        const winner = scored[0];
+        const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
+        const country = winner.country;
         // isoDate is normalised by rss-parser; pubDate can be in any locale format
         const rawTime = item.isoDate ?? item.pubDate;
         const parsedDate = rawTime ? new Date(rawTime) : null;
@@ -673,6 +676,8 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
           severity: cls.severity,
           category: cls.category,
           link: item.link,
+          score: winner.score,
+          confidence,
         });
       }
       return events;
@@ -746,8 +751,11 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
       const cls  = classifyEvent(text);
       if (!cls) continue;
       const cleanedText = text.replace(OUTLET_NAME_RE, "");
-      const country     = detectCountry(cleanedText);
-      if (!country) continue;
+      const scored = scoreCountries(cleanedText, "");
+      if (scored.length === 0) continue;
+      const winner = scored[0];
+      const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
+      const country = winner.country;
       // Use the per-message timestamp when available; fall back to now if the
       // times array is shorter than the texts array (shouldn't happen with valid
       // Telegram HTML but defensive here so we never assign a wrong timestamp).
@@ -764,6 +772,8 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
         countryCode: country.code,
         severity: cls.severity,
         category: cls.category,
+        score: winner.score,
+        confidence,
       });
     }
     return events;
@@ -815,8 +825,12 @@ async function fetchRedditJSON(
       if (!cls) continue;
       const cleanedTitle = title.replace(OUTLET_NAME_RE, "");
       const cleanedBody  = (selftext ?? "").replace(OUTLET_NAME_RE, "");
-      const country = detectCountry(cleanedTitle) ?? detectCountry(`${cleanedTitle} ${cleanedBody}`);
-      if (!country) continue;
+      // Score all countries; pick highest scorer
+      const scored = scoreCountries(cleanedTitle, cleanedBody);
+      if (scored.length === 0) continue;
+      const winner = scored[0];
+      const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
+      const country = winner.country;
       events.push({
         title,
         source: src.name,
@@ -826,6 +840,8 @@ async function fetchRedditJSON(
         severity: cls.severity,
         category: cls.category,
         link: url,
+        score: winner.score,
+        confidence,
       });
     }
     return events;
