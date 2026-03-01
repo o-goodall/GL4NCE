@@ -1,9 +1,5 @@
 import { lazy, Suspense } from "react";
-import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
-import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
 import GeopoliticalMarkets from "../../components/polymarket/GeopoliticalMarkets";
-import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
-import GlobalNewsMap from "../../components/news-map/GlobalNewsMap";
 import PageMeta from "../../components/common/PageMeta";
 
 const NewsMapWidget = lazy(() => import("../../components/news-map/NewsMapWidget"));
@@ -26,22 +22,13 @@ export default function Intel() {
           </Suspense>
         </div>
 
-        <div className="col-span-12 space-y-6 xl:col-span-7">
-          <EcommerceMetrics />
-
-          <MonthlySalesChart />
-        </div>
-
-        <div className="col-span-12 xl:col-span-5">
-          <MonthlyTarget />
-        </div>
-
         <div className="col-span-12">
           <GeopoliticalMarkets />
         </div>
 
+        {/* Blank tile placeholder */}
         <div className="col-span-12">
-          <GlobalNewsMap />
+          <div className="min-h-[48px] rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]" />
         </div>
       </div>
     </>
