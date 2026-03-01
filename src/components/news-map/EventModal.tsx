@@ -1,5 +1,6 @@
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
+import { countryFlag } from "./mapUtils";
 
 interface EventModalProps {
   country: CountryNewsData | null;
@@ -80,7 +81,18 @@ const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
   );
 });
 
+/** Severity order: high events first, then medium, then low */
+const SEVERITY_ORDER: Record<EventSeverity, number> = { high: 0, medium: 1, low: 2 };
+
 export default function EventModal({ country, onClose }: EventModalProps) {
+  // Close on Escape key — standard modal accessibility pattern
+  useEffect(() => {
+    if (!country) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [country, onClose]);
+
   if (!country) return null;
 
   return (
@@ -110,7 +122,7 @@ export default function EventModal({ country, onClose }: EventModalProps) {
               <span className="shrink-0 inline-flex h-2 w-2 rounded-full bg-error-500 animate-pulse" />
             )}
             <h3 className="truncate text-base font-semibold text-gray-800 dark:text-white/90">
-              {country.name}
+              <span aria-hidden="true">{countryFlag(country.code)} </span>{country.name}
             </h3>
             <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
               {country.events.length} event{country.events.length !== 1 ? "s" : ""}
@@ -140,11 +152,17 @@ export default function EventModal({ country, onClose }: EventModalProps) {
           </button>
         </div>
 
-        {/* Event list */}
+        {/* Event list — sorted severity-first (high → medium → low), then newest-first */}
         <div className="overflow-y-auto flex-1 px-5 custom-scrollbar">
-          {country.events.map((ev) => (
-            <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
-          ))}
+          {[...country.events]
+            .sort(
+              (a, b) =>
+                SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
+                new Date(b.time).getTime() - new Date(a.time).getTime()
+            )
+            .map((ev) => (
+              <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
+            ))}
         </div>
       </div>
     </div>

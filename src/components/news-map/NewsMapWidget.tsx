@@ -3,6 +3,7 @@ import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject, ISVGElementStyleAttributes, IVectorMapProps } from "@react-jvectormap/core/dist/types";
 import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
+import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
 import LiveEventFeed from "./LiveEventFeed";
@@ -72,16 +73,6 @@ const REGION_LABEL_STYLE: ISVGElementStyleAttributes = {
   hover: {}, selected: {}, selectedHover: {},
 };
 
-/** Convert an ISO-3166-1 alpha-2 country code to a flag emoji.
- *  Returns an empty string for invalid codes (non-alpha or wrong length). */
-function countryFlag(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper.length !== 2 || !/^[A-Z]{2}$/.test(upper)) return "";
-  return [...upper].map((c) =>
-    String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
-  ).join("");
-}
-
 type CategoryFilter = "all" | EventCategory;
 
 const FILTER_LABELS: Record<CategoryFilter, string> = {
@@ -131,11 +122,15 @@ const StableMap = memo(function StableMap({
   );
 });
 
+/** Alert levels that can be toggled off; "all" means no restriction */
+type AlertFilter = AlertLevel | "all";
+
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
   const [showZoomHint, setShowZoomHint] = useState(false);
   const mapRef = useRef<IMapObject | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -165,16 +160,22 @@ export default function NewsMapWidget() {
     }
   }, [activeCategories, categoryFilter, setCategoryFilter]);
 
-  // Filter countries to those that have at least one event matching the active filter
+  // Filter countries: first by category, then by alert level
   const countries = useMemo(() => {
-    if (categoryFilter === "all") return allCountries;
-    return allCountries
-      .map((c) => ({
-        ...c,
-        events: c.events.filter((e) => e.category === categoryFilter),
-      }))
-      .filter((c) => c.events.length > 0);
-  }, [allCountries, categoryFilter]);
+    let result = allCountries;
+    if (categoryFilter !== "all") {
+      result = result
+        .map((c) => ({
+          ...c,
+          events: c.events.filter((e) => e.category === categoryFilter),
+        }))
+        .filter((c) => c.events.length > 0);
+    }
+    if (alertFilter !== "all") {
+      result = result.filter((c) => c.alertLevel === alertFilter);
+    }
+    return result;
+  }, [allCountries, categoryFilter, alertFilter]);
 
   const trendingCountries = useMemo(
     () => countries
@@ -516,27 +517,41 @@ export default function NewsMapWidget() {
           </div>
         )}
 
-        {/* Map legend — floating bottom-left, mirrors the alert-level marker colours */}
+        {/* Map legend — floating bottom-left; each row is a clickable filter toggle.
+             Active filter: that alert level only. Click again to clear.
+             Inspired by liveuamap's layer-toggle controls. */}
         <div className="absolute bottom-3 left-3 z-10 rounded-lg border border-gray-200/80 bg-white/90 px-2.5 py-1.5 backdrop-blur-sm shadow-sm dark:border-gray-700/80 dark:bg-gray-800/90">
           <div className="flex flex-col gap-1">
-            {(["critical", "high", "medium", "watch"] as AlertLevel[]).map((level) => (
-              <span key={level} className="flex items-center gap-1.5">
-                <span
-                  className="shrink-0 rounded-full"
-                  style={{
-                    width: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
-                    height: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
-                    backgroundColor: ALERT_LEVEL_MARKER_FILL[level],
-                    border: "1.5px solid #ffffff",
-                    display: "inline-block",
-                  }}
-                  aria-hidden="true"
-                />
-                <span className="text-[10px] capitalize text-gray-600 dark:text-gray-300 leading-none">
-                  {level}
-                </span>
-              </span>
-            ))}
+            {(["critical", "high", "medium", "watch"] as AlertLevel[]).map((level) => {
+              const isActive = alertFilter === level;
+              const isDimmed = alertFilter !== "all" && alertFilter !== level;
+              return (
+                <button
+                  key={level}
+                  onClick={() => setAlertFilter(isActive ? "all" : level)}
+                  title={isActive ? `Show all alert levels` : `Filter to ${level} only`}
+                  aria-pressed={isActive}
+                  className={`flex items-center gap-1.5 rounded px-0.5 py-0.5 text-left transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                    isDimmed ? "opacity-30" : "opacity-100"
+                  } ${isActive ? "ring-1 ring-brand-400 ring-offset-1 dark:ring-offset-gray-800" : ""}`}
+                >
+                  <span
+                    className="shrink-0 rounded-full"
+                    style={{
+                      width: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
+                      height: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
+                      backgroundColor: ALERT_LEVEL_MARKER_FILL[level],
+                      border: "1.5px solid #ffffff",
+                      display: "inline-block",
+                    }}
+                    aria-hidden="true"
+                  />
+                  <span className={`text-[10px] capitalize leading-none ${isActive ? "font-semibold text-gray-800 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>
+                    {level}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

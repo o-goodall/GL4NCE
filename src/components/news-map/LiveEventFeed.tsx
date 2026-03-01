@@ -1,5 +1,6 @@
 import { useMemo, memo, useState } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity } from "./types";
+import { countryFlag } from "./mapUtils";
 
 interface FeedEntry {
   event: NewsEvent;
@@ -36,15 +37,6 @@ function relativeTime(isoString: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
-}
-
-/** Convert an ISO-3166-1 alpha-2 country code to a flag emoji. */
-function countryFlag(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper.length !== 2 || !/^[A-Z]{2}$/.test(upper)) return "";
-  return [...upper].map((c) =>
-    String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
-  ).join("");
 }
 
 const FeedRow = memo(function FeedRow({
