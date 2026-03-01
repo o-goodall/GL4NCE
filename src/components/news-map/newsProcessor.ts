@@ -131,6 +131,8 @@ const TRENDING_BASELINE_HOURS = 5;
 const DEDUP_TITLE_LENGTH = 40;
 /** All countries with velocity ≥ this fraction of the leader are co-trending */
 const VELOCITY_FLOOR = 1.2;
+/** Minimum distinct recent stories a country must have to qualify as trending */
+const MIN_STORIES_TO_TREND = 2;
 /** Hard cap on concurrent trending countries (keeps UI scannable) */
 const MAX_TRENDING = 3;
 
@@ -217,8 +219,10 @@ function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel
  * Multi-country trending detection.
  *
  * Returns ALL countries whose news velocity clears the absolute floor
- * (VELOCITY_FLOOR), up to MAX_TRENDING.  Conflict-group partners of any
- * trending country are also surfaced when they have recent events.
+ * (VELOCITY_FLOOR), up to MAX_TRENDING.  A country must have at least
+ * MIN_STORIES_TO_TREND distinct recent stories to qualify — a single viral
+ * story cannot trigger trending.  Conflict-group partners are recorded for
+ * informational use but do NOT automatically inherit trending status.
  *
  * This replaces the previous single-winner approach, giving much earlier
  * simultaneous warning across multiple active crises.
@@ -228,8 +232,9 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
   const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
 
-  const recentScores:   Record<string, number> = {};
-  const baselineScores: Record<string, number> = {};
+  const recentScores:     Record<string, number> = {};
+  const baselineScores:   Record<string, number> = {};
+  const recentStoryCount: Record<string, number> = {};
   const seenPerCountry = new Map<string, Set<string>>();
   // Collected in the same loop to avoid a second pass + date re-parsing below
   const codesWithEvents = new Set<string>();
@@ -249,16 +254,19 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
 
     const weight = SEVERITY_WEIGHTS[ev.severity];
     if (evTime >= recentCutoff) {
-      recentScores[ev.countryCode]   = (recentScores[ev.countryCode]   ?? 0) + weight;
+      recentScores[ev.countryCode]     = (recentScores[ev.countryCode]     ?? 0) + weight;
+      recentStoryCount[ev.countryCode] = (recentStoryCount[ev.countryCode] ?? 0) + 1;
     } else {
       baselineScores[ev.countryCode] = (baselineScores[ev.countryCode] ?? 0) + weight;
     }
   }
 
-  // Compute velocity for each country that cleared the score threshold.
+  // Compute velocity for each country that cleared both the score threshold
+  // and the minimum distinct story count.
   const eligible: { code: string; velocity: number }[] = [];
   for (const [code, recentScore] of Object.entries(recentScores)) {
     if (recentScore < TRENDING_THRESHOLD) continue;
+    if ((recentStoryCount[code] ?? 0) < MIN_STORIES_TO_TREND) continue;
     const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
     // Ensure the divisor is at least 1 so countries with zero baseline still score well.
     const velocity = recentScore / Math.max(baselineRate, 1);
@@ -278,7 +286,8 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   // 1-based rank map for the ordered trending list
   const trendingRanks = new Map(trendingList.map((e, i) => [e.code, i + 1]));
 
-  // For each trending country, surface its active conflict group partners.
+  // Record active conflict groups for informational use only — partners do NOT
+  // inherit trending status automatically; they must qualify independently.
   // seenGroups prevents the same group appearing twice if both members trend.
   const seenGroups = new Set<string>();
   const activeConflictGroups: string[][] = [];
@@ -289,7 +298,6 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
       if (seenGroups.has(groupKey)) continue;
       const activeMembers = (group as readonly string[]).filter((c) => codesWithEvents.has(c));
       if (activeMembers.length >= 2) {
-        activeMembers.forEach((c) => trending.add(c));
         activeConflictGroups.push(activeMembers);
         seenGroups.add(groupKey);
       }

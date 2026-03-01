@@ -35,6 +35,8 @@ interface CountryNewsData {
   lat: number;
   lng: number;
   trending: boolean;
+  /** 1-based rank among trending countries (1 = most trending); undefined for non-trending */
+  trendingRank?: number;
   alertLevel: AlertLevel;
   events: NewsEvent[];
   /** Weighted event activity score over the rolling 7-day window (higher = more sustained conflict) */
@@ -393,8 +395,10 @@ const TRENDING_RECENT_HOURS = 1;
 const TRENDING_BASELINE_HOURS = 5;
 /** All countries with velocity ≥ this absolute floor are co-trending */
 const VELOCITY_FLOOR = 1.2;
-/** Hard cap on concurrent trending countries */
-const MAX_TRENDING = 5;
+/** Minimum distinct recent stories a country must have to qualify as trending */
+const MIN_STORIES_TO_TREND = 2;
+/** Hard cap on concurrent trending countries (keeps UI scannable) */
+const MAX_TRENDING = 3;
 /** Maximum events retained per country in the response (prevents one country flooding the output) */
 const MAX_EVENTS_PER_COUNTRY = 10;
 /** Rolling window for the 7-day escalation index (ms) */
@@ -584,16 +588,19 @@ function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel
  * Multi-country trending detection.
  *
  * Returns ALL countries whose news velocity clears VELOCITY_FLOOR, up to
- * MAX_TRENDING.  Conflict-group partners of any trending country are also
- * surfaced when they have recent events.
+ * MAX_TRENDING.  A country must have at least MIN_STORIES_TO_TREND distinct
+ * recent stories to qualify — a single viral story cannot trigger trending.
+ * Conflict-group partners are recorded for informational use but do NOT
+ * automatically inherit trending status.
  */
-function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflictGroups: string[][] } {
+function computeTrending(events: NewsEvent[]): { trending: Set<string>; trendingRanks: Map<string, number>; conflictGroups: string[][] } {
   const now = Date.now();
   const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
   const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
 
-  const recentScores:   Record<string, number> = {};
-  const baselineScores: Record<string, number> = {};
+  const recentScores:     Record<string, number> = {};
+  const baselineScores:   Record<string, number> = {};
+  const recentStoryCount: Record<string, number> = {};
 
   // Per-country story dedup across the full window: prevents the same story
   // repeated across sources from inflating any country's score.
@@ -619,22 +626,25 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     const confirmBonus  = ev.confirmations ? 1 + 0.3 * Math.min(ev.confirmations - 1, 3) : 1;
     const weight = SEVERITY_WEIGHTS[ev.severity] * sourceWeight * recencyMultiplier(ev.time) * confirmBonus;
     if (evTime >= recentCutoff) {
-      recentScores[ev.countryCode]   = (recentScores[ev.countryCode]   ?? 0) + weight;
+      recentScores[ev.countryCode]     = (recentScores[ev.countryCode]     ?? 0) + weight;
+      recentStoryCount[ev.countryCode] = (recentStoryCount[ev.countryCode] ?? 0) + 1;
     } else {
       baselineScores[ev.countryCode] = (baselineScores[ev.countryCode] ?? 0) + weight;
     }
   }
 
-  // Compute velocity for each country that cleared the score threshold.
+  // Compute velocity for each country that cleared both the score threshold
+  // and the minimum distinct story count.
   const eligible: { code: string; velocity: number }[] = [];
   for (const [code, recentScore] of Object.entries(recentScores)) {
     if (recentScore < TRENDING_THRESHOLD) continue;
+    if ((recentStoryCount[code] ?? 0) < MIN_STORIES_TO_TREND) continue;
     const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
     const velocity = recentScore / Math.max(baselineRate, 1);
     eligible.push({ code, velocity });
   }
 
-  if (eligible.length === 0) return { trending: new Set(), conflictGroups: [] };
+  if (eligible.length === 0) return { trending: new Set(), trendingRanks: new Map(), conflictGroups: [] };
 
   // Sort by velocity descending; keep all above the floor, cap at MAX_TRENDING.
   eligible.sort((a, b) => b.velocity - a.velocity);
@@ -643,10 +653,11 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     .slice(0, MAX_TRENDING);
 
   const trending = new Set(trendingList.map((e) => e.code));
+  // 1-based rank map for the ordered trending list
+  const trendingRanks = new Map(trendingList.map((e, i) => [e.code, i + 1]));
 
-  // For each trending country, surface its active conflict group partners.
-  // seenGroups prevents duplicate group entries when multiple members of the
-  // same group are trending simultaneously.
+  // Record active conflict groups for informational use only — partners do NOT
+  // inherit trending status automatically; they must qualify independently.
   const seenGroups = new Set<string>();
   const activeConflictGroups: string[][] = [];
   for (const { code: tCode } of trendingList) {
@@ -656,19 +667,18 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
       if (seenGroups.has(groupKey)) continue;
       const activeMembers = (group as readonly string[]).filter((c) => codesWithEvents.has(c));
       if (activeMembers.length >= 2) {
-        activeMembers.forEach((c) => trending.add(c));
         activeConflictGroups.push(activeMembers);
         seenGroups.add(groupKey);
       }
     }
   }
 
-  return { trending, conflictGroups: activeConflictGroups };
+  return { trending, trendingRanks, conflictGroups: activeConflictGroups };
 }
 
 function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]; conflictGroups?: string[][] } {
   const recent = events.filter((e) => isWithinRetentionWindow(e.time));
-  const { trending, conflictGroups } = computeTrending(recent);
+  const { trending, trendingRanks, conflictGroups } = computeTrending(recent);
   const byCode: Record<string, NewsEvent[]> = {};
   for (const ev of recent) (byCode[ev.countryCode] ??= []).push(ev);
   const countries = Object.entries(byCode).map(([code, evs]) => {
@@ -680,6 +690,7 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
       lat: info?.lat ?? 0,
       lng: info?.lng ?? 0,
       trending: isTrending,
+      trendingRank: isTrending ? (trendingRanks.get(code) ?? undefined) : undefined,
       alertLevel: computeAlertLevel(evs, isTrending),
       escalationIndex: computeEscalationIndex(code, events),
       // Cap events per country to prevent one conflict from dominating the feed
@@ -815,9 +826,13 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         // isoDate is normalised by rss-parser; pubDate can be in any locale format
         const rawTime = item.isoDate ?? item.pubDate;
         const parsedDate = rawTime ? new Date(rawTime) : null;
-        const time = parsedDate && !isNaN(parsedDate.getTime())
-          ? parsedDate.toISOString()
-          : new Date().toISOString();
+        const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+        // Reject articles dated outside the retention window or too far in the future
+        if (validDate) {
+          const ageMs = Date.now() - validDate.getTime();
+          if (ageMs > RETENTION_HOURS * 3_600_000 || ageMs < -3_600_000) continue;
+        }
+        const time = validDate ? validDate.toISOString() : new Date().toISOString();
         events.push({
           title: item.title,
           source: src.name,
@@ -855,9 +870,10 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         storyClusters.set(key, { event: ev, sources: new Set([ev.source]) });
       } else {
         existing.sources.add(ev.source);
-        // Prefer the version with the highest attribution score
+        // Prefer the version with the highest attribution score,
+        // but always retain the link from whichever event has one.
         if ((ev.score ?? 0) > (existing.event.score ?? 0)) {
-          storyClusters.set(key, { event: ev, sources: existing.sources });
+          storyClusters.set(key, { event: { ...ev, link: ev.link ?? existing.event.link }, sources: existing.sources });
         }
       }
     }
