@@ -1,11 +1,8 @@
-import { useState } from "react";
 import { usePolymarket } from "./usePolymarket";
 import type { PolymarketMarket } from "./types";
 
 /** Maximum number of outcomes displayed per market card / modal entry */
 const MAX_DISPLAYED_OUTCOMES = 4;
-/** Number of cards shown before the "See More" button */
-const INITIAL_VISIBLE = 6;
 
 const POLYMARKET_BASE = "https://polymarket.com";
 
@@ -106,10 +103,6 @@ function SkeletonCard() {
 
 export default function GeopoliticalMarkets() {
   const { markets, loading, error } = usePolymarket();
-  const [expanded, setExpanded] = useState(false);
-
-  const visible = expanded ? markets : markets.slice(0, INITIAL_VISIBLE);
-  const hasMore = markets.length > INITIAL_VISIBLE;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
@@ -118,7 +111,7 @@ export default function GeopoliticalMarkets() {
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-              Geopolitical Market Predictions
+              Triggers
             </h3>
           </div>
           <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
@@ -150,37 +143,29 @@ export default function GeopoliticalMarkets() {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {visible.map((m) => (
-              <MarketCard key={m.id} market={m} />
+          {/* Mobile: horizontal scroll swipe cards (one visible at a time) */}
+          <div
+            className="flex gap-3 overflow-x-auto pb-2 sm:hidden"
+            style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
+            aria-label="Market predictions — swipe to browse"
+          >
+            {markets.map((m) => (
+              <div
+                key={m.id}
+                className="shrink-0 w-[85vw] max-w-sm"
+                style={{ scrollSnapAlign: "start" }}
+              >
+                <MarketCard market={m} />
+              </div>
             ))}
           </div>
 
-          {hasMore && (
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-gray-700 dark:bg-white/[0.03] dark:text-gray-400 dark:hover:border-brand-600 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
-                aria-expanded={expanded}
-              >
-                {expanded ? (
-                  <>
-                    See Less
-                    <span aria-hidden="true">↑</span>
-                  </>
-                ) : (
-                  <>
-                    See More
-                    <span className="inline-flex items-center justify-center rounded-full bg-gray-200 px-1.5 text-[10px] dark:bg-gray-700">
-                      +{markets.length - INITIAL_VISIBLE}
-                    </span>
-                    <span aria-hidden="true">↓</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
+          {/* Desktop: 2-column grid */}
+          <div className="hidden sm:grid sm:grid-cols-2 gap-3">
+            {markets.map((m) => (
+              <MarketCard key={m.id} market={m} />
+            ))}
+          </div>
         </>
       )}
     </div>

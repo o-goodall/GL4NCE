@@ -12,6 +12,12 @@ interface LiveEventFeedProps {
   /** Maximum rows to display (default 10) */
   maxRows?: number;
   onCountryClick: (country: CountryNewsData) => void;
+  /**
+   * When true, renders without the outer rounded wrapper — designed for use
+   * inside a pre-styled side panel or bottom sheet.  Enables vertical snap
+   * scroll on the feed container.
+   */
+  panelMode?: boolean;
 }
 
 /** Colour of the severity indicator dot */
@@ -49,50 +55,51 @@ const FeedRow = memo(function FeedRow({
   const { event, country } = entry;
   return (
     <div
-      className="flex items-center gap-2 py-2 border-b border-gray-100 last:border-0 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 rounded transition-colors"
+      className="flex flex-col gap-1 py-3 border-b border-gray-100 last:border-0 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg px-1 transition-colors"
+      style={{ scrollSnapAlign: "start" }}
       onClick={() => onCountryClick(country)}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onCountryClick(country)}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onCountryClick(country)}
     >
-      {/* Severity dot */}
-      <span
-        className={`shrink-0 h-1.5 w-1.5 rounded-full ${SEVERITY_DOT[event.severity]}`}
-        aria-label={event.severity}
-      />
-      {/* Flag + country */}
-      <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400 w-24 truncate">
-        <span aria-label={country.name}>{countryFlag(country.code)}</span>
-        {" "}
-        {country.name}
-      </span>
-      {/* Title — plain text in the feed row; use the Read pill for the link */}
-      <span className="flex-1 min-w-0">
-        <span className="text-xs text-gray-700 dark:text-gray-300 truncate block">
-          {event.title}
+      {/* Top row: severity dot + country flag/name + time */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span
+          className={`shrink-0 h-2 w-2 rounded-full ${SEVERITY_DOT[event.severity]}`}
+          aria-label={event.severity}
+        />
+        <span className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1 truncate">
+          <span aria-label={country.name}>{countryFlag(country.code)}</span>
+          <span className="truncate">{country.name}</span>
         </span>
-      </span>
-      {/* Read pill — opens story in new tab; stopPropagation prevents opening country modal */}
-      {event.link && (
-        <a
-          href={event.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`Read article: ${event.title}`}
-        >
-          ↗
-        </a>
-      )}
-      {/* Category */}
-      <span className={`shrink-0 text-[10px] font-medium uppercase ${CATEGORY_BADGE[event.category]}`}>
-        {event.category}
-      </span>
-      {/* Relative time */}
-      <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums min-w-[2rem] text-right">
-        {relativeTime(event.time)}
-      </span>
+        <span className="ml-auto shrink-0 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+          {relativeTime(event.time)}
+        </span>
+      </div>
+      {/* Headline — bold for readability */}
+      <p className="text-sm font-semibold text-gray-800 dark:text-white/90 line-clamp-2 leading-snug">
+        {event.title}
+      </p>
+      {/* Meta row: source · category · read link */}
+      <div className="flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+        <span className="truncate">{event.source}</span>
+        <span aria-hidden="true">·</span>
+        <span className={`shrink-0 font-medium uppercase ${CATEGORY_BADGE[event.category]}`}>
+          {event.category}
+        </span>
+        {event.link && (
+          <a
+            href={event.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Read article: ${event.title}`}
+          >
+            Read ↗
+          </a>
+        )}
+      </div>
     </div>
   );
 });
@@ -113,6 +120,7 @@ export default function LiveEventFeed({
   countries,
   maxRows = 10,
   onCountryClick,
+  panelMode = false,
 }: LiveEventFeedProps) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -144,8 +152,8 @@ export default function LiveEventFeed({
             event.source.toLowerCase().includes(q)
         )
       : allFeed;
-    return filtered.slice(0, expanded ? MAX_ROWS_EXPANDED : maxRows);
-  }, [allFeed, search, expanded, maxRows]);
+    return filtered.slice(0, expanded || panelMode ? MAX_ROWS_EXPANDED : maxRows);
+  }, [allFeed, search, expanded, maxRows, panelMode]);
 
   // When the user starts searching, auto-expand so they see all matching results.
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,9 +161,52 @@ export default function LiveEventFeed({
     if (e.target.value.trim()) setExpanded(true);
   };
 
-  const canExpand = !expanded && allFeed.length > maxRows && !search.trim();
+  const canExpand = !expanded && !panelMode && allFeed.length > maxRows && !search.trim();
 
   if (allFeed.length === 0) return null;
+
+  const feedRows = (
+    <>
+      {feed.length > 0 ? (
+        feed.map((entry, idx) => (
+          <FeedRow
+            key={`${entry.country.code}-${entry.event.time}-${idx}`}
+            entry={entry}
+            onCountryClick={onCountryClick}
+          />
+        ))
+      ) : (
+        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">
+          No events match &ldquo;{search}&rdquo;
+        </p>
+      )}
+    </>
+  );
+
+  if (panelMode) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Search input */}
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+          <input
+            type="search"
+            value={search}
+            onChange={handleSearch}
+            placeholder="Filter events…"
+            aria-label="Filter live feed events"
+            className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
+          />
+        </div>
+        {/* Snap-scroll feed list */}
+        <div
+          className="flex-1 overflow-y-auto px-3 py-1"
+          style={{ scrollSnapType: "y mandatory" }}
+        >
+          {feedRows}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 px-3 py-2">
@@ -173,20 +224,8 @@ export default function LiveEventFeed({
           className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
         />
       </div>
-      <div>
-        {feed.length > 0 ? (
-          feed.map((entry, idx) => (
-            <FeedRow
-              key={`${entry.country.code}-${entry.event.time}-${idx}`}
-              entry={entry}
-              onCountryClick={onCountryClick}
-            />
-          ))
-        ) : (
-          <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">
-            No events match &ldquo;{search}&rdquo;
-          </p>
-        )}
+      <div style={{ scrollSnapType: "y mandatory" }}>
+        {feedRows}
       </div>
       {/* Show more / show less toggle */}
       {(canExpand || expanded) && !search.trim() && (
