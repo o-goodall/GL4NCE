@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Parser from "rss-parser";
-import { scoreCountries, calculateConfidence, getCountryByCode } from "./scoringEngine";
-import { classifyEvent, cleanSnippet, OUTLET_NAME_RE, type EventSeverity, type EventCategory } from "./classifier";
+import { scoreCountries, calculateConfidence, getCountryByCode } from "./scoringEngine.js";
+import { classifyEvent, cleanSnippet, OUTLET_NAME_RE, type EventSeverity, type EventCategory } from "./classifier.js";
 import {
   RSS_SOURCES, TELEGRAM_CHANNELS, REDDIT_JSON_SUBREDDITS,
   SOURCE_WEIGHTS, CONFLICT_GROUPS,
   ARTICLES_PER_FEED, FETCH_TIMEOUT, MAX_CONCURRENT_FETCHES, NEWS_MAP_UA,
-} from "./sources";
+} from "./sources.js";
 
 // ── Types (mirror src/components/news-map/types.ts) ─────────────────────────
 type AlertLevel = "critical" | "high" | "medium" | "watch";

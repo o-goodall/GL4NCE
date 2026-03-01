@@ -5,8 +5,8 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — JSON import; esbuild bundles this automatically (no tsconfig for api/)
-import countriesJson from "./countries.json";
+// @ts-ignore — JSON import with attribute; esbuild bundles this automatically (no tsconfig for api/)
+import countriesJson from "./countries.json" with { type: "json" };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
