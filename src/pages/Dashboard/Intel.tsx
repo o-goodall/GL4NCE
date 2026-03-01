@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
 import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
-import StatisticsChart from "../../components/ecommerce/StatisticsChart";
+import GeopoliticalMarkets from "../../components/polymarket/GeopoliticalMarkets";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import GlobalNewsMap from "../../components/news-map/GlobalNewsMap";
 import PageMeta from "../../components/common/PageMeta";
@@ -37,7 +37,7 @@ export default function Intel() {
         </div>
 
         <div className="col-span-12">
-          <StatisticsChart />
+          <GeopoliticalMarkets />
         </div>
 
         <div className="col-span-12">

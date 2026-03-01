@@ -5,6 +5,7 @@ import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
+import { usePolymarket, filterMarketsForCountry } from "../polymarket/usePolymarket";
 import EventModal from "./EventModal";
 import LiveEventFeed from "./LiveEventFeed";
 
@@ -130,6 +131,7 @@ type AlertFilter = AlertLevel | "all";
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
+  const { markets: allMarkets } = usePolymarket();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -147,6 +149,12 @@ export default function NewsMapWidget() {
   const prevHighlightedRef = useRef<Set<string>>(new Set());
 
   const allCountries = useMemo(() => data?.countries ?? [], [data]);
+
+  // Polymarket predictions relevant to the currently selected country
+  const selectedMarkets = useMemo(
+    () => filterMarketsForCountry(allMarkets, selected?.name ?? null),
+    [allMarkets, selected?.name],
+  );
 
   // Compute which categories have at least one live event
   const activeCategories = useMemo<Set<CategoryFilter>>(() => {
@@ -754,7 +762,7 @@ export default function NewsMapWidget() {
         </div>
       )}
 
-      <EventModal country={selected} onClose={handleClose} />
+      <EventModal country={selected} onClose={handleClose} markets={selectedMarkets} />
     </div>
   );
 }
