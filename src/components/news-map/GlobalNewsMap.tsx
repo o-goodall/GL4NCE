@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import Badge from "../ui/badge/Badge";
-import { useNewsMap } from "./useNewsMap";
+import { useNewsMap, DEFAULT_POLL_MINUTES } from "./useNewsMap";
 import { countryFlag } from "./mapUtils";
 import type { AlertLevel, CountryNewsData } from "./types";
 
@@ -103,7 +103,7 @@ export default function GlobalNewsMap() {
   const statusLabel = data
     ? data.usingMockData
       ? "Demo data"
-      : `${data.countries.length} countries · updated ${new Date(data.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : `${data.countries.length} countries · updated ${new Date(data.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · refreshes every ${DEFAULT_POLL_MINUTES} min`
     : null;
 
   return (

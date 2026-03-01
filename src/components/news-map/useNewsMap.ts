@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { NewsMapData } from "./types";
 
-const DEFAULT_POLL_MINUTES = 15;
+export const DEFAULT_POLL_MINUTES = 15;
 
 interface UseNewsMapReturn {
   data: NewsMapData | null;
