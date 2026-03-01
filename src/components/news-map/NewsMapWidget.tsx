@@ -516,6 +516,30 @@ export default function NewsMapWidget() {
           </div>
         )}
 
+        {/* Map legend — floating bottom-left, mirrors the alert-level marker colours */}
+        <div className="absolute bottom-3 left-3 z-10 rounded-lg border border-gray-200/80 bg-white/90 px-2.5 py-1.5 backdrop-blur-sm shadow-sm dark:border-gray-700/80 dark:bg-gray-800/90">
+          <div className="flex flex-col gap-1">
+            {(["critical", "high", "medium", "watch"] as AlertLevel[]).map((level) => (
+              <span key={level} className="flex items-center gap-1.5">
+                <span
+                  className="shrink-0 rounded-full"
+                  style={{
+                    width: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
+                    height: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
+                    backgroundColor: ALERT_LEVEL_MARKER_FILL[level],
+                    border: "1.5px solid #ffffff",
+                    display: "inline-block",
+                  }}
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] capitalize text-gray-600 dark:text-gray-300 leading-none">
+                  {level}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+
         {/* Desktop zoom controls — hidden on mobile where pinch-to-zoom is native */}
         <div className="absolute bottom-3 right-3 z-10 hidden sm:flex flex-col gap-1">
           <button
@@ -563,6 +587,7 @@ export default function NewsMapWidget() {
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500">
               Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+              {data.feedStats && ` · ${data.feedStats.succeeded}/${data.feedStats.total} sources`}
               {data.usingMockData && " · demo data"}
             </span>
           </div>

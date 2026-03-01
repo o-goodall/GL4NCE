@@ -104,6 +104,9 @@ const FeedRow = memo(function FeedRow({
   );
 });
 
+/** Hard cap on the "expanded" view (keeps the component from growing unbounded) */
+const MAX_ROWS_EXPANDED = 25;
+
 /**
  * Live event feed — shows the most recent events across all countries,
  * newest first.  Clicking a row opens the country modal for that country.
@@ -119,7 +122,10 @@ export default function LiveEventFeed({
   onCountryClick,
 }: LiveEventFeedProps) {
   const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
 
+  // All events sorted newest-first, capped at MAX_ROWS_EXPANDED to avoid
+  // storing an unbounded list in memory — only the most-recent rows matter.
   const allFeed = useMemo<FeedEntry[]>(() => {
     const entries: FeedEntry[] = [];
     for (const country of countries) {
@@ -127,24 +133,34 @@ export default function LiveEventFeed({
         entries.push({ event, country });
       }
     }
-    // Sort newest first, then cap to maxRows
     entries.sort(
       (a, b) => new Date(b.event.time).getTime() - new Date(a.event.time).getTime()
     );
-    return entries.slice(0, maxRows);
-  }, [countries, maxRows]);
+    return entries.slice(0, MAX_ROWS_EXPANDED);
+  }, [countries]);
 
-  // Apply keyword search — filter by title or country name
+  // Apply keyword search — filter by title, country name, or source.
+  // Then cap to `maxRows` (collapsed) or `MAX_ROWS_EXPANDED` (expanded).
   const feed = useMemo<FeedEntry[]>(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return allFeed;
-    return allFeed.filter(
-      ({ event, country }) =>
-        event.title.toLowerCase().includes(q) ||
-        country.name.toLowerCase().includes(q) ||
-        event.source.toLowerCase().includes(q)
-    );
-  }, [allFeed, search]);
+    const filtered = q
+      ? allFeed.filter(
+          ({ event, country }) =>
+            event.title.toLowerCase().includes(q) ||
+            country.name.toLowerCase().includes(q) ||
+            event.source.toLowerCase().includes(q)
+        )
+      : allFeed;
+    return filtered.slice(0, expanded ? MAX_ROWS_EXPANDED : maxRows);
+  }, [allFeed, search, expanded, maxRows]);
+
+  // When the user starts searching, auto-expand so they see all matching results.
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value);
+    if (e.target.value.trim()) setExpanded(true);
+  };
+
+  const canExpand = !expanded && allFeed.length > maxRows && !search.trim();
 
   if (allFeed.length === 0) return null;
 
@@ -158,7 +174,7 @@ export default function LiveEventFeed({
         <input
           type="search"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={handleSearch}
           placeholder="Filter events…"
           aria-label="Filter live feed events"
           className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
@@ -182,6 +198,17 @@ export default function LiveEventFeed({
           </p>
         )}
       </div>
+      {/* Show more / show less toggle */}
+      {(canExpand || expanded) && !search.trim() && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1.5 w-full text-center text-[10px] font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors py-0.5"
+        >
+          {expanded
+            ? "Show less ↑"
+            : `Show ${Math.max(1, Math.min(MAX_ROWS_EXPANDED, allFeed.length) - maxRows)} more ↓`}
+        </button>
+      )}
     </div>
   );
 }

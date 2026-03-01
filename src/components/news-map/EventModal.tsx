@@ -66,6 +66,14 @@ const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
           >
             {event.category}
           </span>
+          {event.confirmations !== undefined && event.confirmations > 1 && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300"
+              title={`Reported by ${event.confirmations} independent sources`}
+            >
+              ✓ {event.confirmations} sources
+            </span>
+          )}
         </div>
       </div>
     </div>
