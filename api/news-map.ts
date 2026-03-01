@@ -598,10 +598,15 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
   // Per-country story dedup across the full window: prevents the same story
   // repeated across sources from inflating any country's score.
   const seenPerCountry = new Map<string, Set<string>>();
+  // Collected in the same loop to avoid a second pass + date re-parsing
+  const codesWithEvents = new Set<string>();
 
   for (const ev of events) {
     const evTime = new Date(ev.time).getTime();
     if (evTime < baselineCutoff) continue;
+
+    // Every event within the window counts as "active" for conflict-group linking
+    codesWithEvents.add(ev.countryCode);
 
     const storyKey = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     let seen = seenPerCountry.get(ev.countryCode);
@@ -638,13 +643,6 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     .slice(0, MAX_TRENDING);
 
   const trending = new Set(trendingList.map((e) => e.code));
-
-  // Set of all country codes that have any event in the full baseline window.
-  const codesWithEvents = new Set(
-    events
-      .filter((e) => new Date(e.time).getTime() >= baselineCutoff)
-      .map((e) => e.countryCode)
-  );
 
   // For each trending country, surface its active conflict group partners.
   // seenGroups prevents duplicate group entries when multiple members of the

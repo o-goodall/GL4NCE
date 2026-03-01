@@ -61,9 +61,17 @@ const NEGATIVE_CONTEXT = [
 /** Article type markers that reduce the final score by 20 % */
 const EDITORIAL_MARKERS = ["analysis", "opinion", "editorial"];
 
+// ── Pre-computed module-level Sets (avoid rebuilding on every article) ────────
+/** O(1) negative-context lookup — avoids `new Set(NEGATIVE_CONTEXT)` per call */
+const NEG_SET = new Set(NEGATIVE_CONTEXT);
+/** O(1) event-keyword lookup — replaces `Array.includes` in two hot paths */
+const EVENT_KEYWORD_SET = new Set(EVENT_KEYWORDS);
+
 // ── Country data ──────────────────────────────────────────────────────────────
 
 let _countries: CountryEntry[] | null = null;
+/** O(1) country-code lookup built alongside `_countries` */
+let _countryByCode: Map<string, CountryEntry> | null = null;
 
 function loadCountries(): CountryEntry[] {
   if (_countries) return _countries;
@@ -81,6 +89,7 @@ function loadCountries(): CountryEntry[] {
   } catch {
     _countries = [];
   }
+  _countryByCode = new Map(_countries.map((c) => [c.code, c]));
   return _countries;
 }
 
@@ -94,6 +103,18 @@ interface AliasEntry {
 }
 
 let _aliasIndex: AliasEntry[] | null = null;
+/**
+ * Per-country alias entries — avoids O(N) `.filter()` on the flat index for
+ * every country on every article.  Populated alongside `_aliasIndex`.
+ */
+let _aliasPerCountry:    Map<string, AliasEntry[]> | null = null;
+let _geoAliasPerCountry: Map<string, AliasEntry[]> | null = null;
+/**
+ * First-token Set per country — used for O(1) early-exit in `scoreCountries`:
+ * if none of a country's alias first-tokens appear in the article, we skip the
+ * full consecutive-token matching work entirely.
+ */
+let _countryFirstTokens: Map<string, Set<string>> | null = null;
 
 function getAliasIndex(): AliasEntry[] {
   if (_aliasIndex) return _aliasIndex;
@@ -111,6 +132,38 @@ function getAliasIndex(): AliasEntry[] {
   // Sort longest-first so multi-word aliases are tried before single-word ones
   index.sort((a, b) => b.tokens.length - a.tokens.length);
   _aliasIndex = index;
+
+  // ── Build per-country lookup maps ─────────────────────────────────────────
+  const apc  = new Map<string, AliasEntry[]>();
+  const gapc = new Map<string, AliasEntry[]>();
+  const cft  = new Map<string, Set<string>>();
+
+  for (const entry of index) {
+    const code = entry.country.code;
+
+    // All entries per country
+    if (!apc.has(code)) apc.set(code, []);
+    apc.get(code)!.push(entry);
+
+    // Geographic alias entries (type="alias") for specificity boost
+    if (entry.type === "alias") {
+      if (!gapc.has(code)) gapc.set(code, []);
+      gapc.get(code)!.push(entry);
+    }
+
+    // First token of each alias entry — used as a fast pre-filter
+    const fts = cft.get(code);
+    if (fts) {
+      fts.add(entry.tokens[0]);
+    } else {
+      cft.set(code, new Set([entry.tokens[0]]));
+    }
+  }
+
+  _aliasPerCountry    = apc;
+  _geoAliasPerCountry = gapc;
+  _countryFirstTokens = cft;
+
   return _aliasIndex;
 }
 
@@ -137,10 +190,9 @@ export function findCountryMentions(
   country: CountryEntry
 ): number[] {
   const positions: number[] = [];
-  const aliasIndex = getAliasIndex();
-
-  // Collect only entries for this country, sorted longest-first (already sorted)
-  const entries = aliasIndex.filter((e) => e.country.code === country.code);
+  // Ensure index + per-country map are built
+  getAliasIndex();
+  const entries = _aliasPerCountry!.get(country.code) ?? [];
 
   const matched = new Set<number>();
   for (const entry of entries) {
@@ -169,12 +221,17 @@ export function calculateKeywordDistances(
 ): number[] {
   const kwPositions: number[] = [];
   for (let i = 0; i < tokens.length; i++) {
-    if (EVENT_KEYWORDS.includes(tokens[i])) kwPositions.push(i);
+    if (EVENT_KEYWORD_SET.has(tokens[i])) kwPositions.push(i);
   }
 
   return mentionPositions.map((pos) => {
     if (kwPositions.length === 0) return Infinity;
-    return Math.min(...kwPositions.map((kp) => Math.abs(pos - kp)));
+    let min = Infinity;
+    for (const kp of kwPositions) {
+      const d = Math.abs(pos - kp);
+      if (d < min) min = d;
+    }
+    return min;
   });
 }
 
@@ -184,9 +241,8 @@ export function calculateKeywordDistances(
  * article names a specific location rather than just the country.
  */
 function hasSpecificGeoMatch(tokens: string[], country: CountryEntry): boolean {
-  const entries = getAliasIndex().filter(
-    (e) => e.country.code === country.code && e.type === "alias"
-  );
+  getAliasIndex();
+  const entries = _geoAliasPerCountry!.get(country.code) ?? [];
   for (const entry of entries) {
     const len = entry.tokens.length;
     outer: for (let i = 0; i <= tokens.length - len; i++) {
@@ -224,12 +280,24 @@ export function scoreCountries(title: string, body: string): ScoredCountry[] {
 
   const isEditorial = EDITORIAL_MARKERS.some((m) => tokenSet.has(m));
 
-  // Negative-context token set (single-token check)
-  const negSet = new Set(NEGATIVE_CONTEXT);
+  // Ensure per-country alias maps are built before entering the per-country loop
+  getAliasIndex();
 
   const scores = new Map<string, { country: CountryEntry; score: number }>();
 
   for (const country of loadCountries()) {
+    // ── Fast first-token pre-filter ──────────────────────────────────────────
+    // Skip countries whose alias first-tokens are absent from the article.
+    // This avoids the full consecutive-token matching work for most countries
+    // in a typical article (only 2–4 countries are ever mentioned per piece).
+    const firstTokens = _countryFirstTokens!.get(country.code);
+    if (!firstTokens) continue;
+    let anyFirstTokenPresent = false;
+    for (const ft of firstTokens) {
+      if (tokenSet.has(ft)) { anyFirstTokenPresent = true; break; }
+    }
+    if (!anyFirstTokenPresent) continue;
+
     const positions = findCountryMentions(allTokens, country);
     if (positions.length === 0) continue;
 
@@ -265,7 +333,7 @@ export function scoreCountries(title: string, body: string): ScoredCountry[] {
       const windowEnd   = Math.min(totalLen - 1, pos + 5);
       let nearNegative  = false;
       for (let w = windowStart; w <= windowEnd; w++) {
-        if (negSet.has(allTokens[w])) { nearNegative = true; break; }
+        if (NEG_SET.has(allTokens[w])) { nearNegative = true; break; }
       }
       if (nearNegative) {
         // Only penalise when no event keyword is within 6 tokens of this mention
@@ -312,7 +380,7 @@ export function calculateConfidence(
  */
 export function classifyEventType(tokens: string[]): string {
   for (const token of tokens) {
-    if (EVENT_KEYWORDS.includes(token)) return token;
+    if (EVENT_KEYWORD_SET.has(token)) return token;
   }
   return "unknown";
 }
@@ -351,5 +419,6 @@ export function buildEventObject(
  * Look up a country entry by ISO-3166 code (case-insensitive).
  */
 export function getCountryByCode(code: string): CountryEntry | undefined {
-  return loadCountries().find((c) => c.code === code.toUpperCase());
+  loadCountries();
+  return _countryByCode!.get(code.toUpperCase());
 }
