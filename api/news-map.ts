@@ -743,10 +743,31 @@ function generateMockData(): NewsMapData {
   return { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
 }
 
-// ── Module-level response cache (10-minute TTL) ──────────────────────────────
+// ── Module-level response cache ──────────────────────────────────────────────
+//
+// Freshness chain — three layers keep the map live without hammering RSS feeds:
+//   1. RSS re-fetch  — every CACHE_TTL_MS (10 min) the handler fetches all feeds
+//   2. CDN cache     — Vercel/CDN caches the response for CDN_MAX_AGE_SECS (5 min)
+//                      with stale-while-revalidate so the browser never waits for a
+//                      cold fetch
+//   3. Client poll   — useNewsMap re-requests /api/news-map every 15 min
+//
+// Events older than RETENTION_HOURS (48 h) are excluded by isWithinRetentionWindow
+// in aggregateCountries(), so stale events never accumulate on the map.
+// recencyMultiplier() further down-weights events as they age so fresh breaking
+// news always dominates the alert-level and trending signals.
+//
 let _cache: NewsMapData | null = null;
 let _cacheExpiresAt = 0;
-const CACHE_TTL_MS = 10 * 60 * 1000;
+/** How long the server-side handler caches the aggregated result before re-fetching RSS feeds */
+const CACHE_TTL_MS = 600_000; // 10 minutes
+/**
+ * CDN / edge-cache max-age in seconds.  Derived from CACHE_TTL_MS so this stays
+ * correct when the server TTL changes.  Set to half the server TTL so the CDN
+ * refreshes frequently enough to serve fresh data without triggering unnecessary
+ * RSS re-fetches (CACHE_TTL_MS / 1000 converts ms → s; / 2 halves it).
+ */
+const CDN_MAX_AGE_SECS = Math.floor(CACHE_TTL_MS / 1000 / 2); // 300 s = 5 min
 
 const parser = new Parser({
   // Reduce per-feed timeout from the 60-second default to 10 seconds.
@@ -1002,7 +1023,7 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
   // Serve cached result if still fresh
   if (_cache && Date.now() < _cacheExpiresAt) {
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=300");
+    res.setHeader("Cache-Control", `s-maxage=${CDN_MAX_AGE_SECS}, stale-while-revalidate=${CDN_MAX_AGE_SECS}`);
     res.end(JSON.stringify(_cache));
     return;
   }
@@ -1020,7 +1041,7 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
     _cacheExpiresAt = Date.now() + CACHE_TTL_MS;
 
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=300");
+    res.setHeader("Cache-Control", `s-maxage=${CDN_MAX_AGE_SECS}, stale-while-revalidate=${CDN_MAX_AGE_SECS}`);
     res.end(JSON.stringify(data));
   } catch {
     // On unexpected error return mock data so the map is never blank

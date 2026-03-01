@@ -51,7 +51,7 @@ export function useNewsMap(pollMinutes = DEFAULT_POLL_MINUTES): UseNewsMapReturn
 
   useEffect(() => {
     void load();
-    timerRef.current = setInterval(() => { void load(); }, pollMinutes * 60 * 1000);
+    timerRef.current = setInterval(() => { void load(); }, pollMinutes * 60_000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
