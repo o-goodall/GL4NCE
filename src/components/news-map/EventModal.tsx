@@ -1,4 +1,6 @@
+import { memo, useEffect } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
+import { countryFlag } from "./mapUtils";
 
 interface EventModalProps {
   country: CountryNewsData | null;
@@ -36,7 +38,7 @@ function relativeTime(isoString: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function EventRow({ event }: { event: NewsEvent }) {
+const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0 dark:border-gray-800">
       <span
@@ -44,18 +46,9 @@ function EventRow({ event }: { event: NewsEvent }) {
         title={event.severity}
       />
       <div className="flex-1 min-w-0">
-        {event.link ? (
-          <a
-            href={event.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-medium text-gray-800 dark:text-white/90 hover:text-brand-500 dark:hover:text-brand-200 line-clamp-2"
-          >
-            {event.title}
-          </a>
-        ) : (
-          <p className="text-sm font-medium text-gray-800 dark:text-white/90 line-clamp-2">{event.title}</p>
-        )}
+        <p className="text-sm font-medium text-gray-800 dark:text-white/90 line-clamp-2">
+          {event.title}
+        </p>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className="text-xs text-gray-500 dark:text-gray-400">{event.source}</span>
           <span className="text-xs text-gray-400">·</span>
@@ -65,13 +58,43 @@ function EventRow({ event }: { event: NewsEvent }) {
           >
             {event.category}
           </span>
+          {event.confirmations !== undefined && event.confirmations > 1 && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300"
+              title={`Reported by ${event.confirmations} independent sources`}
+            >
+              ✓ {event.confirmations} sources
+            </span>
+          )}
+          {event.link && (
+            <a
+              href={event.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Read ↗
+            </a>
+          )}
         </div>
       </div>
     </div>
   );
-}
+});
+
+/** Severity order: high events first, then medium, then low */
+const SEVERITY_ORDER: Record<EventSeverity, number> = { high: 0, medium: 1, low: 2 };
 
 export default function EventModal({ country, onClose }: EventModalProps) {
+  // Close on Escape key — standard modal accessibility pattern
+  useEffect(() => {
+    if (!country) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [country, onClose]);
+
   if (!country) return null;
 
   return (
@@ -101,11 +124,20 @@ export default function EventModal({ country, onClose }: EventModalProps) {
               <span className="shrink-0 inline-flex h-2 w-2 rounded-full bg-error-500 animate-pulse" />
             )}
             <h3 className="truncate text-base font-semibold text-gray-800 dark:text-white/90">
-              {country.name}
+              <span aria-hidden="true">{countryFlag(country.code)} </span>{country.name}
             </h3>
             <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
               {country.events.length} event{country.events.length !== 1 ? "s" : ""}
             </span>
+            {country.escalationIndex !== undefined && country.escalationIndex > 0 && (
+              <span
+                className="shrink-0 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                title={`7-day escalation index: ${country.escalationIndex}`}
+                aria-label={`Escalation index: ${country.escalationIndex.toFixed(1)}`}
+              >
+                ↑{country.escalationIndex.toFixed(1)}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -122,11 +154,17 @@ export default function EventModal({ country, onClose }: EventModalProps) {
           </button>
         </div>
 
-        {/* Event list */}
+        {/* Event list — sorted severity-first (high → medium → low), then newest-first */}
         <div className="overflow-y-auto flex-1 px-5 custom-scrollbar">
-          {country.events.map((ev) => (
-            <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
-          ))}
+          {[...country.events]
+            .sort(
+              (a, b) =>
+                SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
+                new Date(b.time).getTime() - new Date(a.time).getTime()
+            )
+            .map((ev) => (
+              <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
+            ))}
         </div>
       </div>
     </div>

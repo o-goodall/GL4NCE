@@ -1,11 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Parser from "rss-parser";
 import { scoreCountries, calculateConfidence, getCountryByCode } from "./scoringEngine";
+import { classifyEvent, cleanSnippet, OUTLET_NAME_RE, type EventSeverity, type EventCategory } from "./classifier";
+import {
+  RSS_SOURCES, TELEGRAM_CHANNELS, REDDIT_JSON_SUBREDDITS,
+  SOURCE_WEIGHTS, CONFLICT_GROUPS,
+  ARTICLES_PER_FEED, FETCH_TIMEOUT, MAX_CONCURRENT_FETCHES, NEWS_MAP_UA,
+} from "./sources";
 
 // ── Types (mirror src/components/news-map/types.ts) ─────────────────────────
-type EventSeverity = "high" | "medium" | "low";
-type EventCategory = "violent" | "minor" | "economic" | "extremism" | "escalation";
-type AlertLevel    = "critical" | "high" | "medium" | "watch";
+type AlertLevel = "critical" | "high" | "medium" | "watch";
 
 /** Number of characters used to build the deduplication key from a title.
  *  Short enough to also catch the same story re-published with a minor
@@ -181,202 +185,6 @@ for (const c of COUNTRIES) {
   }
 }
 
-// ── RSS sources ──────────────────────────────────────────────────────────────
-// All feeds are fetched concurrently via Promise.allSettled — a single slow or
-// unavailable feed fails fast (10 s timeout) without blocking the others.
-//
-// Excluded from this list:
-//   Reuters       – removed public RSS in 2020; feeds.reuters.com always 404s
-//   FT            – full paywall; RSS returns no usable article text
-//   Telesur       – Venezuelan state outlet; RSS endpoint unreliable
-//   Euronews/FBN  – Feedburner variant deprecated; direct feed already present
-const RSS_SOURCES = [
-  // ── Primary / High-volume world news ───────────────────────────────────────
-  { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/subjects/conflict.xml" },
-  { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml" },
-  { name: "BBC",        url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
-  { name: "AP News",    url: "https://feeds.apnews.com/apnews/world" },
-  { name: "CNN",        url: "https://rss.cnn.com/rss/edition_world.rss" },
-  { name: "Guardian",   url: "https://www.theguardian.com/world/rss" },
-  // ── Regional coverage ──────────────────────────────────────────────────────
-  { name: "DW",         url: "https://rss.dw.com/xml/rss-en-world" },
-  { name: "France24",   url: "https://www.france24.com/en/rss" },
-  { name: "Sky News",   url: "https://feeds.skynews.com/feeds/rss/world.xml" },
-  { name: "RFE/RL",     url: "https://www.rferl.org/api/jqpxiflpqo" },
-  { name: "Euronews",   url: "https://www.euronews.com/rss?format=mrss&level=theme&name=news" },
-  { name: "CNA",        url: "https://www.channelnewsasia.com/rssfeeds/8395884" },
-  { name: "Africanews", url: "https://www.africanews.com/feed/" },
-  // ── Specialist / humanitarian ──────────────────────────────────────────────
-  { name: "ReliefWeb",  url: "https://reliefweb.int/updates/rss.xml" },
-  { name: "UN News",    url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml" },
-  // ── Near-realtime conflict monitoring (no API key required) ────────────────
-  // GDELT monitors millions of global news articles and surfaces conflict events
-  // within hours. No rate limits. timespan=6h aligns with our baseline window.
-  { name: "GDELT", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+conflict+OR+war+OR+explosion)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
-  // A second GDELT feed scoped to the last 1 hour ensures the trending window
-  // always has enough recent articles even if the broader baseline feed is sparse.
-  { name: "GDELT Breaking", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+explosion+OR+shooting+OR+casualties)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=1h" },
-  // ── Community / social signal (no API key required) ────────────────────────
-  // Reddit r/worldnews and r/geopolitics users post breaking news within minutes
-  // of events occurring — often faster than traditional RSS feeds.
-  // Note: X/Twitter would be ideal but requires a paid API subscription.
-  { name: "Reddit WorldNews",   url: "https://www.reddit.com/r/worldnews/new/.rss" },
-  { name: "Reddit Geopolitics", url: "https://www.reddit.com/r/geopolitics/new/.rss" },
-];
-
-const ARTICLES_PER_FEED = 20;
-
-/** Shared fetch timeout (ms) applied to all non-RSS sources */
-const FETCH_TIMEOUT = 10_000;
-
-/** Shared User-Agent used in the RSS parser, Telegram scraper, and Reddit JSON fetcher */
-const NEWS_MAP_UA = "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)";
-
-/** Outlet name patterns that contain country keywords and must be stripped from
- *  both titles and content snippets before country detection to prevent false
- *  attribution.  "France 24" → contains "france"; all other current sources are safe. */
-const OUTLET_NAME_RE = /\bfrance\s*24\b/gi;
-
-// ── Telegram public channels ─────────────────────────────────────────────────
-// t.me/s/{channel} returns a public HTML page — no login or API key required.
-// These outlets post breaking news to Telegram within minutes of events, often
-// ahead of their own RSS feeds.  HTML scraping is used since Telegram has no
-// public RSS endpoint for channels.
-//
-// Selected for English-language reliability and geopolitical breadth:
-//   alarabiya_en  – Al Arabiya English (Middle East / Asia focus)
-//   trtworld      – TRT World (broad international coverage)
-//   bbcnews       – BBC News (global)
-//   reutersagency – Reuters (newswire, fast turnaround)
-const TELEGRAM_CHANNELS = [
-  { name: "Al Arabiya (Telegram)", channel: "alarabiya_en" },
-  { name: "TRT World (Telegram)",  channel: "trtworld" },
-  { name: "BBC News (Telegram)",   channel: "bbcnews" },
-  { name: "Reuters (Telegram)",    channel: "reutersagency" },
-];
-
-// ── Reddit JSON subreddits ───────────────────────────────────────────────────
-// Reddit's public /new.json endpoint requires no API key.  We target subreddits
-// not already covered by the RSS feeds above, and filter by score ≥ 20 so only
-// community-upvoted (more likely accurate) posts are included.
-//
-// r/worldnews and r/geopolitics are already in RSS_SOURCES; these extend coverage:
-//   UkrainianConflict – focused conflict subreddit, high signal-to-noise
-//   MiddleEastNews    – regional specialist
-//   BreakingNews      – multi-topic, fast but noisier → higher score threshold
-const REDDIT_JSON_SUBREDDITS = [
-  { name: "Reddit UkrainianConflict", sub: "UkrainianConflict", minScore: 20 },
-  { name: "Reddit MiddleEastNews",    sub: "MiddleEastNews",    minScore: 20 },
-  { name: "Reddit BreakingNews",      sub: "BreakingNews",      minScore: 50 },
-];
-
-// ── Classification keyword lists ─────────────────────────────────────────────
-// Ordered most-specific / most-severe first so the earliest match wins.
-
-// ── Violent ──────────────────────────────────────────────────────────────────
-const HIGH_VIOLENT = [
-  "bombing", "explosion", "suicide attack", "terrorist attack",
-  "killed", "death toll", "casualties", "massacre", "murder", "homicide",
-  "airstrike", "air strike", "missile strike", "drone strike",
-  "arson", "fire bomb",
-];
-const MEDIUM_VIOLENT = [
-  "shooting", "stabbing", "assault", "riot",
-  "violent protest", "clashes", "street fighting", "armed confrontation",
-  "hostage", "abduction", "kidnapping",
-  "sabotage", "vandalism",
-];
-
-// ── Civil unrest / minor / humanitarian ──────────────────────────────────────
-const LOW_MINOR = [
-  "peaceful protest", "demonstration", "march", "worker strike",
-  "civil unrest", "blockade", "curfew", "evacuation",
-  "power outage", "flooding", "earthquake", "storm",
-  "social unrest", "tension", "dispute",
-  // Humanitarian / disaster terms — surfaces ReliefWeb and UN News articles
-  "refugee", "refugees", "displaced", "displacement",
-  "humanitarian", "famine", "drought",
-  "disease outbreak", "epidemic", "aid convoy",
-];
-
-// ── Economic ─────────────────────────────────────────────────────────────────
-const HIGH_ECONOMIC = [
-  "stock market crash", "market collapse", "market plunge",
-  "hyperinflation", "currency collapse", "devaluation", "economic meltdown",
-  "debt default", "sovereign default", "government default",
-  "banking crisis", "bank run", "financial crisis",
-  "severe sanctions", "trade embargo", "trade war",
-  "mass unemployment", "factory closure", "supply chain collapse",
-  "food shortage", "energy crisis",
-];
-
-// ── Extremism ─────────────────────────────────────────────────────────────────
-/** Violent attacks with a clearly identified extremist/ideological motive */
-const HIGH_EXTREMISM = [
-  "neo-nazi attack", "neo nazi attack", "neonazi attack",
-  "white supremacist attack", "far-right attack", "far right attack",
-  "far-left attack", "far left attack", "antifa attack",
-  "antisemitic attack", "antisemitic shooting", "antisemitic stabbing",
-  "extremist bombing", "hate crime killing", "hate crime murder",
-];
-/** Extremist ideology, movements, rallies, and hate-crime activity */
-const MEDIUM_EXTREMISM = [
-  "neo-nazi", "neo nazi", "neonazi",
-  "white supremacist", "white supremacy", "white nationalist",
-  "antisemitism", "antisemitic", "antisemite",
-  "far-right extremist", "far right extremist",
-  "far-left extremist", "far left extremist",
-  "antifa", "fascist rally", "nazi rally", "nazi march",
-  "hate group", "hate march", "extremist rally",
-  "kkk", "ku klux klan",
-  "political extremism", "radicalization", "radicalisation",
-  "islamophobic attack", "islamophobia",
-  "alt-right", "alt right", "proud boys", "oath keepers",
-];
-
-// ── Escalation / pre-conflict — EARLY WARNING ─────────────────────────────────
-// These signals precede active violence: military positioning, diplomatic breakdown,
-// political seizures and WMD threats.  Detecting them earlier than violence keywords
-// is the key to the "as early as possible" goal.
-/** High-severity pre-conflict signals — imminent or acute crisis */
-const HIGH_ESCALATION = [
-  // Political seizures
-  "coup attempt", "coup d'état", "attempted coup", "military takeover",
-  "martial law", "state of emergency declared",
-  // WMD / strategic weapons
-  "nuclear threat", "nuclear alert", "nuclear readiness",
-  "ballistic missile launched", "intercontinental missile", "hypersonic missile",
-  "chemical attack", "chemical weapons used", "biological attack",
-  // Airspace / major strategic moves
-  "airspace closed", "airspace closure",
-  "full military mobilization", "general mobilization",
-];
-/** Medium-severity pre-conflict signals — escalating but not yet at war */
-const MEDIUM_ESCALATION = [
-  // Military movements
-  "troops deployed", "troops massing", "military buildup",
-  "military mobilization", "mobilisation near",
-  "military exercises", "war games", "live-fire drill",
-  "warships deployed", "naval standoff", "aircraft carrier deployed",
-  "tanks at border", "forces at border",
-  // Diplomatic breakdown
-  "expels ambassador", "ambassador expelled", "recalls ambassador",
-  "diplomatic crisis", "severed diplomatic ties", "diplomatic breakdown",
-  "new sanctions", "sanctions package", "sanctions announced",
-  "border closed", "border closure", "border sealed",
-  // Domestic crackdown
-  "opposition arrested", "opposition leader arrested",
-  "mass arrests", "protesters arrested", "crackdown on",
-  "state of emergency", "emergency powers",
-  "protest crackdown", "demonstrators detained",
-  // Threat language
-  "ultimatum", "war warning", "military threat",
-  "brink of war", "on the brink", "armed standoff",
-  "military standoff", "nuclear standoff",
-  // Pre-coup signals
-  "soldiers surrounding", "parliament surrounded",
-  "president detained", "prime minister detained",
-];
 
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
@@ -397,6 +205,9 @@ const TRENDING_BASELINE_HOURS = 5;
 const VELOCITY_FLOOR = 1.2;
 /** Minimum distinct recent stories a country must have to qualify as trending */
 const MIN_STORIES_TO_TREND = 2;
+/** Minimum number of distinct sources that must report on a country for it to trend.
+ *  Prevents a single outlet publishing two related articles from triggering trending. */
+const MIN_SOURCES_TO_TREND = 2;
 /** Hard cap on concurrent trending countries (keeps UI scannable) */
 const MAX_TRENDING = 3;
 /** Maximum events retained per country in the response (prevents one country flooding the output) */
@@ -404,85 +215,38 @@ const MAX_EVENTS_PER_COUNTRY = 10;
 /** Rolling window for the 7-day escalation index (ms) */
 const ESCALATION_WINDOW_MS = 7 * 24 * 3_600_000;
 
-/**
- * Source credibility weights by outlet name.
- * Tier 1 (1.5): wire services / public broadcasters with editorial standards
- * Tier 2 (1.2): major international broadcasters
- * Tier 3 (1.0): specialist / regional outlets, humanitarian bodies
- * Tier 4 (0.8): algorithmic aggregators (GDELT)
- * Tier 5 (0.6/0.5): community / social sources
- */
-const SOURCE_WEIGHTS: Record<string, number> = {
-  "AP News":                  1.5,
-  "BBC":                      1.5,
-  "BBC News (Telegram)":      1.3,
-  "Reuters (Telegram)":       1.5,
-  "Guardian":                 1.2,
-  "Al Jazeera":               1.2,
-  "Al Arabiya (Telegram)":    1.1,
-  "CNN":                      1.2,
-  "DW":                       1.2,
-  "France24":                 1.1,
-  "Sky News":                 1.1,
-  "RFE/RL":                   1.0,
-  "Euronews":                 1.0,
-  "CNA":                      1.0,
-  "Africanews":               1.0,
-  "TRT World (Telegram)":     0.9,
-  "ReliefWeb":                1.0,
-  "UN News":                  1.0,
-  "GDELT":                    0.8,
-  "GDELT Breaking":           0.8,
-  "Reddit WorldNews":         0.6,
-  "Reddit Geopolitics":       0.6,
-  "Reddit UkrainianConflict": 0.6,
-  "Reddit MiddleEastNews":    0.6,
-  "Reddit BreakingNews":      0.5,
-};
-
-/**
- * Known active conflicts / wars.  When any trending country is a member of one
- * of these groups AND the partner country(ies) also have recent events, all
- * active members are surfaced together.
- */
-const CONFLICT_GROUPS: readonly (readonly string[])[] = [
-  ["RU", "UA"],     // Russia – Ukraine
-  ["IL", "IR"],     // Israel – Iran
-  ["IL", "PS"],     // Israel – Palestine / Gaza
-  ["IL", "LB"],     // Israel – Hezbollah / Lebanon
-  ["US", "CN"],     // US – China
-  ["IN", "PK"],     // India – Pakistan
-  ["KP", "KR"],     // North Korea – South Korea
-  ["AM", "AZ"],     // Armenia – Azerbaijan
-  ["SD", "SS"],     // Sudan – South Sudan
-] as const;
-
-function matchesAny(text: string, keywords: string[]): boolean {
-  return keywords.some((kw) => text.includes(kw));
-}
-
-function classifyEvent(text: string): { severity: EventSeverity; category: EventCategory } | null {
-  const lower = text.toLowerCase();
-  if (matchesAny(lower, HIGH_ECONOMIC))     return { severity: "high",   category: "economic"    };
-  if (matchesAny(lower, HIGH_EXTREMISM))    return { severity: "high",   category: "extremism"   };
-  if (matchesAny(lower, MEDIUM_EXTREMISM))  return { severity: "medium", category: "extremism"   };
-  // Pre-conflict escalation signals — checked BEFORE generic violence so that
-  // "killed during coup attempt" maps to escalation, not just violent.
-  if (matchesAny(lower, HIGH_ESCALATION))   return { severity: "high",   category: "escalation"  };
-  if (matchesAny(lower, MEDIUM_ESCALATION)) return { severity: "medium", category: "escalation"  };
-  if (matchesAny(lower, HIGH_VIOLENT))      return { severity: "high",   category: "violent"     };
-  if (matchesAny(lower, MEDIUM_VIOLENT))    return { severity: "medium", category: "violent"     };
-  if (matchesAny(lower, LOW_MINOR))         return { severity: "low",    category: "minor"       };
-  return null;
-}
-
 /** Look up country info from the scoring-engine database by ISO code */
 function getCountryInfoByCode(code: string) {
   return getCountryByCode(code) ?? KEYWORD_MAP.get(code.toLowerCase());
 }
 
+/**
+ * Memoised ISO-8601 → epoch-ms conversion.
+ * `new Date(iso).getTime()` is called across five separate pipeline functions
+ * (isWithinRetentionWindow, computeTrending, computeAlertLevel,
+ * computeEscalationIndex, and the events sort in aggregateCountries).
+ * A single-string Map cache ensures each unique timestamp is parsed only once
+ * per serverless instance lifetime.  The cache is bounded to ≤ 2000 entries
+ * (48 h × ≈ 200 active events is well within this).  When the limit is hit the
+ * oldest entry is evicted (Map preserves insertion order) rather than clearing
+ * the entire cache, avoiding a thundering-herd re-parse on the next request.
+ */
+const _timeMsCache = new Map<string, number>();
+function parseTimeMs(iso: string): number {
+  let ms = _timeMsCache.get(iso);
+  if (ms === undefined) {
+    ms = new Date(iso).getTime();
+    if (_timeMsCache.size >= 2000) {
+      // Evict the oldest entry (Map iterator follows insertion order)
+      _timeMsCache.delete(_timeMsCache.keys().next().value as string);
+    }
+    _timeMsCache.set(iso, ms);
+  }
+  return ms;
+}
+
 function isWithinRetentionWindow(isoTime: string): boolean {
-  return Date.now() - new Date(isoTime).getTime() <= RETENTION_HOURS * 3_600_000;
+  return Date.now() - parseTimeMs(isoTime) <= RETENTION_HOURS * 3_600_000;
 }
 
 /**
@@ -495,7 +259,7 @@ function isWithinRetentionWindow(isoTime: string): boolean {
  *    > 48 h → 0.30
  */
 function recencyMultiplier(isoTime: string): number {
-  const ageH = (Date.now() - new Date(isoTime).getTime()) / 3_600_000;
+  const ageH = (Date.now() - parseTimeMs(isoTime)) / 3_600_000;
   if (ageH <= 1)  return 1.00;
   if (ageH <= 6)  return 0.85;
   if (ageH <= 24) return 0.65;
@@ -510,27 +274,46 @@ function recencyMultiplier(isoTime: string): number {
 // event-density signal per country even though each RSS fetch only returns the
 // most recent articles.
 
-let _escalationStore: NewsEvent[] = [];
-/** Pre-computed key set for O(1) dedup checks in appendToEscalationStore */
+/**
+ * Per-country buckets for the 7-day escalation store.
+ * Keyed by ISO-3166 country code — gives O(K_country) lookup in
+ * computeEscalationIndex instead of O(N_total) full-array scan.
+ */
+const _escalationByCountry = new Map<string, NewsEvent[]>();
+/** Flat dedup key set — O(1) insert-check regardless of bucket structure */
 let _escalationKeys: Set<string> = new Set();
 
 /** Append fresh events to the 7-day store, deduplicating on title prefix. */
 function appendToEscalationStore(newEvents: NewsEvent[]): void {
   const cutoff = Date.now() - ESCALATION_WINDOW_MS;
   for (const ev of newEvents) {
-    const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    // Include country code so stories from different countries with the same
+    // 40-char title prefix are never conflated into a single dedup slot.
+    const key = `${ev.countryCode}:${ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH)}`;
     if (!_escalationKeys.has(key)) {
       _escalationKeys.add(key);
-      _escalationStore.push(ev);
+      const bucket = _escalationByCountry.get(ev.countryCode);
+      if (bucket) bucket.push(ev);
+      else _escalationByCountry.set(ev.countryCode, [ev]);
     }
   }
-  // Prune stale events; rebuild key cache only when pruning occurred
-  const pruned = _escalationStore.filter((e) => new Date(e.time).getTime() >= cutoff);
-  if (pruned.length < _escalationStore.length) {
-    _escalationStore = pruned;
-    _escalationKeys = new Set(
-      _escalationStore.map((e) => e.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH))
-    );
+  // Prune stale events per bucket; rebuild key cache only when any pruning occurred.
+  let didPrune = false;
+  for (const [code, bucket] of _escalationByCountry) {
+    const kept = bucket.filter((e) => parseTimeMs(e.time) >= cutoff);
+    if (kept.length < bucket.length) {
+      didPrune = true;
+      if (kept.length > 0) _escalationByCountry.set(code, kept);
+      else _escalationByCountry.delete(code);
+    }
+  }
+  if (didPrune) {
+    _escalationKeys = new Set();
+    for (const bucket of _escalationByCountry.values()) {
+      for (const ev of bucket) {
+        _escalationKeys.add(`${ev.countryCode}:${ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH)}`);
+      }
+    }
   }
 }
 
@@ -538,16 +321,19 @@ function appendToEscalationStore(newEvents: NewsEvent[]): void {
  * Compute a weighted activity score for `countryCode` over the 7-day window.
  * Combines the persistent store with the current-request events for accuracy.
  * Higher values indicate more sustained or escalating activity.
+ *
+ * O(K_country) where K_country = events for this country in the 7-day store.
+ * Previously O(N_total) because it scanned the entire flat store array.
  */
 function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[]): number {
   const cutoff = Date.now() - ESCALATION_WINDOW_MS;
   const seen = new Set<string>();
   let score = 0;
 
-  // Process store and current events separately to avoid array spread allocation
-  for (const ev of _escalationStore) {
-    if (ev.countryCode !== countryCode) continue;
-    if (new Date(ev.time).getTime() < cutoff) continue;
+  // Only iterate events for this country — O(K) not O(N_total)
+  const stored = _escalationByCountry.get(countryCode) ?? [];
+  for (const ev of stored) {
+    if (parseTimeMs(ev.time) < cutoff) continue;
     const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -555,7 +341,7 @@ function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[])
   }
   for (const ev of currentEvents) {
     if (ev.countryCode !== countryCode) continue;
-    if (new Date(ev.time).getTime() < cutoff) continue;
+    if (parseTimeMs(ev.time) < cutoff) continue;
     const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -570,7 +356,7 @@ function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[])
  */
 function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel {
   const cutoff24h = Date.now() - 24 * 3_600_000;
-  const recent = events.filter((e) => new Date(e.time).getTime() >= cutoff24h);
+  const recent = events.filter((e) => parseTimeMs(e.time) >= cutoff24h);
   const pool = recent.length > 0 ? recent : events;
   const score = pool.reduce(
     (sum, ev) =>
@@ -598,9 +384,10 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
   const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
 
-  const recentScores:     Record<string, number> = {};
-  const baselineScores:   Record<string, number> = {};
-  const recentStoryCount: Record<string, number> = {};
+  const recentScores:          Record<string, number>   = {};
+  const baselineScores:        Record<string, number>   = {};
+  const recentStoryCount:      Record<string, number>   = {};
+  const recentSourcesPerCountry: Record<string, Set<string>> = {};
 
   // Per-country story dedup across the full window: prevents the same story
   // repeated across sources from inflating any country's score.
@@ -609,7 +396,7 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const codesWithEvents = new Set<string>();
 
   for (const ev of events) {
-    const evTime = new Date(ev.time).getTime();
+    const evTime = parseTimeMs(ev.time);
     if (evTime < baselineCutoff) continue;
 
     // Every event within the window counts as "active" for conflict-group linking
@@ -628,17 +415,19 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
     if (evTime >= recentCutoff) {
       recentScores[ev.countryCode]     = (recentScores[ev.countryCode]     ?? 0) + weight;
       recentStoryCount[ev.countryCode] = (recentStoryCount[ev.countryCode] ?? 0) + 1;
+      (recentSourcesPerCountry[ev.countryCode] ??= new Set()).add(ev.source);
     } else {
       baselineScores[ev.countryCode] = (baselineScores[ev.countryCode] ?? 0) + weight;
     }
   }
 
-  // Compute velocity for each country that cleared both the score threshold
-  // and the minimum distinct story count.
+  // Compute velocity for each country that cleared both the score threshold,
+  // the minimum distinct story count, and the minimum distinct source count.
   const eligible: { code: string; velocity: number }[] = [];
   for (const [code, recentScore] of Object.entries(recentScores)) {
     if (recentScore < TRENDING_THRESHOLD) continue;
     if ((recentStoryCount[code] ?? 0) < MIN_STORIES_TO_TREND) continue;
+    if ((recentSourcesPerCountry[code]?.size ?? 0) < MIN_SOURCES_TO_TREND) continue;
     const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
     const velocity = recentScore / Math.max(baselineRate, 1);
     eligible.push({ code, velocity });
@@ -692,10 +481,13 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
       trending: isTrending,
       trendingRank: isTrending ? (trendingRanks.get(code) ?? undefined) : undefined,
       alertLevel: computeAlertLevel(evs, isTrending),
-      escalationIndex: computeEscalationIndex(code, events),
+      // Pass the already-grouped per-country slice (evs) rather than the full
+      // events array so the inner currentEvents loop in computeEscalationIndex
+      // runs in O(K_country) instead of O(N_total × N_countries).
+      escalationIndex: computeEscalationIndex(code, evs),
       // Cap events per country to prevent one conflict from dominating the feed
       events: evs
-        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+        .sort((a, b) => parseTimeMs(b.time) - parseTimeMs(a.time))
         .slice(0, MAX_EVENTS_PER_COUNTRY),
     };
   });
@@ -703,6 +495,10 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
 }
 
 // ── Mock data — shown when all RSS feeds are unavailable ─────────────────────
+// Links are intentionally omitted from mock events: they are synthetic demo
+// data and any hardcoded URL would point to a generic section page rather
+// than the specific article, which is misleading.  Real RSS events always
+// carry the article permalink from the feed's <link> element.
 function generateMockData(): NewsMapData {
   const now = new Date();
   const h = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
@@ -719,30 +515,30 @@ function generateMockData(): NewsMapData {
     { title: "Coup attempt foiled as soldiers surrounding parliament are repelled",             source: "Guardian",   time: h(5),   country: "Ethiopia",     severity: "high",   category: "escalation" },
     { title: "State of emergency declared following nationwide civil unrest",                   source: "BBC",        time: h(6),   country: "Myanmar",      severity: "medium", category: "escalation" },
     // ── Ongoing conflict ──────────────────────────────────────────────────────
-    { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent"   },
-    { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent"   },
-    { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"   },
-    { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"   },
-    { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"   },
+    { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent"  },
+    { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent"  },
+    { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"  },
+    { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"  },
+    { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"  },
     // ── Economic ─────────────────────────────────────────────────────────────
-    { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic"  },
-    { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic"  },
-    { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic"  },
-    { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic"  },
+    { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic" },
+    { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic" },
+    { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic" },
+    { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic" },
     // ── Unrest / minor ────────────────────────────────────────────────────────
-    { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"   },
-    { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"   },
-    { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"   },
-    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"     },
-    { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"     },
-    { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"     },
-    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic"  },
-    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"   },
-    { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"   },
+    { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"  },
+    { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"  },
+    { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"  },
+    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"    },
+    { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"    },
+    { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"    },
+    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic" },
+    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"  },
+    { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"  },
     // ── Extremism ─────────────────────────────────────────────────────────────
     { title: "Neo-nazi march through city centre draws counter-protests",  source: "Guardian",   time: h(5),   country: "Germany",       severity: "medium", category: "extremism" },
     { title: "Antisemitic attack on synagogue injures worshippers",        source: "BBC",        time: h(3),   country: "France",        severity: "high",   category: "extremism" },
-    { title: "White supremacist rally triggers clashes with antifa",       source: "Guardian",   time: h(9),   country: "United States", severity: "medium", category: "extremism" },
+    { title: "White supremacist rally triggers clashes with antifa groups",  source: "Guardian",   time: h(9),   country: "United States", severity: "medium", category: "extremism" },
     { title: "Far-right extremist group banned after hate march",          source: "BBC",        time: h(14),  country: "United Kingdom",severity: "medium", category: "extremism" },
   ];
   const events: NewsEvent[] = raw
@@ -795,76 +591,112 @@ const parser = new Parser({
   },
 });
 
-async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
-  // Run RSS feeds, Telegram channels, and Reddit JSON subreddits concurrently.
-  // Each group uses Promise.allSettled so a failed source never blocks others.
-  const [rssResults, telegramResults, redditResults] = await Promise.all([
-    Promise.allSettled(RSS_SOURCES.map(async (src) => {
-      const feed = await parser.parseURL(src.url);
-      const events: NewsEvent[] = [];
-      for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
-        if (!item.title || !item.link) continue;
-        const snippet = item.contentSnippet ?? item.content ?? "";
-        const text = `${item.title} ${snippet}`;
-        const cls = classifyEvent(text);
-        if (!cls) continue;
-        // Try title-only detection first: prevents an outlet's own country
-        // (appearing in the snippet/byline) from overriding the country named
-        // in the headline (e.g. Indian paper reporting on Bolivia).
-        // Strip outlet names that contain country keywords from BOTH the title
-        // and snippet before detection — e.g. "France 24" in a headline like
-        // "France 24 reporter killed in Gaza" would otherwise map the event to
-        // France instead of the real country.
-        const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
-        const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
-        // Score all countries mentioned; pick the one with the highest score
-        const scored = scoreCountries(cleanedTitle, cleanedSnippet);
-        if (scored.length === 0) continue;
-        const winner = scored[0];
-        const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
-        const country = winner.country;
-        // isoDate is normalised by rss-parser; pubDate can be in any locale format
-        const rawTime = item.isoDate ?? item.pubDate;
-        const parsedDate = rawTime ? new Date(rawTime) : null;
-        const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
-        // Reject articles dated outside the retention window or too far in the future
-        if (validDate) {
-          const ageMs = Date.now() - validDate.getTime();
-          if (ageMs > RETENTION_HOURS * 3_600_000 || ageMs < -3_600_000) continue;
-        }
-        const time = validDate ? validDate.toISOString() : new Date().toISOString();
-        events.push({
-          title: item.title,
-          source: src.name,
-          time,
-          country: country.name,
-          countryCode: country.code,
-          severity: cls.severity,
-          category: cls.category,
-          link: item.link,
-          score: winner.score,
-          confidence,
-        });
+/**
+ * Run `tasks` with at most `limit` concurrent executions.  Returns a
+ * PromiseSettledResult array in input order — identical contract to
+ * Promise.allSettled — but never has more than `limit` tasks in-flight at once.
+ * Zero-dependency; safe for all GitHub Actions / Vercel runtimes.
+ */
+async function withConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < tasks.length) {
+      const idx = next++;
+      try {
+        results[idx] = { status: "fulfilled", value: await tasks[idx]() };
+      } catch (reason) {
+        results[idx] = { status: "rejected", reason };
       }
-      return events;
-    })),
-    Promise.allSettled(TELEGRAM_CHANNELS.map(fetchTelegramChannel)),
-    Promise.allSettled(REDDIT_JSON_SUBREDDITS.map(fetchRedditJSON)),
-  ]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
+/**
+ * Fetch and parse a single RSS feed source.
+ * Extracted from the inline fetchAllEvents body so it can be wrapped cleanly
+ * by withConcurrency and tested in isolation.
+ */
+async function fetchRSSSource(src: { name: string; url: string }): Promise<NewsEvent[]> {
+  const feed = await parser.parseURL(src.url);
+  const events: NewsEvent[] = [];
+  for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
+    if (!item.title) continue;
+    // Strip boilerplate noise (cookie notices, subscribe prompts, nav artefacts)
+    // from the snippet before classification and country scoring.
+    const snippet = cleanSnippet(item.contentSnippet ?? item.content ?? "");
+    const text = `${item.title} ${snippet}`;
+    const cls = classifyEvent(text);
+    if (!cls) continue;
+    // Strip outlet names that contain country keywords from BOTH the title
+    // and snippet before detection — e.g. "France 24" in a headline would
+    // otherwise map the event to France instead of the real country.
+    const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
+    const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
+    // Score all countries mentioned; pick the one with the highest score
+    const scored = scoreCountries(cleanedTitle, cleanedSnippet);
+    if (scored.length === 0) continue;
+    const winner = scored[0];
+    const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
+    const country = winner.country;
+    // isoDate is normalised by rss-parser; pubDate can be in any locale format
+    const rawTime = item.isoDate ?? item.pubDate;
+    const parsedDate = rawTime ? new Date(rawTime) : null;
+    const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+    // Reject articles dated outside the retention window or too far in the future
+    if (validDate) {
+      const ageMs = Date.now() - validDate.getTime();
+      if (ageMs > RETENTION_HOURS * 3_600_000 || ageMs < -3_600_000) continue;
+    }
+    const time = validDate ? validDate.toISOString() : new Date().toISOString();
+    events.push({
+      title: item.title,
+      source: src.name,
+      time,
+      country: country.name,
+      countryCode: country.code,
+      severity: cls.severity,
+      category: cls.category,
+      link: item.link,
+      score: winner.score,
+      confidence,
+    });
+  }
+  return events;
+}
+
+async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
+  // Build a flat task list across all three source types, then run with a
+  // concurrency cap.  withConcurrency mirrors Promise.allSettled semantics so
+  // a failed fetch is recorded as "rejected" without blocking the others, while
+  // MAX_CONCURRENT_FETCHES prevents thundering-herd against rate-limited feeds.
+  const tasks: Array<() => Promise<NewsEvent[]>> = [
+    ...RSS_SOURCES.map((src) => () => fetchRSSSource(src)),
+    ...TELEGRAM_CHANNELS.map((ch) => () => fetchTelegramChannel(ch)),
+    ...REDDIT_JSON_SUBREDDITS.map((sub) => () => fetchRedditJSON(sub)),
+  ];
+  const allResults = await withConcurrency(tasks, MAX_CONCURRENT_FETCHES);
 
   // Merge results into story clusters for cross-feed confirmation tracking.
-  // Each unique story (by title prefix) is clustered; when multiple sources
-  // report the same story the cluster's confirmation count rises, which
-  // translates into a bonus in the trending computation.
+  // Each unique story (by country-scoped title prefix) is clustered; when
+  // multiple sources report the same story the cluster's confirmation count
+  // rises, which translates into a bonus in the trending computation.
   const storyClusters = new Map<string, { event: NewsEvent; sources: Set<string> }>();
   let succeeded = 0;
-  const total = RSS_SOURCES.length + TELEGRAM_CHANNELS.length + REDDIT_JSON_SUBREDDITS.length;
+  const total = tasks.length;
 
-  for (const r of [...rssResults, ...telegramResults, ...redditResults]) {
+  for (const r of allResults) {
     if (r.status !== "fulfilled") continue;
     succeeded++;
     for (const ev of r.value) {
-      const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+      // Include country code in the dedup key: two stories from different
+      // countries that share the same 40-char title prefix must not collide.
+      const key = `${ev.countryCode}:${ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH)}`;
       const existing = storyClusters.get(key);
       if (!existing) {
         storyClusters.set(key, { event: ev, sources: new Set([ev.source]) });
@@ -874,6 +706,9 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         // but always retain the link from whichever event has one.
         if ((ev.score ?? 0) > (existing.event.score ?? 0)) {
           storyClusters.set(key, { event: { ...ev, link: ev.link ?? existing.event.link }, sources: existing.sources });
+        } else if (!existing.event.link && ev.link) {
+          // Lower-score event has a link the existing event lacks — preserve it.
+          storyClusters.set(key, { event: { ...existing.event, link: ev.link }, sources: existing.sources });
         }
       }
     }
@@ -906,32 +741,54 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
     if (!res.ok) return [];
     const html = await res.text();
 
-    // Extract (text, datetime) pairs.  Telegram embeds message text inside
-    // <div class="tgme_widget_message_text …">…</div> and a <time datetime="…">
-    // element inside the same message wrapper.  We match them in document order.
+    // Extract (text, datetime, permalink) triples.  Telegram embeds message text
+    // inside <div class="tgme_widget_message_text …">…</div>, a <time datetime="…">
+    // element, and a permalink anchor <a class="tgme_widget_message_date" href="…">
+    // inside the same message wrapper.  We match them in document order.
     // Note: the simple tag-stripping regex is adequate for Telegram's controlled
     // message HTML (no `>` inside attribute values in message content).
     const msgRe  = /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
     const timeRe = /<time\s+datetime="([^"]+)"/g;
+    // The date-link anchor carries the canonical message permalink (https://t.me/…/id).
+    // Match each opening <a> tag that has the tgme_widget_message_date class, then
+    // extract its href separately — this handles any attribute order without a complex
+    // two-branch alternation.
+    const anchorRe = /<a\b[^>]*class="[^"]*tgme_widget_message_date[^"]*"[^>]*>/g;
+    const hrefRe   = /href="([^"]+)"/;
 
-    const texts: string[] = [];
+    // Build the times and links arrays first (one entry per Telegram message,
+    // unfiltered), then track each text's original message index so that
+    // times[msgIdx] and msgLinks[msgIdx] always correspond to the same message.
+    // Without this, filtering out short texts (< 20 chars) shifts all subsequent
+    // indices, causing later stories to receive the wrong timestamp and link.
+    const times: string[] = [];
     let m: RegExpExecArray | null;
+    while ((m = timeRe.exec(html)) !== null) times.push(m[1]);
+
+    const msgLinks: string[] = [];
+    while ((m = anchorRe.exec(html)) !== null) {
+      const h = hrefRe.exec(m[0]);
+      if (h) msgLinks.push(h[1]);
+    }
+
+    // Collect texts WITH their original message index before filtering.
+    const validTexts: { text: string; msgIdx: number }[] = [];
+    let msgIdx = 0;
     while ((m = msgRe.exec(html)) !== null) {
-      // Strip HTML tags; collapse whitespace
-      const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      if (text.length > 20) texts.push(text);
+      // Strip HTML tags, collapse whitespace, then remove boilerplate noise
+      const rawText = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const text = cleanSnippet(rawText);
+      if (text.length > 20) validTexts.push({ text, msgIdx });
+      msgIdx++;
     }
     // If the page yielded no messages, the channel is private, empty, or the
     // HTML structure changed — bail early so the failure is visible in feedStats.
-    if (texts.length === 0) return [];
-
-    const times: string[] = [];
-    while ((m = timeRe.exec(html)) !== null) times.push(m[1]);
+    if (validTexts.length === 0) return [];
 
     const events: NewsEvent[] = [];
-    const limit = Math.min(texts.length, ARTICLES_PER_FEED);
+    const limit = Math.min(validTexts.length, ARTICLES_PER_FEED);
     for (let i = 0; i < limit; i++) {
-      const text = texts[i];
+      const { text, msgIdx: idx } = validTexts[i];
       const cls  = classifyEvent(text);
       if (!cls) continue;
       const cleanedText = text.replace(OUTLET_NAME_RE, "");
@@ -940,10 +797,8 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
       const winner = scored[0];
       const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
       const country = winner.country;
-      // Use the per-message timestamp when available; fall back to now if the
-      // times array is shorter than the texts array (shouldn't happen with valid
-      // Telegram HTML but defensive here so we never assign a wrong timestamp).
-      const rawTime    = times[i];
+      // Use the per-message timestamp via the original index; fall back to now.
+      const rawTime    = times[idx];
       const parsedDate = rawTime ? new Date(rawTime) : null;
       const time = parsedDate && !isNaN(parsedDate.getTime())
         ? parsedDate.toISOString()
@@ -956,6 +811,7 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
         countryCode: country.code,
         severity: cls.severity,
         category: cls.category,
+        link: msgLinks[idx],
         score: winner.score,
         confidence,
       });

@@ -21,6 +21,12 @@ export interface NewsEvent {
   severity: EventSeverity;
   category: EventCategory;
   link?: string;
+  /** Attribution score from the country-detection engine (higher = more confident match) */
+  score?: number;
+  /** Confidence value derived from the margin between the top-scored country and the runner-up */
+  confidence?: number;
+  /** Number of distinct sources that independently reported this story (≥ 2 = cross-confirmed) */
+  confirmations?: number;
 }
 
 export interface CountryNewsData {
@@ -34,6 +40,8 @@ export interface CountryNewsData {
   /** Computed urgency — see AlertLevel */
   alertLevel: AlertLevel;
   events: NewsEvent[];
+  /** Weighted event-density score over the rolling 7-day window (higher = more sustained activity) */
+  escalationIndex?: number;
 }
 
 export interface NewsMapData {

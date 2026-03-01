@@ -3,8 +3,10 @@ import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject, ISVGElementStyleAttributes, IVectorMapProps } from "@react-jvectormap/core/dist/types";
 import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
+import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
+import LiveEventFeed from "./LiveEventFeed";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
 // The worldMill dataset encodes French Guiana (South America) as a subpath of
@@ -71,16 +73,6 @@ const REGION_LABEL_STYLE: ISVGElementStyleAttributes = {
   hover: {}, selected: {}, selectedHover: {},
 };
 
-/** Convert an ISO-3166-1 alpha-2 country code to a flag emoji.
- *  Returns an empty string for invalid codes (non-alpha or wrong length). */
-function countryFlag(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper.length !== 2 || !/^[A-Z]{2}$/.test(upper)) return "";
-  return [...upper].map((c) =>
-    String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
-  ).join("");
-}
-
 type CategoryFilter = "all" | EventCategory;
 
 const FILTER_LABELS: Record<CategoryFilter, string> = {
@@ -130,13 +122,19 @@ const StableMap = memo(function StableMap({
   );
 });
 
+/** Alert levels that can be toggled off; "all" means no restriction */
+type AlertFilter = AlertLevel | "all";
+
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
+  const [showZoomHint, setShowZoomHint] = useState(false);
   const mapRef = useRef<IMapObject | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep latest country lookup in a ref so the stable handler can access it
   const countryByCodeRef = useRef(new Map<string, CountryNewsData>());
@@ -162,16 +160,22 @@ export default function NewsMapWidget() {
     }
   }, [activeCategories, categoryFilter, setCategoryFilter]);
 
-  // Filter countries to those that have at least one event matching the active filter
+  // Filter countries: first by category, then by alert level
   const countries = useMemo(() => {
-    if (categoryFilter === "all") return allCountries;
-    return allCountries
-      .map((c) => ({
-        ...c,
-        events: c.events.filter((e) => e.category === categoryFilter),
-      }))
-      .filter((c) => c.events.length > 0);
-  }, [allCountries, categoryFilter]);
+    let result = allCountries;
+    if (categoryFilter !== "all") {
+      result = result
+        .map((c) => ({
+          ...c,
+          events: c.events.filter((e) => e.category === categoryFilter),
+        }))
+        .filter((c) => c.events.length > 0);
+    }
+    if (alertFilter !== "all") {
+      result = result.filter((c) => c.alertLevel === alertFilter);
+    }
+    return result;
+  }, [allCountries, categoryFilter, alertFilter]);
 
   const trendingCountries = useMemo(
     () => countries
@@ -257,6 +261,59 @@ export default function NewsMapWidget() {
   const handleZoomReset = useCallback(() => {
     mapRef.current?.reset();
   }, []);
+
+  // ── Trackpad / pinch-to-zoom ────────────────────────────────────────────────
+  // Browsers synthesise a wheel event with ctrlKey=true for trackpad pinch
+  // gestures, which is the same signal sent by Ctrl+scroll on a mouse.
+  // We intercept this on the container and apply zoom toward the cursor
+  // position rather than the viewport centre (more natural on large maps).
+  // Plain scroll (without Ctrl / pinch) shows a brief hint overlay instead
+  // of accidentally zooming the map while the user scrolls the page.
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) {
+        // Regular scroll — briefly surface a hint; do NOT prevent default so
+        // the page continues to scroll normally.
+        setShowZoomHint(true);
+        if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+        zoomHintTimerRef.current = setTimeout(() => setShowZoomHint(false), 1800);
+        return;
+      }
+      // Pinch or Ctrl+scroll — zoom the map toward the cursor position.
+      // Scale the zoom factor proportionally to deltaY so trackpad pinch
+      // (many tiny delta events, e.g. |deltaY|≈2–5) produces smooth small
+      // steps, while mouse Ctrl+scroll (single large delta, |deltaY|≈100)
+      // produces the original ~25% step.  Clamping to 100 prevents a single
+      // over-sized event from jumping too far.
+      e.preventDefault();
+      const map = mapRef.current;
+      if (!map) return;
+      const raw = map as unknown as Record<string, unknown>;
+      const cur  = typeof raw.scale     === "number" ? raw.scale     : 1;
+      const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
+      const normalised = Math.min(Math.abs(e.deltaY), 100) / 100; // 0–1
+      const zoomChange = normalised * 0.25;                        // up to 25%
+      const factor = e.deltaY < 0 ? 1 + zoomChange : 1 / (1 + zoomChange);
+      const newScale = Math.min(Math.max(cur * factor, base), 12 * base);
+      if (typeof raw.setScale === "function") {
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        (raw.setScale as (s: number, x: number, y: number, c: boolean, a: boolean) => void)(
+          newScale, x, y, false, true
+        );
+      }
+    };
+
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+    };
+  }, []); // only runs once — uses refs throughout, no reactive deps
 
   /**
    * Delta-paint jVectorMap region fills using inline styles.
@@ -458,6 +515,53 @@ export default function NewsMapWidget() {
           </div>
         )}
 
+        {/* Pinch / Ctrl+scroll zoom hint — briefly shown when user scrolls without pinching */}
+        {showZoomHint && (
+          <div className="absolute inset-x-0 top-3 flex justify-center pointer-events-none z-20">
+            <div className="rounded-full bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur-sm">
+              Pinch or Ctrl + scroll to zoom
+            </div>
+          </div>
+        )}
+
+        {/* Map legend — floating bottom-left; each row is a clickable filter toggle.
+             Active filter: that alert level only. Click again to clear.
+             Inspired by liveuamap's layer-toggle controls. */}
+        <div className="absolute bottom-3 left-3 z-10 rounded-lg border border-gray-200/80 bg-white/90 px-2.5 py-1.5 backdrop-blur-sm shadow-sm dark:border-gray-700/80 dark:bg-gray-800/90">
+          <div className="flex flex-col gap-1">
+            {(["critical", "high", "medium", "watch"] as AlertLevel[]).map((level) => {
+              const isActive = alertFilter === level;
+              const isDimmed = alertFilter !== "all" && alertFilter !== level;
+              return (
+                <button
+                  key={level}
+                  onClick={() => setAlertFilter(isActive ? "all" : level)}
+                  title={isActive ? `Show all alert levels` : `Filter to ${level} only`}
+                  aria-pressed={isActive}
+                  className={`flex items-center gap-1.5 rounded px-0.5 py-0.5 text-left transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                    isDimmed ? "opacity-30" : "opacity-100"
+                  } ${isActive ? "ring-1 ring-brand-400 ring-offset-1 dark:ring-offset-gray-800" : ""}`}
+                >
+                  <span
+                    className="shrink-0 rounded-full"
+                    style={{
+                      width: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
+                      height: ALERT_LEVEL_MARKER_RADIUS[level] * 2,
+                      backgroundColor: ALERT_LEVEL_MARKER_FILL[level],
+                      border: "1.5px solid #ffffff",
+                      display: "inline-block",
+                    }}
+                    aria-hidden="true"
+                  />
+                  <span className={`text-[10px] capitalize leading-none ${isActive ? "font-semibold text-gray-800 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>
+                    {level}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Desktop zoom controls — hidden on mobile where pinch-to-zoom is native */}
         <div className="absolute bottom-3 right-3 z-10 hidden sm:flex flex-col gap-1">
           <button
@@ -505,11 +609,12 @@ export default function NewsMapWidget() {
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500">
               Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+              {data.feedStats && ` · ${data.feedStats.succeeded}/${data.feedStats.total} sources`}
               {data.usingMockData && " · demo data"}
             </span>
           </div>
 
-          {/* Row 2: alert-level key + trending pills (only when content exists) */}
+          {/* Row 2: alert-level key + trending pills + conflict groups */}
           {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0 ||
             trendingCountries.length > 0) && (
             <div className="flex flex-wrap items-center gap-3">
@@ -569,7 +674,58 @@ export default function NewsMapWidget() {
               )}
             </div>
           )}
+
+          {/* Row 3: Active conflict groups — sourced from API's conflictGroups field.
+               The API already detects when trending countries are part of known conflict
+               pairs (e.g. Russia–Ukraine, Israel–Iran).  We surface those here so users
+               can see at a glance which crises are interconnected.  Each group is rendered
+               as a compact pill showing the two (or more) involved flags + country names. */}
+          {data.conflictGroups && data.conflictGroups.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                Active conflicts
+              </span>
+              {data.conflictGroups.map((group) => {
+                const members = group
+                  .map((code) => countryByCodeRef.current.get(code))
+                  .filter((c): c is CountryNewsData => c !== undefined);
+                if (members.length < 2) return null;
+                return (
+                  <span
+                    key={group.join("-")}
+                    className="inline-flex items-center gap-0.5 rounded-full border border-warning-500/30 bg-warning-500/10 px-2 py-0.5 text-xs font-medium text-warning-800 dark:bg-warning-500/20 dark:text-warning-300"
+                    title={`Active conflict: ${members.map((m) => m.name).join(" vs ")}`}
+                  >
+                    {members.map((m, i) => (
+                      <span key={m.code}>
+                        {i > 0 && <span className="text-warning-500/60 mx-0.5">vs</span>}
+                        <button
+                          className="hover:underline"
+                          onClick={() => handlePillClick(m)}
+                        >
+                          {countryFlag(m.code)} {m.name}
+                        </button>
+                      </span>
+                    ))}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Live event feed — shows the most recent events across all active countries,
+           newest first.  Inspired by liveuamap's real-time event ticker and
+           globalthreatmap's event feed panel: both surfaces individual events
+           chronologically to give a live operational picture beyond per-country
+           aggregates.  Clicking any row opens that country's detail modal. */}
+      {data && countries.length > 0 && (
+        <LiveEventFeed
+          countries={countries}
+          maxRows={10}
+          onCountryClick={handlePillClick}
+        />
       )}
 
       <EventModal country={selected} onClose={handleClose} />
