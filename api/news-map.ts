@@ -1,11 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Parser from "rss-parser";
 import { scoreCountries, calculateConfidence, getCountryByCode } from "./scoringEngine";
+import { classifyEvent, cleanSnippet, OUTLET_NAME_RE, type EventSeverity, type EventCategory } from "./classifier";
+import {
+  RSS_SOURCES, TELEGRAM_CHANNELS, REDDIT_JSON_SUBREDDITS,
+  SOURCE_WEIGHTS, CONFLICT_GROUPS,
+  ARTICLES_PER_FEED, FETCH_TIMEOUT, MAX_CONCURRENT_FETCHES, NEWS_MAP_UA,
+} from "./sources";
 
 // ── Types (mirror src/components/news-map/types.ts) ─────────────────────────
-type EventSeverity = "high" | "medium" | "low";
-type EventCategory = "violent" | "minor" | "economic" | "extremism" | "escalation";
-type AlertLevel    = "critical" | "high" | "medium" | "watch";
+type AlertLevel = "critical" | "high" | "medium" | "watch";
 
 /** Number of characters used to build the deduplication key from a title.
  *  Short enough to also catch the same story re-published with a minor
@@ -181,210 +185,6 @@ for (const c of COUNTRIES) {
   }
 }
 
-// ── RSS sources ──────────────────────────────────────────────────────────────
-// All feeds are fetched concurrently via Promise.allSettled — a single slow or
-// unavailable feed fails fast (10 s timeout) without blocking the others.
-//
-// Excluded from this list:
-//   Reuters       – removed public RSS in 2020; feeds.reuters.com always 404s
-//   FT            – full paywall; RSS returns no usable article text
-//   Telesur       – Venezuelan state outlet; RSS endpoint unreliable
-//   Euronews/FBN  – Feedburner variant deprecated; direct feed already present
-const RSS_SOURCES = [
-  // ── Primary / High-volume world news ───────────────────────────────────────
-  { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/subjects/conflict.xml" },
-  { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml" },
-  { name: "BBC",        url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
-  { name: "AP News",    url: "https://feeds.apnews.com/apnews/world" },
-  { name: "CNN",        url: "https://rss.cnn.com/rss/edition_world.rss" },
-  { name: "Guardian",   url: "https://www.theguardian.com/world/rss" },
-  // ── Regional coverage ──────────────────────────────────────────────────────
-  { name: "DW",         url: "https://rss.dw.com/xml/rss-en-world" },
-  { name: "France24",   url: "https://www.france24.com/en/rss" },
-  { name: "Sky News",   url: "https://feeds.skynews.com/feeds/rss/world.xml" },
-  { name: "RFE/RL",     url: "https://www.rferl.org/api/jqpxiflpqo" },
-  { name: "Euronews",   url: "https://www.euronews.com/rss?format=mrss&level=theme&name=news" },
-  { name: "CNA",        url: "https://www.channelnewsasia.com/rssfeeds/8395884" },
-  { name: "Africanews", url: "https://www.africanews.com/feed/" },
-  // ── Specialist / humanitarian ──────────────────────────────────────────────
-  { name: "ReliefWeb",  url: "https://reliefweb.int/updates/rss.xml" },
-  { name: "UN News",    url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml" },
-  // ── Near-realtime conflict monitoring (no API key required) ────────────────
-  // GDELT monitors millions of global news articles and surfaces conflict events
-  // within hours. No rate limits. timespan=6h aligns with our baseline window.
-  { name: "GDELT", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+conflict+OR+war+OR+explosion)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
-  // A second GDELT feed scoped to the last 1 hour ensures the trending window
-  // always has enough recent articles even if the broader baseline feed is sparse.
-  { name: "GDELT Breaking", url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(attack+OR+airstrike+OR+bombing+OR+killed+OR+explosion+OR+shooting+OR+casualties)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=1h" },
-  // ── Community / social signal (no API key required) ────────────────────────
-  // Reddit r/worldnews and r/geopolitics users post breaking news within minutes
-  // of events occurring — often faster than traditional RSS feeds.
-  // Note: X/Twitter would be ideal but requires a paid API subscription.
-  { name: "Reddit WorldNews",   url: "https://www.reddit.com/r/worldnews/new/.rss" },
-  { name: "Reddit Geopolitics", url: "https://www.reddit.com/r/geopolitics/new/.rss" },
-];
-
-const ARTICLES_PER_FEED = 20;
-
-/** Shared fetch timeout (ms) applied to all non-RSS sources */
-const FETCH_TIMEOUT = 10_000;
-
-/**
- * Maximum number of concurrent HTTP fetch operations across all source types
- * (RSS, Telegram, Reddit).  Capping concurrency prevents thundering-herd
- * behaviour against rate-limited endpoints and bounds memory usage during
- * feed parsing as the source list grows beyond ~30 entries.
- */
-const MAX_CONCURRENT_FETCHES = 12;
-
-/** Shared User-Agent used in the RSS parser, Telegram scraper, and Reddit JSON fetcher */
-const NEWS_MAP_UA = "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)";
-
-/** Outlet name patterns that contain country keywords and must be stripped from
- *  both titles and content snippets before country detection to prevent false
- *  attribution.  "France 24" → contains "france"; all other current sources are safe. */
-const OUTLET_NAME_RE = /\bfrance\s*24\b/gi;
-
-// ── Telegram public channels ─────────────────────────────────────────────────
-// t.me/s/{channel} returns a public HTML page — no login or API key required.
-// These outlets post breaking news to Telegram within minutes of events, often
-// ahead of their own RSS feeds.  HTML scraping is used since Telegram has no
-// public RSS endpoint for channels.
-//
-// Selected for English-language reliability and geopolitical breadth:
-//   alarabiya_en  – Al Arabiya English (Middle East / Asia focus)
-//   trtworld      – TRT World (broad international coverage)
-//   bbcnews       – BBC News (global)
-//   reutersagency – Reuters (newswire, fast turnaround)
-const TELEGRAM_CHANNELS = [
-  { name: "Al Arabiya (Telegram)", channel: "alarabiya_en" },
-  { name: "TRT World (Telegram)",  channel: "trtworld" },
-  { name: "BBC News (Telegram)",   channel: "bbcnews" },
-  { name: "Reuters (Telegram)",    channel: "reutersagency" },
-];
-
-// ── Reddit JSON subreddits ───────────────────────────────────────────────────
-// Reddit's public /new.json endpoint requires no API key.  We target subreddits
-// not already covered by the RSS feeds above, and filter by score ≥ 20 so only
-// community-upvoted (more likely accurate) posts are included.
-//
-// r/worldnews and r/geopolitics are already in RSS_SOURCES; these extend coverage:
-//   UkrainianConflict – focused conflict subreddit, high signal-to-noise
-//   MiddleEastNews    – regional specialist
-//   BreakingNews      – multi-topic, fast but noisier → higher score threshold
-const REDDIT_JSON_SUBREDDITS = [
-  { name: "Reddit UkrainianConflict", sub: "UkrainianConflict", minScore: 20 },
-  { name: "Reddit MiddleEastNews",    sub: "MiddleEastNews",    minScore: 20 },
-  { name: "Reddit BreakingNews",      sub: "BreakingNews",      minScore: 50 },
-];
-
-// ── Classification keyword lists ─────────────────────────────────────────────
-// Ordered most-specific / most-severe first so the earliest match wins.
-
-// ── Violent ──────────────────────────────────────────────────────────────────
-const HIGH_VIOLENT = [
-  "bombing", "explosion", "suicide attack", "terrorist attack",
-  "killed", "death toll", "casualties", "massacre", "murder", "homicide",
-  "airstrike", "air strike", "missile strike", "drone strike",
-  "arson", "fire bomb",
-];
-const MEDIUM_VIOLENT = [
-  "shooting", "stabbing", "assault", "riot",
-  "violent protest", "clashes", "street fighting", "armed confrontation",
-  "hostage", "abduction", "kidnapping",
-  "sabotage", "vandalism",
-];
-
-// ── Civil unrest / minor / humanitarian ──────────────────────────────────────
-const LOW_MINOR = [
-  "peaceful protest", "demonstration", "march", "worker strike",
-  "civil unrest", "blockade", "curfew", "evacuation",
-  "power outage", "flooding", "earthquake", "storm",
-  "social unrest", "tension", "dispute",
-  // Humanitarian / disaster terms — surfaces ReliefWeb and UN News articles
-  "refugee", "refugees", "displaced", "displacement",
-  "humanitarian", "famine", "drought",
-  "disease outbreak", "epidemic", "aid convoy",
-];
-
-// ── Economic ─────────────────────────────────────────────────────────────────
-const HIGH_ECONOMIC = [
-  "stock market crash", "market collapse", "market plunge",
-  "hyperinflation", "currency collapse", "devaluation", "economic meltdown",
-  "debt default", "sovereign default", "government default",
-  "banking crisis", "bank run", "financial crisis",
-  "severe sanctions", "trade embargo", "trade war",
-  "mass unemployment", "factory closure", "supply chain collapse",
-  "food shortage", "energy crisis",
-];
-
-// ── Extremism ─────────────────────────────────────────────────────────────────
-/** Violent attacks with a clearly identified extremist/ideological motive */
-const HIGH_EXTREMISM = [
-  "neo-nazi attack", "neo nazi attack", "neonazi attack",
-  "white supremacist attack", "far-right attack", "far right attack",
-  "far-left attack", "far left attack", "antifa attack",
-  "antisemitic attack", "antisemitic shooting", "antisemitic stabbing",
-  "extremist bombing", "hate crime killing", "hate crime murder",
-];
-/** Extremist ideology, movements, rallies, and hate-crime activity */
-const MEDIUM_EXTREMISM = [
-  "neo-nazi", "neo nazi", "neonazi",
-  "white supremacist", "white supremacy", "white nationalist",
-  "antisemitism", "antisemitic", "antisemite",
-  "far-right extremist", "far right extremist",
-  "far-left extremist", "far left extremist",
-  "antifa", "fascist rally", "nazi rally", "nazi march",
-  "hate group", "hate march", "extremist rally",
-  "kkk", "ku klux klan",
-  "political extremism", "radicalization", "radicalisation",
-  "islamophobic attack", "islamophobia",
-  "alt-right", "alt right", "proud boys", "oath keepers",
-];
-
-// ── Escalation / pre-conflict — EARLY WARNING ─────────────────────────────────
-// These signals precede active violence: military positioning, diplomatic breakdown,
-// political seizures and WMD threats.  Detecting them earlier than violence keywords
-// is the key to the "as early as possible" goal.
-/** High-severity pre-conflict signals — imminent or acute crisis */
-const HIGH_ESCALATION = [
-  // Political seizures
-  "coup attempt", "coup d'état", "attempted coup", "military takeover",
-  "martial law", "state of emergency declared",
-  // WMD / strategic weapons
-  "nuclear threat", "nuclear alert", "nuclear readiness",
-  "ballistic missile launched", "intercontinental missile", "hypersonic missile",
-  "chemical attack", "chemical weapons used", "biological attack",
-  // Airspace / major strategic moves
-  "airspace closed", "airspace closure",
-  "full military mobilization", "general mobilization",
-];
-/** Medium-severity pre-conflict signals — escalating but not yet at war */
-const MEDIUM_ESCALATION = [
-  // Military movements
-  "troops deployed", "troops massing", "military buildup",
-  "military mobilization", "mobilisation near",
-  "military exercises", "war games", "live-fire drill",
-  "warships deployed", "naval standoff", "aircraft carrier deployed",
-  "tanks at border", "forces at border",
-  // Diplomatic breakdown
-  "expels ambassador", "ambassador expelled", "recalls ambassador",
-  "diplomatic crisis", "severed diplomatic ties", "diplomatic breakdown",
-  "new sanctions", "sanctions package", "sanctions announced",
-  "border closed", "border closure", "border sealed",
-  // Domestic crackdown
-  "opposition arrested", "opposition leader arrested",
-  "mass arrests", "protesters arrested", "crackdown on",
-  "state of emergency", "emergency powers",
-  "protest crackdown", "demonstrators detained",
-  // Threat language
-  "ultimatum", "war warning", "military threat",
-  "brink of war", "on the brink", "armed standoff",
-  "military standoff", "nuclear standoff",
-  // Pre-coup signals
-  "soldiers surrounding", "parliament surrounded",
-  "president detained", "prime minister detained",
-];
 
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
@@ -414,101 +214,6 @@ const MAX_TRENDING = 3;
 const MAX_EVENTS_PER_COUNTRY = 10;
 /** Rolling window for the 7-day escalation index (ms) */
 const ESCALATION_WINDOW_MS = 7 * 24 * 3_600_000;
-
-/**
- * Source credibility weights by outlet name.
- * Tier 1 (1.5): wire services / public broadcasters with editorial standards
- * Tier 2 (1.2): major international broadcasters
- * Tier 3 (1.0): specialist / regional outlets, humanitarian bodies
- * Tier 4 (0.8): algorithmic aggregators (GDELT)
- * Tier 5 (0.6/0.5): community / social sources
- */
-const SOURCE_WEIGHTS: Record<string, number> = {
-  "AP News":                  1.5,
-  "BBC":                      1.5,
-  "BBC News (Telegram)":      1.3,
-  "Reuters (Telegram)":       1.5,
-  "Guardian":                 1.2,
-  "Al Jazeera":               1.2,
-  "Al Arabiya (Telegram)":    1.1,
-  "CNN":                      1.2,
-  "DW":                       1.2,
-  "France24":                 1.1,
-  "Sky News":                 1.1,
-  "RFE/RL":                   1.0,
-  "Euronews":                 1.0,
-  "CNA":                      1.0,
-  "Africanews":               1.0,
-  "TRT World (Telegram)":     0.9,
-  "ReliefWeb":                1.0,
-  "UN News":                  1.0,
-  "GDELT":                    0.8,
-  "GDELT Breaking":           0.8,
-  "Reddit WorldNews":         0.6,
-  "Reddit Geopolitics":       0.6,
-  "Reddit UkrainianConflict": 0.6,
-  "Reddit MiddleEastNews":    0.6,
-  "Reddit BreakingNews":      0.5,
-};
-
-/**
- * Known active conflicts / wars.  When any trending country is a member of one
- * of these groups AND the partner country(ies) also have recent events, all
- * active members are surfaced together.
- */
-const CONFLICT_GROUPS: readonly (readonly string[])[] = [
-  ["RU", "UA"],     // Russia – Ukraine
-  ["IL", "IR"],     // Israel – Iran
-  ["IL", "PS"],     // Israel – Palestine / Gaza
-  ["IL", "LB"],     // Israel – Hezbollah / Lebanon
-  ["US", "CN"],     // US – China
-  ["IN", "PK"],     // India – Pakistan
-  ["KP", "KR"],     // North Korea – South Korea
-  ["AM", "AZ"],     // Armenia – Azerbaijan
-  ["SD", "SS"],     // Sudan – South Sudan
-] as const;
-
-/**
- * Build a single precompiled RegExp from a keyword list.
- * Joining all keywords with `|` means V8's regex engine scans the lowercased
- * text in one pass rather than calling String.prototype.includes() once per
- * keyword.  Metacharacters in keywords are escaped so they match literally.
- *
- * Using case-sensitive matching here because callers always lowercase the text
- * before calling classifyEvent — this is faster than the `i` flag since V8
- * does not need to perform case folding on every character.
- */
-function buildClassifyRe(keywords: string[]): RegExp {
-  return new RegExp(
-    keywords.map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
-  );
-}
-
-// Precompiled once at module load — reused for every article across all requests.
-// Replaces up to 114 sequential .includes() calls per article with 8 .test() calls.
-const RE_HIGH_ECONOMIC     = buildClassifyRe(HIGH_ECONOMIC);
-const RE_HIGH_EXTREMISM    = buildClassifyRe(HIGH_EXTREMISM);
-const RE_MEDIUM_EXTREMISM  = buildClassifyRe(MEDIUM_EXTREMISM);
-const RE_HIGH_ESCALATION   = buildClassifyRe(HIGH_ESCALATION);
-const RE_MEDIUM_ESCALATION = buildClassifyRe(MEDIUM_ESCALATION);
-const RE_HIGH_VIOLENT      = buildClassifyRe(HIGH_VIOLENT);
-const RE_MEDIUM_VIOLENT    = buildClassifyRe(MEDIUM_VIOLENT);
-const RE_LOW_MINOR         = buildClassifyRe(LOW_MINOR);
-
-function classifyEvent(text: string): { severity: EventSeverity; category: EventCategory } | null {
-  const lower = text.toLowerCase();
-  if (RE_HIGH_ECONOMIC.test(lower))     return { severity: "high",   category: "economic"    };
-  if (RE_HIGH_EXTREMISM.test(lower))    return { severity: "high",   category: "extremism"   };
-  if (RE_MEDIUM_EXTREMISM.test(lower))  return { severity: "medium", category: "extremism"   };
-  // Pre-conflict escalation signals — checked BEFORE generic violence so that
-  // "killed during coup attempt" maps to escalation, not just violent.
-  if (RE_HIGH_ESCALATION.test(lower))   return { severity: "high",   category: "escalation"  };
-  if (RE_MEDIUM_ESCALATION.test(lower)) return { severity: "medium", category: "escalation"  };
-  if (RE_HIGH_VIOLENT.test(lower))      return { severity: "high",   category: "violent"     };
-  if (RE_MEDIUM_VIOLENT.test(lower))    return { severity: "medium", category: "violent"     };
-  if (RE_LOW_MINOR.test(lower))         return { severity: "low",    category: "minor"       };
-  return null;
-}
 
 /** Look up country info from the scoring-engine database by ISO code */
 function getCountryInfoByCode(code: string) {
@@ -922,7 +627,9 @@ async function fetchRSSSource(src: { name: string; url: string }): Promise<NewsE
   const events: NewsEvent[] = [];
   for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
     if (!item.title) continue;
-    const snippet = item.contentSnippet ?? item.content ?? "";
+    // Strip boilerplate noise (cookie notices, subscribe prompts, nav artefacts)
+    // from the snippet before classification and country scoring.
+    const snippet = cleanSnippet(item.contentSnippet ?? item.content ?? "");
     const text = `${item.title} ${snippet}`;
     const cls = classifyEvent(text);
     if (!cls) continue;
@@ -1068,8 +775,9 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
     const validTexts: { text: string; msgIdx: number }[] = [];
     let msgIdx = 0;
     while ((m = msgRe.exec(html)) !== null) {
-      // Strip HTML tags; collapse whitespace
-      const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      // Strip HTML tags, collapse whitespace, then remove boilerplate noise
+      const rawText = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const text = cleanSnippet(rawText);
       if (text.length > 20) validTexts.push({ text, msgIdx });
       msgIdx++;
     }
