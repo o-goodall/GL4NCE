@@ -94,10 +94,12 @@ const StableMap = memo(function StableMap({
   mapRef,
   onRegionClick,
   onRegionTipShow,
+  onMarkerClick,
 }: {
   mapRef: React.MutableRefObject<IMapObject | null>;
   onRegionClick: (e: Event, code: string) => void;
   onRegionTipShow: (e: Event) => void;
+  onMarkerClick: (e: Event, code: string) => void;
 }) {
   return (
     <VectorMap
@@ -115,6 +117,7 @@ const StableMap = memo(function StableMap({
       // runtime callbacks are fully compatible at the call site.
       onRegionClick={onRegionClick as unknown as IVectorMapProps["onRegionClick"]}
       onRegionTipShow={onRegionTipShow as unknown as IVectorMapProps["onRegionTipShow"]}
+      onMarkerClick={onMarkerClick as unknown as IVectorMapProps["onMarkerClick"]}
       regionStyle={REGION_STYLE}
       regionLabelStyle={REGION_LABEL_STYLE}
       markerStyle={MARKER_STYLE}
@@ -132,6 +135,7 @@ export default function NewsMapWidget() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
   const [showZoomHint, setShowZoomHint] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false);
   const mapRef = useRef<IMapObject | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -221,6 +225,16 @@ export default function NewsMapWidget() {
   const handlePillClick = useCallback((country: CountryNewsData) => {
     setSelected(country);
     setTappedCode(country.code);
+  }, []);
+
+  // Stable — never recreated, so StableMap never re-renders
+  const handleMarkerClick = useCallback((_e: Event, code: string) => {
+    const upperCode = code.toUpperCase();
+    const country = countryByCodeRef.current.get(upperCode);
+    if (country) {
+      setSelected(country);
+      setTappedCode(upperCode);
+    }
   }, []);
 
   // ── Desktop zoom controls ───────────────────────────────────────────────────
@@ -505,7 +519,7 @@ export default function NewsMapWidget() {
       {/* Map container */}
       <div className="relative overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
         <div ref={mapContainerRef} className="h-[420px] sm:h-[520px] xl:h-[620px]">
-          <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} onRegionTipShow={handleRegionTipShow} />
+          <StableMap mapRef={mapRef} onRegionClick={handleRegionClick} onRegionTipShow={handleRegionTipShow} onMarkerClick={handleMarkerClick} />
         </div>
 
         {!loading && countries.length === 0 && (
@@ -608,7 +622,6 @@ export default function NewsMapWidget() {
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500">
               Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-              {data.feedStats && ` · ${data.feedStats.succeeded}/${data.feedStats.total} sources`}
               {data.usingMockData && " · demo data"}
             </span>
           </div>
@@ -714,17 +727,31 @@ export default function NewsMapWidget() {
         </div>
       )}
 
-      {/* Live event feed — shows the most recent events across all active countries,
-           newest first.  Inspired by liveuamap's real-time event ticker and
-           globalthreatmap's event feed panel: both surfaces individual events
-           chronologically to give a live operational picture beyond per-country
-           aggregates.  Clicking any row opens that country's detail modal. */}
+      {/* Live event feed — pill toggle (default closed) + expandable feed */}
       {data && countries.length > 0 && (
-        <LiveEventFeed
-          countries={countries}
-          maxRows={10}
-          onCountryClick={handlePillClick}
-        />
+        <div className="mt-4">
+          <button
+            onClick={() => setFeedOpen((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              feedOpen
+                ? "bg-brand-500 text-gray-900"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+            }`}
+            aria-expanded={feedOpen}
+            aria-label={feedOpen ? "Collapse live feed" : "Expand live feed"}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${feedOpen ? "bg-gray-900" : "bg-error-500 animate-pulse"}`} aria-hidden="true" />
+            Live Feed
+            <span className="ml-0.5" aria-hidden="true">{feedOpen ? "↑" : "↓"}</span>
+          </button>
+          {feedOpen && (
+            <LiveEventFeed
+              countries={countries}
+              maxRows={10}
+              onCountryClick={handlePillClick}
+            />
+          )}
+        </div>
       )}
 
       <EventModal country={selected} onClose={handleClose} />

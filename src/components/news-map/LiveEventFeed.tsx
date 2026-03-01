@@ -172,9 +172,6 @@ export default function LiveEventFeed({
           aria-label="Filter live feed events"
           className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
         />
-        <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
-          {feed.length}/{allFeed.length}
-        </span>
       </div>
       <div>
         {feed.length > 0 ? (
