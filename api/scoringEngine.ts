@@ -54,6 +54,8 @@ export const EVENT_KEYWORDS = [
 /** Context words near a country mention indicating attribution rather than location */
 const NEGATIVE_CONTEXT = [
   "said", "supports", "condemns", "warned", "reacted", "calls", "backed",
+  "denounces", "criticises", "criticizes", "urges", "responds",
+  "accuses", "rebuts", "refutes", "rejects", "dismisses",
 ];
 
 /** Article type markers that reduce the final score by 20 % */
@@ -87,6 +89,8 @@ function loadCountries(): CountryEntry[] {
 interface AliasEntry {
   tokens: string[];
   country: CountryEntry;
+  /** Whether this entry was derived from the country name, an alias, or an adjective */
+  type: "name" | "alias" | "adjective";
 }
 
 let _aliasIndex: AliasEntry[] | null = null;
@@ -95,13 +99,13 @@ function getAliasIndex(): AliasEntry[] {
   if (_aliasIndex) return _aliasIndex;
   const index: AliasEntry[] = [];
   for (const country of loadCountries()) {
-    index.push({ tokens: normalizeText(country.name), country });
+    index.push({ tokens: normalizeText(country.name), country, type: "name" });
     for (const alias of country.aliases) {
-      index.push({ tokens: normalizeText(alias), country });
+      index.push({ tokens: normalizeText(alias), country, type: "alias" });
     }
     for (const adj of country.adjectives) {
       // Map adjective forms to the base country
-      index.push({ tokens: normalizeText(adj), country });
+      index.push({ tokens: normalizeText(adj), country, type: "adjective" });
     }
   }
   // Sort longest-first so multi-word aliases are tried before single-word ones
@@ -172,6 +176,27 @@ export function calculateKeywordDistances(
     if (kwPositions.length === 0) return Infinity;
     return Math.min(...kwPositions.map((kp) => Math.abs(pos - kp)));
   });
+}
+
+/**
+ * Returns true if any city/region-level alias (type="alias") for `country`
+ * appears in `tokens`.  Used to award a geographic-specificity bonus when an
+ * article names a specific location rather than just the country.
+ */
+function hasSpecificGeoMatch(tokens: string[], country: CountryEntry): boolean {
+  const entries = getAliasIndex().filter(
+    (e) => e.country.code === country.code && e.type === "alias"
+  );
+  for (const entry of entries) {
+    const len = entry.tokens.length;
+    outer: for (let i = 0; i <= tokens.length - len; i++) {
+      for (let j = 0; j < len; j++) {
+        if (tokens[i + j] !== entry.tokens[j]) continue outer;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -251,6 +276,10 @@ export function scoreCountries(title: string, body: string): ScoredCountry[] {
 
     // ── First-30%-of-article bonus ───────────────────────────────────────────
     if (totalLen > 0 && positions[0] / totalLen < 0.3) score += 2;
+
+    // ── Geographic specificity boost ─────────────────────────────────────────
+    // City/region-level mentions are more specific than country name alone.
+    if (hasSpecificGeoMatch(allTokens, country)) score += 1;
 
     // ── Editorial penalty ────────────────────────────────────────────────────
     if (isEditorial) score = Math.floor(score * 0.8);

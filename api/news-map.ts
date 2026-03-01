@@ -25,6 +25,8 @@ interface NewsEvent {
   score?: number;
   /** Confidence that this is the correct country (0–1) */
   confidence?: number;
+  /** Number of distinct sources that independently reported this story */
+  confirmations?: number;
 }
 
 interface CountryNewsData {
@@ -35,6 +37,8 @@ interface CountryNewsData {
   trending: boolean;
   alertLevel: AlertLevel;
   events: NewsEvent[];
+  /** Weighted event activity score over the rolling 7-day window (higher = more sustained conflict) */
+  escalationIndex?: number;
 }
 
 interface NewsMapData {
@@ -391,6 +395,46 @@ const TRENDING_BASELINE_HOURS = 5;
 const VELOCITY_FLOOR = 1.2;
 /** Hard cap on concurrent trending countries */
 const MAX_TRENDING = 5;
+/** Maximum events retained per country in the response (prevents one country flooding the output) */
+const MAX_EVENTS_PER_COUNTRY = 10;
+/** Rolling window for the 7-day escalation index (ms) */
+const ESCALATION_WINDOW_MS = 7 * 24 * 3_600_000;
+
+/**
+ * Source credibility weights by outlet name.
+ * Tier 1 (1.5): wire services / public broadcasters with editorial standards
+ * Tier 2 (1.2): major international broadcasters
+ * Tier 3 (1.0): specialist / regional outlets, humanitarian bodies
+ * Tier 4 (0.8): algorithmic aggregators (GDELT)
+ * Tier 5 (0.6/0.5): community / social sources
+ */
+const SOURCE_WEIGHTS: Record<string, number> = {
+  "AP News":                  1.5,
+  "BBC":                      1.5,
+  "BBC News (Telegram)":      1.3,
+  "Reuters (Telegram)":       1.5,
+  "Guardian":                 1.2,
+  "Al Jazeera":               1.2,
+  "Al Arabiya (Telegram)":    1.1,
+  "CNN":                      1.2,
+  "DW":                       1.2,
+  "France24":                 1.1,
+  "Sky News":                 1.1,
+  "RFE/RL":                   1.0,
+  "Euronews":                 1.0,
+  "CNA":                      1.0,
+  "Africanews":               1.0,
+  "TRT World (Telegram)":     0.9,
+  "ReliefWeb":                1.0,
+  "UN News":                  1.0,
+  "GDELT":                    0.8,
+  "GDELT Breaking":           0.8,
+  "Reddit WorldNews":         0.6,
+  "Reddit Geopolitics":       0.6,
+  "Reddit UkrainianConflict": 0.6,
+  "Reddit MiddleEastNews":    0.6,
+  "Reddit BreakingNews":      0.5,
+};
 
 /**
  * Known active conflicts / wars.  When any trending country is a member of one
@@ -438,14 +482,95 @@ function isWithinRetentionWindow(isoTime: string): boolean {
 }
 
 /**
+ * Time-decay multiplier for event scoring.  Recent events receive full weight;
+ * older events are progressively down-weighted to emphasise breaking news.
+ *   0–1 h  → 1.00
+ *   1–6 h  → 0.85
+ *   6–24 h → 0.65
+ *  24–48 h → 0.50
+ *    > 48 h → 0.30
+ */
+function recencyMultiplier(isoTime: string): number {
+  const ageH = (Date.now() - new Date(isoTime).getTime()) / 3_600_000;
+  if (ageH <= 1)  return 1.00;
+  if (ageH <= 6)  return 0.85;
+  if (ageH <= 24) return 0.65;
+  if (ageH <= 48) return 0.50;
+  return 0.30;
+}
+
+// ── Rolling 7-day escalation store ──────────────────────────────────────────
+// Module-level accumulator that retains events across handler calls within the
+// same serverless instance.  New events are appended on every request; events
+// older than ESCALATION_WINDOW_MS are pruned.  This gives a rolling 7-day
+// event-density signal per country even though each RSS fetch only returns the
+// most recent articles.
+
+let _escalationStore: NewsEvent[] = [];
+/** Pre-computed key set for O(1) dedup checks in appendToEscalationStore */
+let _escalationKeys: Set<string> = new Set();
+
+/** Append fresh events to the 7-day store, deduplicating on title prefix. */
+function appendToEscalationStore(newEvents: NewsEvent[]): void {
+  const cutoff = Date.now() - ESCALATION_WINDOW_MS;
+  for (const ev of newEvents) {
+    const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    if (!_escalationKeys.has(key)) {
+      _escalationKeys.add(key);
+      _escalationStore.push(ev);
+    }
+  }
+  // Prune stale events; rebuild key cache only when pruning occurred
+  const pruned = _escalationStore.filter((e) => new Date(e.time).getTime() >= cutoff);
+  if (pruned.length < _escalationStore.length) {
+    _escalationStore = pruned;
+    _escalationKeys = new Set(
+      _escalationStore.map((e) => e.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH))
+    );
+  }
+}
+
+/**
+ * Compute a weighted activity score for `countryCode` over the 7-day window.
+ * Combines the persistent store with the current-request events for accuracy.
+ * Higher values indicate more sustained or escalating activity.
+ */
+function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[]): number {
+  const cutoff = Date.now() - ESCALATION_WINDOW_MS;
+  const seen = new Set<string>();
+  let score = 0;
+
+  // Process store and current events separately to avoid array spread allocation
+  for (const ev of _escalationStore) {
+    if (ev.countryCode !== countryCode) continue;
+    if (new Date(ev.time).getTime() < cutoff) continue;
+    const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    score += SEVERITY_WEIGHTS[ev.severity] * CATEGORY_SCORE_MULTIPLIERS[ev.category] * recencyMultiplier(ev.time);
+  }
+  for (const ev of currentEvents) {
+    if (ev.countryCode !== countryCode) continue;
+    if (new Date(ev.time).getTime() < cutoff) continue;
+    const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    score += SEVERITY_WEIGHTS[ev.severity] * CATEGORY_SCORE_MULTIPLIERS[ev.category] * recencyMultiplier(ev.time);
+  }
+  return Math.round(score * 100) / 100;
+}
+
+/**
  * Compute a country's alert level from its recent events and trending status.
+ * Applies recency weighting so breaking events within the last hour score highest.
  */
 function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel {
   const cutoff24h = Date.now() - 24 * 3_600_000;
   const recent = events.filter((e) => new Date(e.time).getTime() >= cutoff24h);
   const pool = recent.length > 0 ? recent : events;
   const score = pool.reduce(
-    (sum, ev) => sum + SEVERITY_WEIGHTS[ev.severity] * CATEGORY_SCORE_MULTIPLIERS[ev.category],
+    (sum, ev) =>
+      sum + SEVERITY_WEIGHTS[ev.severity] * CATEGORY_SCORE_MULTIPLIERS[ev.category] * recencyMultiplier(ev.time),
     0
   );
   if (isTrending && score >= 10) return "critical";
@@ -484,7 +609,10 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; conflict
     if (seen.has(storyKey)) continue;
     seen.add(storyKey);
 
-    const weight = SEVERITY_WEIGHTS[ev.severity];
+    // Source credibility × recency decay × cross-feed confirmation bonus
+    const sourceWeight  = SOURCE_WEIGHTS[ev.source] ?? 1.0;
+    const confirmBonus  = ev.confirmations ? 1 + 0.3 * Math.min(ev.confirmations - 1, 3) : 1;
+    const weight = SEVERITY_WEIGHTS[ev.severity] * sourceWeight * recencyMultiplier(ev.time) * confirmBonus;
     if (evTime >= recentCutoff) {
       recentScores[ev.countryCode]   = (recentScores[ev.countryCode]   ?? 0) + weight;
     } else {
@@ -555,7 +683,11 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
       lng: info?.lng ?? 0,
       trending: isTrending,
       alertLevel: computeAlertLevel(evs, isTrending),
-      events: evs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()),
+      escalationIndex: computeEscalationIndex(code, events),
+      // Cap events per country to prevent one conflict from dominating the feed
+      events: evs
+        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+        .slice(0, MAX_EVENTS_PER_COUNTRY),
     };
   });
   return { countries, ...(conflictGroups.length > 0 ? { conflictGroups } : {}) };
@@ -686,9 +818,11 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
     Promise.allSettled(REDDIT_JSON_SUBREDDITS.map(fetchRedditJSON)),
   ]);
 
-  // Merge all results; track succeeded count across all source types
-  const seen = new Set<string>();
-  const all: NewsEvent[] = [];
+  // Merge results into story clusters for cross-feed confirmation tracking.
+  // Each unique story (by title prefix) is clustered; when multiple sources
+  // report the same story the cluster's confirmation count rises, which
+  // translates into a bonus in the trending computation.
+  const storyClusters = new Map<string, { event: NewsEvent; sources: Set<string> }>();
   let succeeded = 0;
   const total = RSS_SOURCES.length + TELEGRAM_CHANNELS.length + REDDIT_JSON_SUBREDDITS.length;
 
@@ -697,8 +831,23 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
     succeeded++;
     for (const ev of r.value) {
       const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
-      if (!seen.has(key)) { seen.add(key); all.push(ev); }
+      const existing = storyClusters.get(key);
+      if (!existing) {
+        storyClusters.set(key, { event: ev, sources: new Set([ev.source]) });
+      } else {
+        existing.sources.add(ev.source);
+        // Prefer the version with the highest attribution score
+        if ((ev.score ?? 0) > (existing.event.score ?? 0)) {
+          storyClusters.set(key, { event: ev, sources: existing.sources });
+        }
+      }
     }
+  }
+
+  // Build final event list; attach confirmation count when > 1 distinct source
+  const all: NewsEvent[] = [];
+  for (const { event, sources } of storyClusters.values()) {
+    all.push(sources.size > 1 ? { ...event, confirmations: sources.size } : event);
   }
   return { events: all, feedStats: { succeeded, total } };
 }
@@ -862,6 +1011,8 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
 
   try {
     const { events, feedStats } = await fetchAllEvents();
+    // Persist new events to the rolling 7-day escalation store
+    if (events.length > 0) appendToEscalationStore(events);
     const data: NewsMapData =
       events.length > 0
         ? { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), feedStats }
