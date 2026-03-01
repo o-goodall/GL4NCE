@@ -229,6 +229,14 @@ const ARTICLES_PER_FEED = 20;
 /** Shared fetch timeout (ms) applied to all non-RSS sources */
 const FETCH_TIMEOUT = 10_000;
 
+/**
+ * Maximum number of concurrent HTTP fetch operations across all source types
+ * (RSS, Telegram, Reddit).  Capping concurrency prevents thundering-herd
+ * behaviour against rate-limited endpoints and bounds memory usage during
+ * feed parsing as the source list grows beyond ~30 entries.
+ */
+const MAX_CONCURRENT_FETCHES = 12;
+
 /** Shared User-Agent used in the RSS parser, Telegram scraper, and Reddit JSON fetcher */
 const NEWS_MAP_UA = "Mozilla/5.0 (compatible; GL4NCE-NewsMap/1.0; +https://github.com/o-goodall/GL4NCE)";
 
@@ -574,7 +582,9 @@ let _escalationKeys: Set<string> = new Set();
 function appendToEscalationStore(newEvents: NewsEvent[]): void {
   const cutoff = Date.now() - ESCALATION_WINDOW_MS;
   for (const ev of newEvents) {
-    const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+    // Include country code so stories from different countries with the same
+    // 40-char title prefix are never conflated into a single dedup slot.
+    const key = `${ev.countryCode}:${ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH)}`;
     if (!_escalationKeys.has(key)) {
       _escalationKeys.add(key);
       const bucket = _escalationByCountry.get(ev.countryCode);
@@ -596,7 +606,7 @@ function appendToEscalationStore(newEvents: NewsEvent[]): void {
     _escalationKeys = new Set();
     for (const bucket of _escalationByCountry.values()) {
       for (const ev of bucket) {
-        _escalationKeys.add(ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH));
+        _escalationKeys.add(`${ev.countryCode}:${ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH)}`);
       }
     }
   }
@@ -766,7 +776,10 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
       trending: isTrending,
       trendingRank: isTrending ? (trendingRanks.get(code) ?? undefined) : undefined,
       alertLevel: computeAlertLevel(evs, isTrending),
-      escalationIndex: computeEscalationIndex(code, events),
+      // Pass the already-grouped per-country slice (evs) rather than the full
+      // events array so the inner currentEvents loop in computeEscalationIndex
+      // runs in O(K_country) instead of O(N_total × N_countries).
+      escalationIndex: computeEscalationIndex(code, evs),
       // Cap events per country to prevent one conflict from dominating the feed
       events: evs
         .sort((a, b) => parseTimeMs(b.time) - parseTimeMs(a.time))
@@ -873,76 +886,110 @@ const parser = new Parser({
   },
 });
 
-async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
-  // Run RSS feeds, Telegram channels, and Reddit JSON subreddits concurrently.
-  // Each group uses Promise.allSettled so a failed source never blocks others.
-  const [rssResults, telegramResults, redditResults] = await Promise.all([
-    Promise.allSettled(RSS_SOURCES.map(async (src) => {
-      const feed = await parser.parseURL(src.url);
-      const events: NewsEvent[] = [];
-      for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
-        if (!item.title || !item.link) continue;
-        const snippet = item.contentSnippet ?? item.content ?? "";
-        const text = `${item.title} ${snippet}`;
-        const cls = classifyEvent(text);
-        if (!cls) continue;
-        // Try title-only detection first: prevents an outlet's own country
-        // (appearing in the snippet/byline) from overriding the country named
-        // in the headline (e.g. Indian paper reporting on Bolivia).
-        // Strip outlet names that contain country keywords from BOTH the title
-        // and snippet before detection — e.g. "France 24" in a headline like
-        // "France 24 reporter killed in Gaza" would otherwise map the event to
-        // France instead of the real country.
-        const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
-        const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
-        // Score all countries mentioned; pick the one with the highest score
-        const scored = scoreCountries(cleanedTitle, cleanedSnippet);
-        if (scored.length === 0) continue;
-        const winner = scored[0];
-        const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
-        const country = winner.country;
-        // isoDate is normalised by rss-parser; pubDate can be in any locale format
-        const rawTime = item.isoDate ?? item.pubDate;
-        const parsedDate = rawTime ? new Date(rawTime) : null;
-        const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
-        // Reject articles dated outside the retention window or too far in the future
-        if (validDate) {
-          const ageMs = Date.now() - validDate.getTime();
-          if (ageMs > RETENTION_HOURS * 3_600_000 || ageMs < -3_600_000) continue;
-        }
-        const time = validDate ? validDate.toISOString() : new Date().toISOString();
-        events.push({
-          title: item.title,
-          source: src.name,
-          time,
-          country: country.name,
-          countryCode: country.code,
-          severity: cls.severity,
-          category: cls.category,
-          link: item.link,
-          score: winner.score,
-          confidence,
-        });
+/**
+ * Run `tasks` with at most `limit` concurrent executions.  Returns a
+ * PromiseSettledResult array in input order — identical contract to
+ * Promise.allSettled — but never has more than `limit` tasks in-flight at once.
+ * Zero-dependency; safe for all GitHub Actions / Vercel runtimes.
+ */
+async function withConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < tasks.length) {
+      const idx = next++;
+      try {
+        results[idx] = { status: "fulfilled", value: await tasks[idx]() };
+      } catch (reason) {
+        results[idx] = { status: "rejected", reason };
       }
-      return events;
-    })),
-    Promise.allSettled(TELEGRAM_CHANNELS.map(fetchTelegramChannel)),
-    Promise.allSettled(REDDIT_JSON_SUBREDDITS.map(fetchRedditJSON)),
-  ]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
+/**
+ * Fetch and parse a single RSS feed source.
+ * Extracted from the inline fetchAllEvents body so it can be wrapped cleanly
+ * by withConcurrency and tested in isolation.
+ */
+async function fetchRSSSource(src: { name: string; url: string }): Promise<NewsEvent[]> {
+  const feed = await parser.parseURL(src.url);
+  const events: NewsEvent[] = [];
+  for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
+    if (!item.title || !item.link) continue;
+    const snippet = item.contentSnippet ?? item.content ?? "";
+    const text = `${item.title} ${snippet}`;
+    const cls = classifyEvent(text);
+    if (!cls) continue;
+    // Strip outlet names that contain country keywords from BOTH the title
+    // and snippet before detection — e.g. "France 24" in a headline would
+    // otherwise map the event to France instead of the real country.
+    const cleanedTitle   = item.title.replace(OUTLET_NAME_RE, "");
+    const cleanedSnippet = snippet.replace(OUTLET_NAME_RE, "");
+    // Score all countries mentioned; pick the one with the highest score
+    const scored = scoreCountries(cleanedTitle, cleanedSnippet);
+    if (scored.length === 0) continue;
+    const winner = scored[0];
+    const confidence = calculateConfidence(winner.score, scored[1]?.score ?? 0);
+    const country = winner.country;
+    // isoDate is normalised by rss-parser; pubDate can be in any locale format
+    const rawTime = item.isoDate ?? item.pubDate;
+    const parsedDate = rawTime ? new Date(rawTime) : null;
+    const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+    // Reject articles dated outside the retention window or too far in the future
+    if (validDate) {
+      const ageMs = Date.now() - validDate.getTime();
+      if (ageMs > RETENTION_HOURS * 3_600_000 || ageMs < -3_600_000) continue;
+    }
+    const time = validDate ? validDate.toISOString() : new Date().toISOString();
+    events.push({
+      title: item.title,
+      source: src.name,
+      time,
+      country: country.name,
+      countryCode: country.code,
+      severity: cls.severity,
+      category: cls.category,
+      link: item.link,
+      score: winner.score,
+      confidence,
+    });
+  }
+  return events;
+}
+
+async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { succeeded: number; total: number } }> {
+  // Build a flat task list across all three source types, then run with a
+  // concurrency cap.  withConcurrency mirrors Promise.allSettled semantics so
+  // a failed fetch is recorded as "rejected" without blocking the others, while
+  // MAX_CONCURRENT_FETCHES prevents thundering-herd against rate-limited feeds.
+  const tasks: Array<() => Promise<NewsEvent[]>> = [
+    ...RSS_SOURCES.map((src) => () => fetchRSSSource(src)),
+    ...TELEGRAM_CHANNELS.map((ch) => () => fetchTelegramChannel(ch)),
+    ...REDDIT_JSON_SUBREDDITS.map((sub) => () => fetchRedditJSON(sub)),
+  ];
+  const allResults = await withConcurrency(tasks, MAX_CONCURRENT_FETCHES);
 
   // Merge results into story clusters for cross-feed confirmation tracking.
-  // Each unique story (by title prefix) is clustered; when multiple sources
-  // report the same story the cluster's confirmation count rises, which
-  // translates into a bonus in the trending computation.
+  // Each unique story (by country-scoped title prefix) is clustered; when
+  // multiple sources report the same story the cluster's confirmation count
+  // rises, which translates into a bonus in the trending computation.
   const storyClusters = new Map<string, { event: NewsEvent; sources: Set<string> }>();
   let succeeded = 0;
-  const total = RSS_SOURCES.length + TELEGRAM_CHANNELS.length + REDDIT_JSON_SUBREDDITS.length;
+  const total = tasks.length;
 
-  for (const r of [...rssResults, ...telegramResults, ...redditResults]) {
+  for (const r of allResults) {
     if (r.status !== "fulfilled") continue;
     succeeded++;
     for (const ev of r.value) {
-      const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
+      // Include country code in the dedup key: two stories from different
+      // countries that share the same 40-char title prefix must not collide.
+      const key = `${ev.countryCode}:${ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH)}`;
       const existing = storyClusters.get(key);
       if (!existing) {
         storyClusters.set(key, { event: ev, sources: new Set([ev.source]) });
