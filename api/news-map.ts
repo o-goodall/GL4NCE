@@ -460,22 +460,45 @@ const CONFLICT_GROUPS: readonly (readonly string[])[] = [
   ["SD", "SS"],     // Sudan – South Sudan
 ] as const;
 
-function matchesAny(text: string, keywords: string[]): boolean {
-  return keywords.some((kw) => text.includes(kw));
+/**
+ * Build a single precompiled RegExp from a keyword list.
+ * Joining all keywords with `|` means V8's regex engine scans the lowercased
+ * text in one pass rather than calling String.prototype.includes() once per
+ * keyword.  Metacharacters in keywords are escaped so they match literally.
+ *
+ * Using case-sensitive matching here because callers always lowercase the text
+ * before calling classifyEvent — this is faster than the `i` flag since V8
+ * does not need to perform case folding on every character.
+ */
+function buildClassifyRe(keywords: string[]): RegExp {
+  return new RegExp(
+    keywords.map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+  );
 }
+
+// Precompiled once at module load — reused for every article across all requests.
+// Replaces up to 114 sequential .includes() calls per article with 8 .test() calls.
+const RE_HIGH_ECONOMIC     = buildClassifyRe(HIGH_ECONOMIC);
+const RE_HIGH_EXTREMISM    = buildClassifyRe(HIGH_EXTREMISM);
+const RE_MEDIUM_EXTREMISM  = buildClassifyRe(MEDIUM_EXTREMISM);
+const RE_HIGH_ESCALATION   = buildClassifyRe(HIGH_ESCALATION);
+const RE_MEDIUM_ESCALATION = buildClassifyRe(MEDIUM_ESCALATION);
+const RE_HIGH_VIOLENT      = buildClassifyRe(HIGH_VIOLENT);
+const RE_MEDIUM_VIOLENT    = buildClassifyRe(MEDIUM_VIOLENT);
+const RE_LOW_MINOR         = buildClassifyRe(LOW_MINOR);
 
 function classifyEvent(text: string): { severity: EventSeverity; category: EventCategory } | null {
   const lower = text.toLowerCase();
-  if (matchesAny(lower, HIGH_ECONOMIC))     return { severity: "high",   category: "economic"    };
-  if (matchesAny(lower, HIGH_EXTREMISM))    return { severity: "high",   category: "extremism"   };
-  if (matchesAny(lower, MEDIUM_EXTREMISM))  return { severity: "medium", category: "extremism"   };
+  if (RE_HIGH_ECONOMIC.test(lower))     return { severity: "high",   category: "economic"    };
+  if (RE_HIGH_EXTREMISM.test(lower))    return { severity: "high",   category: "extremism"   };
+  if (RE_MEDIUM_EXTREMISM.test(lower))  return { severity: "medium", category: "extremism"   };
   // Pre-conflict escalation signals — checked BEFORE generic violence so that
   // "killed during coup attempt" maps to escalation, not just violent.
-  if (matchesAny(lower, HIGH_ESCALATION))   return { severity: "high",   category: "escalation"  };
-  if (matchesAny(lower, MEDIUM_ESCALATION)) return { severity: "medium", category: "escalation"  };
-  if (matchesAny(lower, HIGH_VIOLENT))      return { severity: "high",   category: "violent"     };
-  if (matchesAny(lower, MEDIUM_VIOLENT))    return { severity: "medium", category: "violent"     };
-  if (matchesAny(lower, LOW_MINOR))         return { severity: "low",    category: "minor"       };
+  if (RE_HIGH_ESCALATION.test(lower))   return { severity: "high",   category: "escalation"  };
+  if (RE_MEDIUM_ESCALATION.test(lower)) return { severity: "medium", category: "escalation"  };
+  if (RE_HIGH_VIOLENT.test(lower))      return { severity: "high",   category: "violent"     };
+  if (RE_MEDIUM_VIOLENT.test(lower))    return { severity: "medium", category: "violent"     };
+  if (RE_LOW_MINOR.test(lower))         return { severity: "low",    category: "minor"       };
   return null;
 }
 
@@ -484,8 +507,33 @@ function getCountryInfoByCode(code: string) {
   return getCountryByCode(code) ?? KEYWORD_MAP.get(code.toLowerCase());
 }
 
+/**
+ * Memoised ISO-8601 → epoch-ms conversion.
+ * `new Date(iso).getTime()` is called across five separate pipeline functions
+ * (isWithinRetentionWindow, computeTrending, computeAlertLevel,
+ * computeEscalationIndex, and the events sort in aggregateCountries).
+ * A single-string Map cache ensures each unique timestamp is parsed only once
+ * per serverless instance lifetime.  The cache is bounded to ≤ 2000 entries
+ * (48 h × ≈ 200 active events is well within this).  When the limit is hit the
+ * oldest entry is evicted (Map preserves insertion order) rather than clearing
+ * the entire cache, avoiding a thundering-herd re-parse on the next request.
+ */
+const _timeMsCache = new Map<string, number>();
+function parseTimeMs(iso: string): number {
+  let ms = _timeMsCache.get(iso);
+  if (ms === undefined) {
+    ms = new Date(iso).getTime();
+    if (_timeMsCache.size >= 2000) {
+      // Evict the oldest entry (Map iterator follows insertion order)
+      _timeMsCache.delete(_timeMsCache.keys().next().value as string);
+    }
+    _timeMsCache.set(iso, ms);
+  }
+  return ms;
+}
+
 function isWithinRetentionWindow(isoTime: string): boolean {
-  return Date.now() - new Date(isoTime).getTime() <= RETENTION_HOURS * 3_600_000;
+  return Date.now() - parseTimeMs(isoTime) <= RETENTION_HOURS * 3_600_000;
 }
 
 /**
@@ -498,7 +546,7 @@ function isWithinRetentionWindow(isoTime: string): boolean {
  *    > 48 h → 0.30
  */
 function recencyMultiplier(isoTime: string): number {
-  const ageH = (Date.now() - new Date(isoTime).getTime()) / 3_600_000;
+  const ageH = (Date.now() - parseTimeMs(isoTime)) / 3_600_000;
   if (ageH <= 1)  return 1.00;
   if (ageH <= 6)  return 0.85;
   if (ageH <= 24) return 0.65;
@@ -513,8 +561,13 @@ function recencyMultiplier(isoTime: string): number {
 // event-density signal per country even though each RSS fetch only returns the
 // most recent articles.
 
-let _escalationStore: NewsEvent[] = [];
-/** Pre-computed key set for O(1) dedup checks in appendToEscalationStore */
+/**
+ * Per-country buckets for the 7-day escalation store.
+ * Keyed by ISO-3166 country code — gives O(K_country) lookup in
+ * computeEscalationIndex instead of O(N_total) full-array scan.
+ */
+const _escalationByCountry = new Map<string, NewsEvent[]>();
+/** Flat dedup key set — O(1) insert-check regardless of bucket structure */
 let _escalationKeys: Set<string> = new Set();
 
 /** Append fresh events to the 7-day store, deduplicating on title prefix. */
@@ -524,16 +577,28 @@ function appendToEscalationStore(newEvents: NewsEvent[]): void {
     const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     if (!_escalationKeys.has(key)) {
       _escalationKeys.add(key);
-      _escalationStore.push(ev);
+      const bucket = _escalationByCountry.get(ev.countryCode);
+      if (bucket) bucket.push(ev);
+      else _escalationByCountry.set(ev.countryCode, [ev]);
     }
   }
-  // Prune stale events; rebuild key cache only when pruning occurred
-  const pruned = _escalationStore.filter((e) => new Date(e.time).getTime() >= cutoff);
-  if (pruned.length < _escalationStore.length) {
-    _escalationStore = pruned;
-    _escalationKeys = new Set(
-      _escalationStore.map((e) => e.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH))
-    );
+  // Prune stale events per bucket; rebuild key cache only when any pruning occurred.
+  let didPrune = false;
+  for (const [code, bucket] of _escalationByCountry) {
+    const kept = bucket.filter((e) => parseTimeMs(e.time) >= cutoff);
+    if (kept.length < bucket.length) {
+      didPrune = true;
+      if (kept.length > 0) _escalationByCountry.set(code, kept);
+      else _escalationByCountry.delete(code);
+    }
+  }
+  if (didPrune) {
+    _escalationKeys = new Set();
+    for (const bucket of _escalationByCountry.values()) {
+      for (const ev of bucket) {
+        _escalationKeys.add(ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH));
+      }
+    }
   }
 }
 
@@ -541,16 +606,19 @@ function appendToEscalationStore(newEvents: NewsEvent[]): void {
  * Compute a weighted activity score for `countryCode` over the 7-day window.
  * Combines the persistent store with the current-request events for accuracy.
  * Higher values indicate more sustained or escalating activity.
+ *
+ * O(K_country) where K_country = events for this country in the 7-day store.
+ * Previously O(N_total) because it scanned the entire flat store array.
  */
 function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[]): number {
   const cutoff = Date.now() - ESCALATION_WINDOW_MS;
   const seen = new Set<string>();
   let score = 0;
 
-  // Process store and current events separately to avoid array spread allocation
-  for (const ev of _escalationStore) {
-    if (ev.countryCode !== countryCode) continue;
-    if (new Date(ev.time).getTime() < cutoff) continue;
+  // Only iterate events for this country — O(K) not O(N_total)
+  const stored = _escalationByCountry.get(countryCode) ?? [];
+  for (const ev of stored) {
+    if (parseTimeMs(ev.time) < cutoff) continue;
     const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -558,7 +626,7 @@ function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[])
   }
   for (const ev of currentEvents) {
     if (ev.countryCode !== countryCode) continue;
-    if (new Date(ev.time).getTime() < cutoff) continue;
+    if (parseTimeMs(ev.time) < cutoff) continue;
     const key = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -573,7 +641,7 @@ function computeEscalationIndex(countryCode: string, currentEvents: NewsEvent[])
  */
 function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel {
   const cutoff24h = Date.now() - 24 * 3_600_000;
-  const recent = events.filter((e) => new Date(e.time).getTime() >= cutoff24h);
+  const recent = events.filter((e) => parseTimeMs(e.time) >= cutoff24h);
   const pool = recent.length > 0 ? recent : events;
   const score = pool.reduce(
     (sum, ev) =>
@@ -613,7 +681,7 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const codesWithEvents = new Set<string>();
 
   for (const ev of events) {
-    const evTime = new Date(ev.time).getTime();
+    const evTime = parseTimeMs(ev.time);
     if (evTime < baselineCutoff) continue;
 
     // Every event within the window counts as "active" for conflict-group linking
@@ -701,7 +769,7 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
       escalationIndex: computeEscalationIndex(code, events),
       // Cap events per country to prevent one conflict from dominating the feed
       events: evs
-        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+        .sort((a, b) => parseTimeMs(b.time) - parseTimeMs(a.time))
         .slice(0, MAX_EVENTS_PER_COUNTRY),
     };
   });
