@@ -397,6 +397,9 @@ const TRENDING_BASELINE_HOURS = 5;
 const VELOCITY_FLOOR = 1.2;
 /** Minimum distinct recent stories a country must have to qualify as trending */
 const MIN_STORIES_TO_TREND = 2;
+/** Minimum number of distinct sources that must report on a country for it to trend.
+ *  Prevents a single outlet publishing two related articles from triggering trending. */
+const MIN_SOURCES_TO_TREND = 2;
 /** Hard cap on concurrent trending countries (keeps UI scannable) */
 const MAX_TRENDING = 3;
 /** Maximum events retained per country in the response (prevents one country flooding the output) */
@@ -598,9 +601,10 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const recentCutoff   = now - TRENDING_RECENT_HOURS   * 3_600_000;
   const baselineCutoff = now - (TRENDING_RECENT_HOURS + TRENDING_BASELINE_HOURS) * 3_600_000;
 
-  const recentScores:     Record<string, number> = {};
-  const baselineScores:   Record<string, number> = {};
-  const recentStoryCount: Record<string, number> = {};
+  const recentScores:          Record<string, number>   = {};
+  const baselineScores:        Record<string, number>   = {};
+  const recentStoryCount:      Record<string, number>   = {};
+  const recentSourcesPerCountry: Record<string, Set<string>> = {};
 
   // Per-country story dedup across the full window: prevents the same story
   // repeated across sources from inflating any country's score.
@@ -628,17 +632,19 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
     if (evTime >= recentCutoff) {
       recentScores[ev.countryCode]     = (recentScores[ev.countryCode]     ?? 0) + weight;
       recentStoryCount[ev.countryCode] = (recentStoryCount[ev.countryCode] ?? 0) + 1;
+      (recentSourcesPerCountry[ev.countryCode] ??= new Set()).add(ev.source);
     } else {
       baselineScores[ev.countryCode] = (baselineScores[ev.countryCode] ?? 0) + weight;
     }
   }
 
-  // Compute velocity for each country that cleared both the score threshold
-  // and the minimum distinct story count.
+  // Compute velocity for each country that cleared both the score threshold,
+  // the minimum distinct story count, and the minimum distinct source count.
   const eligible: { code: string; velocity: number }[] = [];
   for (const [code, recentScore] of Object.entries(recentScores)) {
     if (recentScore < TRENDING_THRESHOLD) continue;
     if ((recentStoryCount[code] ?? 0) < MIN_STORIES_TO_TREND) continue;
+    if ((recentSourcesPerCountry[code]?.size ?? 0) < MIN_SOURCES_TO_TREND) continue;
     const baselineRate = (baselineScores[code] ?? 0) / TRENDING_BASELINE_HOURS;
     const velocity = recentScore / Math.max(baselineRate, 1);
     eligible.push({ code, velocity });
@@ -708,42 +714,42 @@ function generateMockData(): NewsMapData {
   const h = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
   const raw: Omit<NewsEvent, "countryCode">[] = [
     // ── Iran × Israel: active conflict (fires conflict-group trending) ──────────
-    { title: "Iran fires ballistic missiles toward Israeli-linked targets in latest escalation", source: "Al Jazeera", time: h(0.3), country: "Iran",          severity: "high",   category: "violent"    },
-    { title: "IRGC deploys additional strike forces as regional tensions surge",                 source: "BBC",        time: h(0.6), country: "Iran",          severity: "high",   category: "escalation" },
-    { title: "Mass protests turn violent outside Tehran parliament building",                    source: "DW",         time: h(0.9), country: "Iran",          severity: "high",   category: "violent"    },
-    { title: "IDF launches retaliatory airstrikes on Iranian proxy positions in Syria",          source: "BBC",        time: h(0.4), country: "Israel",        severity: "high",   category: "violent"    },
-    { title: "Israeli cabinet convenes emergency security meeting after missile barrage",        source: "Guardian",   time: h(0.8), country: "Israel",        severity: "high",   category: "escalation" },
+    { title: "Iran fires ballistic missiles toward Israeli-linked targets in latest escalation", source: "Al Jazeera", time: h(0.3), country: "Iran",          severity: "high",   category: "violent",    link: "https://www.aljazeera.com/news/liveblog/iran-israel" },
+    { title: "IRGC deploys additional strike forces as regional tensions surge",                 source: "BBC",        time: h(0.6), country: "Iran",          severity: "high",   category: "escalation", link: "https://www.bbc.com/news/world/middle-east" },
+    { title: "Mass protests turn violent outside Tehran parliament building",                    source: "DW",         time: h(0.9), country: "Iran",          severity: "high",   category: "violent",    link: "https://www.dw.com/en/iran/t-37898" },
+    { title: "IDF launches retaliatory airstrikes on Iranian proxy positions in Syria",          source: "BBC",        time: h(0.4), country: "Israel",        severity: "high",   category: "violent",    link: "https://www.bbc.com/news/world/middle-east" },
+    { title: "Israeli cabinet convenes emergency security meeting after missile barrage",        source: "Guardian",   time: h(0.8), country: "Israel",        severity: "high",   category: "escalation", link: "https://www.theguardian.com/world/israel" },
     // ── Escalation demo events ────────────────────────────────────────────────
-    { title: "North Korea launches ballistic missile over Sea of Japan in new provocation",     source: "BBC",        time: h(2),   country: "North Korea",  severity: "high",   category: "escalation" },
-    { title: "Troops deployed to disputed border amid military buildup concerns",               source: "Al Jazeera", time: h(3),   country: "Pakistan",     severity: "medium", category: "escalation" },
-    { title: "Coup attempt foiled as soldiers surrounding parliament are repelled",             source: "Guardian",   time: h(5),   country: "Ethiopia",     severity: "high",   category: "escalation" },
-    { title: "State of emergency declared following nationwide civil unrest",                   source: "BBC",        time: h(6),   country: "Myanmar",      severity: "medium", category: "escalation" },
+    { title: "North Korea launches ballistic missile over Sea of Japan in new provocation",     source: "BBC",        time: h(2),   country: "North Korea",  severity: "high",   category: "escalation", link: "https://www.bbc.com/news/world/asia" },
+    { title: "Troops deployed to disputed border amid military buildup concerns",               source: "Al Jazeera", time: h(3),   country: "Pakistan",     severity: "medium", category: "escalation", link: "https://www.aljazeera.com/tag/pakistan/" },
+    { title: "Coup attempt foiled as soldiers surrounding parliament are repelled",             source: "Guardian",   time: h(5),   country: "Ethiopia",     severity: "high",   category: "escalation", link: "https://www.theguardian.com/world/ethiopia" },
+    { title: "State of emergency declared following nationwide civil unrest",                   source: "BBC",        time: h(6),   country: "Myanmar",      severity: "medium", category: "escalation", link: "https://www.bbc.com/news/world/asia" },
     // ── Ongoing conflict ──────────────────────────────────────────────────────
-    { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent"   },
-    { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent"   },
-    { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"   },
-    { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"   },
-    { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"   },
+    { title: "Explosion near government building kills several",           source: "Al Jazeera", time: h(1),   country: "Iraq",          severity: "high",   category: "violent",   link: "https://www.aljazeera.com/tag/iraq/" },
+    { title: "Airstrike targets militant positions in northern region",    source: "BBC",        time: h(2),   country: "Syria",         severity: "high",   category: "violent",   link: "https://www.bbc.com/news/topics/c2vdnvyt9jkt" },
+    { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent",   link: "https://www.aljazeera.com/tag/yemen-conflict/" },
+    { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent",   link: "https://www.bbc.com/news/world/europe" },
+    { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent",   link: "https://www.theguardian.com/world/afghanistan" },
     // ── Economic ─────────────────────────────────────────────────────────────
-    { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic"  },
-    { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic"  },
-    { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic"  },
-    { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic"  },
+    { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic",  link: "https://www.bbc.com/news/business" },
+    { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic",  link: "https://www.theguardian.com/world/venezuela" },
+    { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic",  link: "https://www.bbc.com/news/world/africa" },
+    { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic",  link: "https://www.aljazeera.com/tag/russia/" },
     // ── Unrest / minor ────────────────────────────────────────────────────────
-    { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"   },
-    { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"   },
-    { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"   },
-    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"     },
-    { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"     },
-    { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"     },
-    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic"  },
-    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"   },
-    { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"   },
+    { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent",   link: "https://www.theguardian.com/world/france" },
+    { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent",   link: "https://www.bbc.com/news/world/south-asia" },
+    { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent",   link: "https://www.aljazeera.com/tag/libya/" },
+    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor",     link: "https://www.bbc.com/news/world/europe" },
+    { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor",     link: "https://www.aljazeera.com/tag/ethiopia/" },
+    { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor",     link: "https://www.dw.com/en/asia/s-1395" },
+    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic",  link: "https://www.aljazeera.com/tag/sudan/" },
+    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent",   link: "https://www.bbc.com/news/world/africa" },
+    { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent",   link: "https://www.aljazeera.com/tag/myanmar/" },
     // ── Extremism ─────────────────────────────────────────────────────────────
-    { title: "Neo-nazi march through city centre draws counter-protests",  source: "Guardian",   time: h(5),   country: "Germany",       severity: "medium", category: "extremism" },
-    { title: "Antisemitic attack on synagogue injures worshippers",        source: "BBC",        time: h(3),   country: "France",        severity: "high",   category: "extremism" },
-    { title: "White supremacist rally triggers clashes with antifa",       source: "Guardian",   time: h(9),   country: "United States", severity: "medium", category: "extremism" },
-    { title: "Far-right extremist group banned after hate march",          source: "BBC",        time: h(14),  country: "United Kingdom",severity: "medium", category: "extremism" },
+    { title: "Neo-nazi march through city centre draws counter-protests",  source: "Guardian",   time: h(5),   country: "Germany",       severity: "medium", category: "extremism", link: "https://www.theguardian.com/world/germany" },
+    { title: "Antisemitic attack on synagogue injures worshippers",        source: "BBC",        time: h(3),   country: "France",        severity: "high",   category: "extremism", link: "https://www.bbc.com/news/world/europe" },
+    { title: "White supremacist rally triggers clashes with antifa",       source: "Guardian",   time: h(9),   country: "United States", severity: "medium", category: "extremism", link: "https://www.theguardian.com/us-news" },
+    { title: "Far-right extremist group banned after hate march",          source: "BBC",        time: h(14),  country: "United Kingdom",severity: "medium", category: "extremism", link: "https://www.bbc.com/news/uk" },
   ];
   const events: NewsEvent[] = raw
     .map((e) => {
@@ -874,6 +880,9 @@ async function fetchAllEvents(): Promise<{ events: NewsEvent[]; feedStats: { suc
         // but always retain the link from whichever event has one.
         if ((ev.score ?? 0) > (existing.event.score ?? 0)) {
           storyClusters.set(key, { event: { ...ev, link: ev.link ?? existing.event.link }, sources: existing.sources });
+        } else if (!existing.event.link && ev.link) {
+          // Lower-score event has a link the existing event lacks — preserve it.
+          storyClusters.set(key, { event: { ...existing.event, link: ev.link }, sources: existing.sources });
         }
       }
     }
@@ -906,13 +915,20 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
     if (!res.ok) return [];
     const html = await res.text();
 
-    // Extract (text, datetime) pairs.  Telegram embeds message text inside
-    // <div class="tgme_widget_message_text …">…</div> and a <time datetime="…">
-    // element inside the same message wrapper.  We match them in document order.
+    // Extract (text, datetime, permalink) triples.  Telegram embeds message text
+    // inside <div class="tgme_widget_message_text …">…</div>, a <time datetime="…">
+    // element, and a permalink anchor <a class="tgme_widget_message_date" href="…">
+    // inside the same message wrapper.  We match them in document order.
     // Note: the simple tag-stripping regex is adequate for Telegram's controlled
     // message HTML (no `>` inside attribute values in message content).
     const msgRe  = /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
     const timeRe = /<time\s+datetime="([^"]+)"/g;
+    // The date-link anchor carries the canonical message permalink (https://t.me/…/id).
+    // Match each opening <a> tag that has the tgme_widget_message_date class, then
+    // extract its href separately — this handles any attribute order without a complex
+    // two-branch alternation.
+    const anchorRe = /<a\b[^>]*class="[^"]*tgme_widget_message_date[^"]*"[^>]*>/g;
+    const hrefRe   = /href="([^"]+)"/;
 
     const texts: string[] = [];
     let m: RegExpExecArray | null;
@@ -927,6 +943,12 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
 
     const times: string[] = [];
     while ((m = timeRe.exec(html)) !== null) times.push(m[1]);
+
+    const msgLinks: string[] = [];
+    while ((m = anchorRe.exec(html)) !== null) {
+      const h = hrefRe.exec(m[0]);
+      if (h) msgLinks.push(h[1]);
+    }
 
     const events: NewsEvent[] = [];
     const limit = Math.min(texts.length, ARTICLES_PER_FEED);
@@ -956,6 +978,7 @@ async function fetchTelegramChannel(src: { name: string; channel: string }): Pro
         countryCode: country.code,
         severity: cls.severity,
         category: cls.category,
+        link: msgLinks[i],
         score: winner.score,
         confidence,
       });
