@@ -117,9 +117,6 @@ export default function GeopoliticalMarkets() {
       <div className="flex flex-col gap-1 mb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-              5
-            </span>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
               Geopolitical Market Predictions
             </h3>

@@ -160,21 +160,11 @@ export default function EventModal({ country, onClose, markets }: EventModalProp
           </button>
         </div>
 
-        {/* Event list — sorted severity-first (high → medium → low), then newest-first */}
+        {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-5 custom-scrollbar">
-          {[...country.events]
-            .sort(
-              (a, b) =>
-                SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
-                new Date(b.time).getTime() - new Date(a.time).getTime()
-            )
-            .map((ev) => (
-              <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
-            ))}
-
           {/* Polymarket predictions section — shown only when relevant markets exist */}
           {markets && markets.length > 0 && (
-            <div className="py-3 border-t border-gray-100 dark:border-gray-800">
+            <div className="py-3 border-b border-gray-100 dark:border-gray-800">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
                 Market Predictions
               </p>
@@ -215,6 +205,17 @@ export default function EventModal({ country, onClose, markets }: EventModalProp
               </div>
             </div>
           )}
+
+          {/* Event list — sorted severity-first (high → medium → low), then newest-first */}
+          {[...country.events]
+            .sort(
+              (a, b) =>
+                SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
+                new Date(b.time).getTime() - new Date(a.time).getTime()
+            )
+            .map((ev) => (
+              <EventRow key={`${ev.title}-${ev.time}`} event={ev} />
+            ))}
         </div>
       </div>
     </div>

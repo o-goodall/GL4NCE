@@ -494,9 +494,6 @@ export default function NewsMapWidget() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            6
-          </span>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
             Global News Map
           </h3>
@@ -575,7 +572,7 @@ export default function NewsMapWidget() {
                     aria-hidden="true"
                   />
                   <span className={`text-[10px] capitalize leading-none ${isActive ? "font-semibold text-gray-800 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>
-                    {level}
+                    {level}{alertCounts[level] > 0 ? ` · ${alertCounts[level]}` : ""}
                   </span>
                 </button>
               );
@@ -623,32 +620,11 @@ export default function NewsMapWidget() {
 
       {data && (
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {/* Count + timestamp */}
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
-          </span>
+          {/* Timestamp only */}
           <span className="text-xs text-gray-400 dark:text-gray-500">
             Updated {new Date(data.lastUpdated).toLocaleTimeString()}
             {data.usingMockData && " · demo data"}
           </span>
-
-          {/* Alert-level counts */}
-          {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
-            alertCounts[level] > 0 ? (
-              <span key={level} className="inline-flex items-center gap-1 text-xs font-medium">
-                <span
-                  className={`inline-flex h-2 w-2 rounded-full ${
-                    level === "critical" ? "bg-error-500 animate-pulse" :
-                    level === "high"     ? "bg-warning-500" :
-                                          "bg-brand-500"
-                  }`}
-                />
-                <span className="text-gray-500 dark:text-gray-400">
-                  {alertCounts[level]} {level}
-                </span>
-              </span>
-            ) : null
-          )}
 
           {/* Trending countries */}
           {trendingCountries.length > 0 && (
