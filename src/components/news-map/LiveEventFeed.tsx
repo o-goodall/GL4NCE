@@ -1,4 +1,4 @@
-import { useMemo, memo } from "react";
+import { useMemo, memo, useState } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity } from "./types";
 
 interface FeedEntry {
@@ -118,7 +118,9 @@ export default function LiveEventFeed({
   maxRows = 10,
   onCountryClick,
 }: LiveEventFeedProps) {
-  const feed = useMemo<FeedEntry[]>(() => {
+  const [search, setSearch] = useState("");
+
+  const allFeed = useMemo<FeedEntry[]>(() => {
     const entries: FeedEntry[] = [];
     for (const country of countries) {
       for (const event of country.events) {
@@ -132,26 +134,53 @@ export default function LiveEventFeed({
     return entries.slice(0, maxRows);
   }, [countries, maxRows]);
 
-  if (feed.length === 0) return null;
+  // Apply keyword search — filter by title or country name
+  const feed = useMemo<FeedEntry[]>(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allFeed;
+    return allFeed.filter(
+      ({ event, country }) =>
+        event.title.toLowerCase().includes(q) ||
+        country.name.toLowerCase().includes(q) ||
+        event.source.toLowerCase().includes(q)
+    );
+  }, [allFeed, search]);
+
+  if (allFeed.length === 0) return null;
 
   return (
     <div className="mt-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 px-3 py-2">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+      {/* Header row: title + search input */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
           Live Feed
         </span>
-        <span className="text-[10px] text-gray-400 dark:text-gray-500">
-          {feed.length} latest event{feed.length !== 1 ? "s" : ""}
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter events…"
+          aria-label="Filter live feed events"
+          className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
+        />
+        <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+          {feed.length}/{allFeed.length}
         </span>
       </div>
       <div>
-        {feed.map((entry, idx) => (
-          <FeedRow
-            key={`${entry.country.code}-${entry.event.time}-${idx}`}
-            entry={entry}
-            onCountryClick={onCountryClick}
-          />
-        ))}
+        {feed.length > 0 ? (
+          feed.map((entry, idx) => (
+            <FeedRow
+              key={`${entry.country.code}-${entry.event.time}-${idx}`}
+              entry={entry}
+              onCountryClick={onCountryClick}
+            />
+          ))
+        ) : (
+          <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">
+            No events match &ldquo;{search}&rdquo;
+          </p>
+        )}
       </div>
     </div>
   );

@@ -136,8 +136,10 @@ export default function NewsMapWidget() {
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [showZoomHint, setShowZoomHint] = useState(false);
   const mapRef = useRef<IMapObject | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep latest country lookup in a ref so the stable handler can access it
   const countryByCodeRef = useRef(new Map<string, CountryNewsData>());
@@ -258,6 +260,52 @@ export default function NewsMapWidget() {
   const handleZoomReset = useCallback(() => {
     mapRef.current?.reset();
   }, []);
+
+  // ── Trackpad / pinch-to-zoom ────────────────────────────────────────────────
+  // Browsers synthesise a wheel event with ctrlKey=true for trackpad pinch
+  // gestures, which is the same signal sent by Ctrl+scroll on a mouse.
+  // We intercept this on the container and apply zoom toward the cursor
+  // position rather than the viewport centre (more natural on large maps).
+  // Plain scroll (without Ctrl / pinch) shows a brief hint overlay instead
+  // of accidentally zooming the map while the user scrolls the page.
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) {
+        // Regular scroll — briefly surface a hint; do NOT prevent default so
+        // the page continues to scroll normally.
+        setShowZoomHint(true);
+        if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+        zoomHintTimerRef.current = setTimeout(() => setShowZoomHint(false), 1800);
+        return;
+      }
+      // Pinch or Ctrl+scroll — zoom the map toward the cursor position.
+      e.preventDefault();
+      const map = mapRef.current;
+      if (!map) return;
+      const raw = map as unknown as Record<string, unknown>;
+      const cur  = typeof raw.scale     === "number" ? raw.scale     : 1;
+      const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
+      const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+      const newScale = Math.min(Math.max(cur * factor, base), 12 * base);
+      if (typeof raw.setScale === "function") {
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        (raw.setScale as (s: number, x: number, y: number, c: boolean, a: boolean) => void)(
+          newScale, x, y, false, false
+        );
+      }
+    };
+
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+    };
+  }, []); // only runs once — uses refs throughout, no reactive deps
 
   /**
    * Delta-paint jVectorMap region fills using inline styles.
@@ -456,6 +504,15 @@ export default function NewsMapWidget() {
         {!loading && countries.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-sm text-gray-400 dark:text-gray-500">No events detected</p>
+          </div>
+        )}
+
+        {/* Pinch / Ctrl+scroll zoom hint — briefly shown when user scrolls without pinching */}
+        {showZoomHint && (
+          <div className="absolute inset-x-0 top-3 flex justify-center pointer-events-none z-20">
+            <div className="rounded-full bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur-sm">
+              Pinch or Ctrl + scroll to zoom
+            </div>
           </div>
         )}
 
