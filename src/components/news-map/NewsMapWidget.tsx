@@ -475,11 +475,6 @@ export default function NewsMapWidget() {
     return () => observer.disconnect();
   }, [countries]);
 
-  const totalEvents = useMemo(
-    () => countries.reduce((sum, c) => sum + c.events.length, 0),
-    [countries]
-  );
-
   /** Count of countries at each alert level — shown in the footer summary */
   const alertCounts = useMemo(() => {
     const counts: Record<AlertLevel, number> = { critical: 0, high: 0, medium: 0, watch: 0 };
