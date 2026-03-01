@@ -190,7 +190,7 @@ export function detectCountry(text: string): string | null {
 
 function isWithinRetentionWindow(isoTime: string): boolean {
   const eventMs = new Date(isoTime).getTime();
-  const cutoffMs = Date.now() - RETENTION_HOURS * 60 * 60 * 1000;
+  const cutoffMs = Date.now() - RETENTION_HOURS * 3_600_000;
   return eventMs >= cutoffMs;
 }
 
@@ -231,10 +231,15 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const recentScores:   Record<string, number> = {};
   const baselineScores: Record<string, number> = {};
   const seenPerCountry = new Map<string, Set<string>>();
+  // Collected in the same loop to avoid a second pass + date re-parsing below
+  const codesWithEvents = new Set<string>();
 
   for (const ev of events) {
     const evTime = new Date(ev.time).getTime();
     if (evTime < baselineCutoff) continue;
+
+    // Every event within the window counts as "active" for conflict-group linking
+    codesWithEvents.add(ev.countryCode);
 
     const storyKey = ev.title.toLowerCase().slice(0, DEDUP_TITLE_LENGTH);
     let seen = seenPerCountry.get(ev.countryCode);
@@ -272,14 +277,6 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const trending = new Set(trendingList.map((e) => e.code));
   // 1-based rank map for the ordered trending list
   const trendingRanks = new Map(trendingList.map((e, i) => [e.code, i + 1]));
-
-  // Set of country codes with any event in the full baseline window —
-  // used to decide whether a conflict partner is "active" enough to link.
-  const codesWithEvents = new Set(
-    events
-      .filter((e) => new Date(e.time).getTime() >= baselineCutoff)
-      .map((e) => e.countryCode)
-  );
 
   // For each trending country, surface its active conflict group partners.
   // seenGroups prevents the same group appearing twice if both members trend.

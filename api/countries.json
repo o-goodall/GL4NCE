@@ -1,0 +1,826 @@
+[
+  {
+    "code": "US",
+    "name": "United States",
+    "aliases": ["america", "washington", "new york", "los angeles", "chicago", "texas", "california", "pentagon", "white house", "congress", "u.s."],
+    "adjectives": ["american"],
+    "lat": 37.09,
+    "lng": -95.71
+  },
+  {
+    "code": "GB",
+    "name": "United Kingdom",
+    "aliases": ["britain", "england", "london", "scotland", "wales", "birmingham", "manchester", "u.k."],
+    "adjectives": ["british", "english", "scottish", "welsh"],
+    "lat": 55.38,
+    "lng": -3.44
+  },
+  {
+    "code": "FR",
+    "name": "France",
+    "aliases": ["paris", "lyon", "marseille", "élysée"],
+    "adjectives": ["french"],
+    "lat": 46.23,
+    "lng": 2.21
+  },
+  {
+    "code": "DE",
+    "name": "Germany",
+    "aliases": ["berlin", "munich", "hamburg", "frankfurt", "bundestag"],
+    "adjectives": ["german"],
+    "lat": 51.17,
+    "lng": 10.45
+  },
+  {
+    "code": "RU",
+    "name": "Russia",
+    "aliases": ["moscow", "kremlin", "putin", "siberia", "st. petersburg", "saint petersburg"],
+    "adjectives": ["russian"],
+    "lat": 61.52,
+    "lng": 105.32
+  },
+  {
+    "code": "CN",
+    "name": "China",
+    "aliases": ["beijing", "shanghai", "xi jinping", "hong kong", "taiwan strait", "xinjiang", "tibet"],
+    "adjectives": ["chinese"],
+    "lat": 35.86,
+    "lng": 104.19
+  },
+  {
+    "code": "JP",
+    "name": "Japan",
+    "aliases": ["tokyo", "osaka", "kyoto", "hiroshima", "nagasaki"],
+    "adjectives": ["japanese"],
+    "lat": 36.20,
+    "lng": 138.25
+  },
+  {
+    "code": "IN",
+    "name": "India",
+    "aliases": ["new delhi", "delhi", "mumbai", "bangalore", "kashmir", "modi"],
+    "adjectives": ["indian"],
+    "lat": 20.59,
+    "lng": 78.96
+  },
+  {
+    "code": "PK",
+    "name": "Pakistan",
+    "aliases": ["islamabad", "karachi", "lahore", "peshawar"],
+    "adjectives": ["pakistani"],
+    "lat": 30.38,
+    "lng": 69.35
+  },
+  {
+    "code": "AF",
+    "name": "Afghanistan",
+    "aliases": ["kabul", "kandahar", "taliban"],
+    "adjectives": ["afghan"],
+    "lat": 33.94,
+    "lng": 67.71
+  },
+  {
+    "code": "IR",
+    "name": "Iran",
+    "aliases": ["tehran", "isfahan", "khamenei", "rouhani", "irgc"],
+    "adjectives": ["iranian", "persian"],
+    "lat": 32.43,
+    "lng": 53.69
+  },
+  {
+    "code": "IQ",
+    "name": "Iraq",
+    "aliases": ["baghdad", "mosul", "basra", "erbil", "kirkuk"],
+    "adjectives": ["iraqi"],
+    "lat": 33.22,
+    "lng": 43.68
+  },
+  {
+    "code": "SY",
+    "name": "Syria",
+    "aliases": ["damascus", "aleppo", "homs", "idlib", "isis", "isil"],
+    "adjectives": ["syrian"],
+    "lat": 34.80,
+    "lng": 38.99
+  },
+  {
+    "code": "IL",
+    "name": "Israel",
+    "aliases": ["jerusalem", "tel aviv", "netanyahu", "idf", "west bank", "gaza"],
+    "adjectives": ["israeli"],
+    "lat": 31.05,
+    "lng": 34.85
+  },
+  {
+    "code": "PS",
+    "name": "Palestine",
+    "aliases": ["ramallah", "hamas", "west bank"],
+    "adjectives": ["palestinian"],
+    "lat": 31.95,
+    "lng": 35.23
+  },
+  {
+    "code": "SA",
+    "name": "Saudi Arabia",
+    "aliases": ["riyadh", "jeddah", "mecca", "medina", "mbs"],
+    "adjectives": ["saudi"],
+    "lat": 23.89,
+    "lng": 45.08
+  },
+  {
+    "code": "AE",
+    "name": "UAE",
+    "aliases": ["united arab emirates", "dubai", "abu dhabi"],
+    "adjectives": ["emirati"],
+    "lat": 23.42,
+    "lng": 53.85
+  },
+  {
+    "code": "JO",
+    "name": "Jordan",
+    "aliases": ["amman"],
+    "adjectives": ["jordanian"],
+    "lat": 30.59,
+    "lng": 36.24
+  },
+  {
+    "code": "QA",
+    "name": "Qatar",
+    "aliases": ["doha"],
+    "adjectives": ["qatari"],
+    "lat": 25.35,
+    "lng": 51.18
+  },
+  {
+    "code": "KW",
+    "name": "Kuwait",
+    "aliases": ["kuwait city"],
+    "adjectives": ["kuwaiti"],
+    "lat": 29.37,
+    "lng": 47.98
+  },
+  {
+    "code": "BH",
+    "name": "Bahrain",
+    "aliases": ["manama"],
+    "adjectives": ["bahraini"],
+    "lat": 26.07,
+    "lng": 50.56
+  },
+  {
+    "code": "OM",
+    "name": "Oman",
+    "aliases": ["muscat"],
+    "adjectives": ["omani"],
+    "lat": 21.47,
+    "lng": 55.97
+  },
+  {
+    "code": "YE",
+    "name": "Yemen",
+    "aliases": ["sanaa", "aden", "houthi"],
+    "adjectives": ["yemeni"],
+    "lat": 15.55,
+    "lng": 48.52
+  },
+  {
+    "code": "LB",
+    "name": "Lebanon",
+    "aliases": ["beirut", "hezbollah"],
+    "adjectives": ["lebanese"],
+    "lat": 33.85,
+    "lng": 35.86
+  },
+  {
+    "code": "TR",
+    "name": "Turkey",
+    "aliases": ["ankara", "istanbul", "erdogan"],
+    "adjectives": ["turkish"],
+    "lat": 38.96,
+    "lng": 35.24
+  },
+  {
+    "code": "UA",
+    "name": "Ukraine",
+    "aliases": ["kyiv", "kharkiv", "odessa", "mariupol", "zelensky", "donbas", "zaporizhzhia"],
+    "adjectives": ["ukrainian"],
+    "lat": 48.38,
+    "lng": 31.17
+  },
+  {
+    "code": "BY",
+    "name": "Belarus",
+    "aliases": ["minsk", "lukashenko"],
+    "adjectives": ["belarusian"],
+    "lat": 53.71,
+    "lng": 27.95
+  },
+  {
+    "code": "PL",
+    "name": "Poland",
+    "aliases": ["warsaw", "krakow"],
+    "adjectives": ["polish"],
+    "lat": 51.92,
+    "lng": 19.15
+  },
+  {
+    "code": "BR",
+    "name": "Brazil",
+    "aliases": ["brasilia", "sao paulo", "rio de janeiro", "amazon", "lula"],
+    "adjectives": ["brazilian"],
+    "lat": -14.24,
+    "lng": -51.93
+  },
+  {
+    "code": "MX",
+    "name": "Mexico",
+    "aliases": ["mexico city", "guadalajara", "monterrey", "cartel", "pemex"],
+    "adjectives": ["mexican"],
+    "lat": 23.63,
+    "lng": -102.55
+  },
+  {
+    "code": "CO",
+    "name": "Colombia",
+    "aliases": ["bogota", "medellin", "farc"],
+    "adjectives": ["colombian"],
+    "lat": 4.57,
+    "lng": -74.30
+  },
+  {
+    "code": "VE",
+    "name": "Venezuela",
+    "aliases": ["caracas", "maduro"],
+    "adjectives": ["venezuelan"],
+    "lat": 6.42,
+    "lng": -66.59
+  },
+  {
+    "code": "AR",
+    "name": "Argentina",
+    "aliases": ["buenos aires", "milei"],
+    "adjectives": ["argentine", "argentinian"],
+    "lat": -38.42,
+    "lng": -63.62
+  },
+  {
+    "code": "CL",
+    "name": "Chile",
+    "aliases": ["santiago"],
+    "adjectives": ["chilean"],
+    "lat": -35.68,
+    "lng": -71.54
+  },
+  {
+    "code": "BO",
+    "name": "Bolivia",
+    "aliases": ["la paz", "santa cruz", "cochabamba"],
+    "adjectives": ["bolivian"],
+    "lat": -16.29,
+    "lng": -63.59
+  },
+  {
+    "code": "PE",
+    "name": "Peru",
+    "aliases": ["lima", "arequipa"],
+    "adjectives": ["peruvian"],
+    "lat": -9.19,
+    "lng": -75.02
+  },
+  {
+    "code": "EC",
+    "name": "Ecuador",
+    "aliases": ["quito", "guayaquil"],
+    "adjectives": ["ecuadorian"],
+    "lat": -1.83,
+    "lng": -78.18
+  },
+  {
+    "code": "PY",
+    "name": "Paraguay",
+    "aliases": ["asuncion"],
+    "adjectives": ["paraguayan"],
+    "lat": -23.44,
+    "lng": -58.44
+  },
+  {
+    "code": "UY",
+    "name": "Uruguay",
+    "aliases": ["montevideo"],
+    "adjectives": ["uruguayan"],
+    "lat": -32.52,
+    "lng": -55.77
+  },
+  {
+    "code": "NG",
+    "name": "Nigeria",
+    "aliases": ["abuja", "lagos", "kano", "boko haram"],
+    "adjectives": ["nigerian"],
+    "lat": 9.08,
+    "lng": 8.68
+  },
+  {
+    "code": "ZA",
+    "name": "South Africa",
+    "aliases": ["johannesburg", "cape town", "pretoria", "anc"],
+    "adjectives": ["south african"],
+    "lat": -30.56,
+    "lng": 22.94
+  },
+  {
+    "code": "ET",
+    "name": "Ethiopia",
+    "aliases": ["addis ababa", "tigray"],
+    "adjectives": ["ethiopian"],
+    "lat": 9.15,
+    "lng": 40.49
+  },
+  {
+    "code": "SD",
+    "name": "Sudan",
+    "aliases": ["khartoum", "darfur", "rsf"],
+    "adjectives": ["sudanese"],
+    "lat": 12.86,
+    "lng": 30.22
+  },
+  {
+    "code": "LY",
+    "name": "Libya",
+    "aliases": ["tripoli", "benghazi"],
+    "adjectives": ["libyan"],
+    "lat": 26.34,
+    "lng": 17.23
+  },
+  {
+    "code": "ML",
+    "name": "Mali",
+    "aliases": ["bamako"],
+    "adjectives": ["malian"],
+    "lat": 17.57,
+    "lng": -3.99
+  },
+  {
+    "code": "SO",
+    "name": "Somalia",
+    "aliases": ["mogadishu", "al-shabaab"],
+    "adjectives": ["somali"],
+    "lat": 5.15,
+    "lng": 46.20
+  },
+  {
+    "code": "SS",
+    "name": "South Sudan",
+    "aliases": ["juba"],
+    "adjectives": ["south sudanese"],
+    "lat": 6.88,
+    "lng": 31.31
+  },
+  {
+    "code": "CD",
+    "name": "DR Congo",
+    "aliases": ["kinshasa", "drc", "m23", "congo"],
+    "adjectives": ["congolese"],
+    "lat": -4.04,
+    "lng": 21.76
+  },
+  {
+    "code": "KP",
+    "name": "North Korea",
+    "aliases": ["pyongyang", "kim jong-un", "dprk"],
+    "adjectives": ["north korean"],
+    "lat": 40.34,
+    "lng": 127.51
+  },
+  {
+    "code": "KR",
+    "name": "South Korea",
+    "aliases": ["seoul", "busan"],
+    "adjectives": ["south korean"],
+    "lat": 35.91,
+    "lng": 127.77
+  },
+  {
+    "code": "TW",
+    "name": "Taiwan",
+    "aliases": ["taipei"],
+    "adjectives": ["taiwanese"],
+    "lat": 23.70,
+    "lng": 120.96
+  },
+  {
+    "code": "MM",
+    "name": "Myanmar",
+    "aliases": ["naypyidaw", "yangon", "rangoon", "junta"],
+    "adjectives": ["burmese"],
+    "lat": 21.91,
+    "lng": 95.96
+  },
+  {
+    "code": "TH",
+    "name": "Thailand",
+    "aliases": ["bangkok"],
+    "adjectives": ["thai"],
+    "lat": 15.87,
+    "lng": 100.99
+  },
+  {
+    "code": "PH",
+    "name": "Philippines",
+    "aliases": ["manila", "mindanao", "duterte", "marcos"],
+    "adjectives": ["philippine", "filipino"],
+    "lat": 12.88,
+    "lng": 121.77
+  },
+  {
+    "code": "ID",
+    "name": "Indonesia",
+    "aliases": ["jakarta"],
+    "adjectives": ["indonesian"],
+    "lat": -0.79,
+    "lng": 113.92
+  },
+  {
+    "code": "VN",
+    "name": "Vietnam",
+    "aliases": ["hanoi", "ho chi minh", "saigon"],
+    "adjectives": ["vietnamese"],
+    "lat": 14.06,
+    "lng": 108.28
+  },
+  {
+    "code": "MY",
+    "name": "Malaysia",
+    "aliases": ["kuala lumpur"],
+    "adjectives": ["malaysian"],
+    "lat": 4.21,
+    "lng": 101.97
+  },
+  {
+    "code": "KH",
+    "name": "Cambodia",
+    "aliases": ["phnom penh", "khmer"],
+    "adjectives": ["cambodian"],
+    "lat": 12.57,
+    "lng": 104.99
+  },
+  {
+    "code": "EG",
+    "name": "Egypt",
+    "aliases": ["cairo", "sinai", "sisi"],
+    "adjectives": ["egyptian"],
+    "lat": 26.82,
+    "lng": 30.80
+  },
+  {
+    "code": "MA",
+    "name": "Morocco",
+    "aliases": ["rabat", "casablanca"],
+    "adjectives": ["moroccan"],
+    "lat": 31.79,
+    "lng": -7.09
+  },
+  {
+    "code": "DZ",
+    "name": "Algeria",
+    "aliases": ["algiers"],
+    "adjectives": ["algerian"],
+    "lat": 28.03,
+    "lng": 1.66
+  },
+  {
+    "code": "TN",
+    "name": "Tunisia",
+    "aliases": ["tunis"],
+    "adjectives": ["tunisian"],
+    "lat": 33.89,
+    "lng": 9.54
+  },
+  {
+    "code": "GH",
+    "name": "Ghana",
+    "aliases": ["accra"],
+    "adjectives": ["ghanaian"],
+    "lat": 7.95,
+    "lng": -1.02
+  },
+  {
+    "code": "KE",
+    "name": "Kenya",
+    "aliases": ["nairobi"],
+    "adjectives": ["kenyan"],
+    "lat": -0.02,
+    "lng": 37.91
+  },
+  {
+    "code": "TZ",
+    "name": "Tanzania",
+    "aliases": ["dar es salaam", "dodoma"],
+    "adjectives": ["tanzanian"],
+    "lat": -6.37,
+    "lng": 34.89
+  },
+  {
+    "code": "UG",
+    "name": "Uganda",
+    "aliases": ["kampala"],
+    "adjectives": ["ugandan"],
+    "lat": 1.37,
+    "lng": 32.29
+  },
+  {
+    "code": "RW",
+    "name": "Rwanda",
+    "aliases": ["kigali"],
+    "adjectives": ["rwandan"],
+    "lat": -1.94,
+    "lng": 29.87
+  },
+  {
+    "code": "MZ",
+    "name": "Mozambique",
+    "aliases": ["maputo", "cabo delgado"],
+    "adjectives": ["mozambican"],
+    "lat": -18.67,
+    "lng": 35.53
+  },
+  {
+    "code": "ZW",
+    "name": "Zimbabwe",
+    "aliases": ["harare"],
+    "adjectives": ["zimbabwean"],
+    "lat": -19.02,
+    "lng": 29.15
+  },
+  {
+    "code": "AO",
+    "name": "Angola",
+    "aliases": ["luanda"],
+    "adjectives": ["angolan"],
+    "lat": -11.20,
+    "lng": 17.87
+  },
+  {
+    "code": "CM",
+    "name": "Cameroon",
+    "aliases": ["yaounde", "douala"],
+    "adjectives": ["cameroonian"],
+    "lat": 7.37,
+    "lng": 12.35
+  },
+  {
+    "code": "CI",
+    "name": "Ivory Coast",
+    "aliases": ["abidjan", "cote d'ivoire"],
+    "adjectives": ["ivorian"],
+    "lat": 7.54,
+    "lng": -5.55
+  },
+  {
+    "code": "SN",
+    "name": "Senegal",
+    "aliases": ["dakar"],
+    "adjectives": ["senegalese"],
+    "lat": 14.50,
+    "lng": -14.45
+  },
+  {
+    "code": "BF",
+    "name": "Burkina Faso",
+    "aliases": ["ouagadougou"],
+    "adjectives": ["burkinabe"],
+    "lat": 12.36,
+    "lng": -1.53
+  },
+  {
+    "code": "NE",
+    "name": "Niger",
+    "aliases": ["niamey"],
+    "adjectives": ["nigerien"],
+    "lat": 17.61,
+    "lng": 8.08
+  },
+  {
+    "code": "UZ",
+    "name": "Uzbekistan",
+    "aliases": ["tashkent"],
+    "adjectives": ["uzbek"],
+    "lat": 41.38,
+    "lng": 64.58
+  },
+  {
+    "code": "KZ",
+    "name": "Kazakhstan",
+    "aliases": ["astana", "almaty"],
+    "adjectives": ["kazakh"],
+    "lat": 48.02,
+    "lng": 66.92
+  },
+  {
+    "code": "GE",
+    "name": "Georgia",
+    "aliases": ["tbilisi", "abkhazia", "south ossetia"],
+    "adjectives": ["georgian"],
+    "lat": 42.32,
+    "lng": 43.36
+  },
+  {
+    "code": "AM",
+    "name": "Armenia",
+    "aliases": ["yerevan", "nagorno-karabakh", "karabakh"],
+    "adjectives": ["armenian"],
+    "lat": 40.07,
+    "lng": 45.04
+  },
+  {
+    "code": "AZ",
+    "name": "Azerbaijan",
+    "aliases": ["baku"],
+    "adjectives": ["azerbaijani"],
+    "lat": 40.14,
+    "lng": 47.58
+  },
+  {
+    "code": "IT",
+    "name": "Italy",
+    "aliases": ["rome", "milan", "naples"],
+    "adjectives": ["italian"],
+    "lat": 41.87,
+    "lng": 12.57
+  },
+  {
+    "code": "ES",
+    "name": "Spain",
+    "aliases": ["madrid", "barcelona", "catalonia"],
+    "adjectives": ["spanish"],
+    "lat": 40.46,
+    "lng": -3.75
+  },
+  {
+    "code": "GR",
+    "name": "Greece",
+    "aliases": ["athens"],
+    "adjectives": ["greek"],
+    "lat": 39.07,
+    "lng": 21.82
+  },
+  {
+    "code": "HU",
+    "name": "Hungary",
+    "aliases": ["budapest", "orban"],
+    "adjectives": ["hungarian"],
+    "lat": 47.16,
+    "lng": 19.50
+  },
+  {
+    "code": "SE",
+    "name": "Sweden",
+    "aliases": ["stockholm"],
+    "adjectives": ["swedish"],
+    "lat": 60.13,
+    "lng": 18.64
+  },
+  {
+    "code": "NO",
+    "name": "Norway",
+    "aliases": ["oslo"],
+    "adjectives": ["norwegian"],
+    "lat": 60.47,
+    "lng": 8.47
+  },
+  {
+    "code": "CA",
+    "name": "Canada",
+    "aliases": ["ottawa", "toronto", "trudeau"],
+    "adjectives": ["canadian"],
+    "lat": 56.13,
+    "lng": -106.35
+  },
+  {
+    "code": "AU",
+    "name": "Australia",
+    "aliases": ["canberra", "sydney", "melbourne", "perth", "brisbane", "western australia", "queensland", "new south wales", "victoria", "wa police", "roger cook"],
+    "adjectives": ["australian"],
+    "lat": -25.27,
+    "lng": 133.78
+  },
+  {
+    "code": "NZ",
+    "name": "New Zealand",
+    "aliases": ["wellington", "auckland"],
+    "adjectives": ["kiwi"],
+    "lat": -40.90,
+    "lng": 174.89
+  },
+  {
+    "code": "PT",
+    "name": "Portugal",
+    "aliases": ["lisbon"],
+    "adjectives": ["portuguese"],
+    "lat": 39.40,
+    "lng": -8.22
+  },
+  {
+    "code": "NL",
+    "name": "Netherlands",
+    "aliases": ["amsterdam", "the hague"],
+    "adjectives": ["dutch"],
+    "lat": 52.13,
+    "lng": 5.29
+  },
+  {
+    "code": "BE",
+    "name": "Belgium",
+    "aliases": ["brussels", "nato hq"],
+    "adjectives": ["belgian"],
+    "lat": 50.50,
+    "lng": 4.47
+  },
+  {
+    "code": "CH",
+    "name": "Switzerland",
+    "aliases": ["geneva", "zurich", "davos"],
+    "adjectives": ["swiss"],
+    "lat": 46.82,
+    "lng": 8.23
+  },
+  {
+    "code": "AT",
+    "name": "Austria",
+    "aliases": ["vienna"],
+    "adjectives": ["austrian"],
+    "lat": 47.52,
+    "lng": 14.55
+  },
+  {
+    "code": "CZ",
+    "name": "Czech Republic",
+    "aliases": ["prague"],
+    "adjectives": ["czech"],
+    "lat": 49.82,
+    "lng": 15.47
+  },
+  {
+    "code": "RO",
+    "name": "Romania",
+    "aliases": ["bucharest"],
+    "adjectives": ["romanian"],
+    "lat": 45.94,
+    "lng": 24.97
+  },
+  {
+    "code": "BG",
+    "name": "Bulgaria",
+    "aliases": ["sofia"],
+    "adjectives": ["bulgarian"],
+    "lat": 42.73,
+    "lng": 25.49
+  },
+  {
+    "code": "RS",
+    "name": "Serbia",
+    "aliases": ["belgrade", "kosovo"],
+    "adjectives": ["serbian"],
+    "lat": 44.02,
+    "lng": 21.01
+  },
+  {
+    "code": "HR",
+    "name": "Croatia",
+    "aliases": ["zagreb"],
+    "adjectives": ["croatian"],
+    "lat": 45.10,
+    "lng": 15.20
+  },
+  {
+    "code": "SK",
+    "name": "Slovakia",
+    "aliases": ["bratislava"],
+    "adjectives": ["slovak"],
+    "lat": 48.67,
+    "lng": 19.70
+  },
+  {
+    "code": "FI",
+    "name": "Finland",
+    "aliases": ["helsinki"],
+    "adjectives": ["finnish"],
+    "lat": 61.92,
+    "lng": 25.75
+  },
+  {
+    "code": "DK",
+    "name": "Denmark",
+    "aliases": ["copenhagen"],
+    "adjectives": ["danish"],
+    "lat": 56.26,
+    "lng": 9.50
+  },
+  {
+    "code": "IE",
+    "name": "Ireland",
+    "aliases": ["dublin"],
+    "adjectives": ["irish"],
+    "lat": 53.41,
+    "lng": -8.24
+  }
+]
