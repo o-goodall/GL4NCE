@@ -46,18 +46,9 @@ const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
         title={event.severity}
       />
       <div className="flex-1 min-w-0">
-        {event.link ? (
-          <a
-            href={event.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-medium text-gray-800 dark:text-white/90 hover:text-brand-500 dark:hover:text-brand-200 line-clamp-2"
-          >
-            {event.title}
-          </a>
-        ) : (
-          <p className="text-sm font-medium text-gray-800 dark:text-white/90 line-clamp-2">{event.title}</p>
-        )}
+        <p className="text-sm font-medium text-gray-800 dark:text-white/90 line-clamp-2">
+          {event.title}
+        </p>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className="text-xs text-gray-500 dark:text-gray-400">{event.source}</span>
           <span className="text-xs text-gray-400">·</span>
@@ -74,6 +65,17 @@ const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
             >
               ✓ {event.confirmations} sources
             </span>
+          )}
+          {event.link && (
+            <a
+              href={event.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Read ↗
+            </a>
           )}
         </div>
       </div>

@@ -921,7 +921,7 @@ async function fetchRSSSource(src: { name: string; url: string }): Promise<NewsE
   const feed = await parser.parseURL(src.url);
   const events: NewsEvent[] = [];
   for (const item of (feed.items ?? []).slice(0, ARTICLES_PER_FEED)) {
-    if (!item.title || !item.link) continue;
+    if (!item.title) continue;
     const snippet = item.contentSnippet ?? item.content ?? "";
     const text = `${item.title} ${snippet}`;
     const cls = classifyEvent(text);

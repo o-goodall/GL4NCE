@@ -283,20 +283,27 @@ export default function NewsMapWidget() {
         return;
       }
       // Pinch or Ctrl+scroll — zoom the map toward the cursor position.
+      // Scale the zoom factor proportionally to deltaY so trackpad pinch
+      // (many tiny delta events, e.g. |deltaY|≈2–5) produces smooth small
+      // steps, while mouse Ctrl+scroll (single large delta, |deltaY|≈100)
+      // produces the original ~25% step.  Clamping to 100 prevents a single
+      // over-sized event from jumping too far.
       e.preventDefault();
       const map = mapRef.current;
       if (!map) return;
       const raw = map as unknown as Record<string, unknown>;
       const cur  = typeof raw.scale     === "number" ? raw.scale     : 1;
       const base = typeof raw.baseScale === "number" ? raw.baseScale : 1;
-      const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+      const normalised = Math.min(Math.abs(e.deltaY), 100) / 100; // 0–1
+      const zoomChange = normalised * 0.25;                        // up to 25%
+      const factor = e.deltaY < 0 ? 1 + zoomChange : 1 / (1 + zoomChange);
       const newScale = Math.min(Math.max(cur * factor, base), 12 * base);
       if (typeof raw.setScale === "function") {
         const rect = container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         (raw.setScale as (s: number, x: number, y: number, c: boolean, a: boolean) => void)(
-          newScale, x, y, false, false
+          newScale, x, y, false, true
         );
       }
     };

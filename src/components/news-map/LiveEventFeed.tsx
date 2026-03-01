@@ -66,24 +66,25 @@ const FeedRow = memo(function FeedRow({
         {" "}
         {country.name}
       </span>
-      {/* Title — linked when a URL is available */}
+      {/* Title — plain text in the feed row; use the Read pill for the link */}
       <span className="flex-1 min-w-0">
-        {event.link ? (
-          <a
-            href={event.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-gray-700 dark:text-gray-300 hover:text-brand-500 dark:hover:text-brand-300 truncate block"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {event.title}
-          </a>
-        ) : (
-          <span className="text-xs text-gray-700 dark:text-gray-300 truncate block">
-            {event.title}
-          </span>
-        )}
+        <span className="text-xs text-gray-700 dark:text-gray-300 truncate block">
+          {event.title}
+        </span>
       </span>
+      {/* Read pill — opens story in new tab; stopPropagation prevents opening country modal */}
+      {event.link && (
+        <a
+          href={event.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Read article: ${event.title}`}
+        >
+          ↗
+        </a>
+      )}
       {/* Category */}
       <span className={`shrink-0 text-[10px] font-medium uppercase ${CATEGORY_BADGE[event.category]}`}>
         {event.category}
