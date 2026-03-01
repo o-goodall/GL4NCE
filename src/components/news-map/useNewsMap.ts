@@ -7,6 +7,8 @@ interface UseNewsMapReturn {
   data: NewsMapData | null;
   loading: boolean;
   error: string | null;
+  /** Unix-ms timestamp of the next scheduled data refresh */
+  nextRefreshAt: number | null;
 }
 
 /**
