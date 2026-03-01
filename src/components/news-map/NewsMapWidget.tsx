@@ -5,6 +5,7 @@ import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { useNewsMap } from "./useNewsMap";
 import EventModal from "./EventModal";
+import LiveEventFeed from "./LiveEventFeed";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
 // The worldMill dataset encodes French Guiana (South America) as a subpath of
@@ -509,7 +510,7 @@ export default function NewsMapWidget() {
             </span>
           </div>
 
-          {/* Row 2: alert-level key + trending pills (only when content exists) */}
+          {/* Row 2: alert-level key + trending pills + conflict groups */}
           {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0 ||
             trendingCountries.length > 0) && (
             <div className="flex flex-wrap items-center gap-3">
@@ -569,7 +570,58 @@ export default function NewsMapWidget() {
               )}
             </div>
           )}
+
+          {/* Row 3: Active conflict groups — sourced from API's conflictGroups field.
+               The API already detects when trending countries are part of known conflict
+               pairs (e.g. Russia–Ukraine, Israel–Iran).  We surface those here so users
+               can see at a glance which crises are interconnected.  Each group is rendered
+               as a compact pill showing the two (or more) involved flags + country names. */}
+          {data.conflictGroups && data.conflictGroups.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                Active conflicts
+              </span>
+              {data.conflictGroups.map((group) => {
+                const members = group
+                  .map((code) => countryByCodeRef.current.get(code))
+                  .filter((c): c is CountryNewsData => c !== undefined);
+                if (members.length < 2) return null;
+                return (
+                  <span
+                    key={group.join("-")}
+                    className="inline-flex items-center gap-0.5 rounded-full border border-warning-500/30 bg-warning-500/10 px-2 py-0.5 text-xs font-medium text-warning-800 dark:bg-warning-500/20 dark:text-warning-300"
+                    title={`Active conflict: ${members.map((m) => m.name).join(" vs ")}`}
+                  >
+                    {members.map((m, i) => (
+                      <span key={m.code}>
+                        {i > 0 && <span className="text-warning-500/60 mx-0.5">vs</span>}
+                        <button
+                          className="hover:underline"
+                          onClick={() => handlePillClick(m)}
+                        >
+                          {countryFlag(m.code)} {m.name}
+                        </button>
+                      </span>
+                    ))}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Live event feed — shows the most recent events across all active countries,
+           newest first.  Inspired by liveuamap's real-time event ticker and
+           globalthreatmap's event feed panel: both surfaces individual events
+           chronologically to give a live operational picture beyond per-country
+           aggregates.  Clicking any row opens that country's detail modal. */}
+      {data && countries.length > 0 && (
+        <LiveEventFeed
+          countries={countries}
+          maxRows={10}
+          onCountryClick={handlePillClick}
+        />
       )}
 
       <EventModal country={selected} onClose={handleClose} />

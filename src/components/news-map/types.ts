@@ -34,6 +34,8 @@ export interface CountryNewsData {
   /** Computed urgency — see AlertLevel */
   alertLevel: AlertLevel;
   events: NewsEvent[];
+  /** Weighted event-density score over the rolling 7-day window (higher = more sustained activity) */
+  escalationIndex?: number;
 }
 
 export interface NewsMapData {

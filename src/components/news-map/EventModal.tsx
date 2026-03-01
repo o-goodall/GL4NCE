@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
 
 interface EventModalProps {
@@ -36,7 +37,7 @@ function relativeTime(isoString: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function EventRow({ event }: { event: NewsEvent }) {
+const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0 dark:border-gray-800">
       <span
@@ -69,7 +70,7 @@ function EventRow({ event }: { event: NewsEvent }) {
       </div>
     </div>
   );
-}
+});
 
 export default function EventModal({ country, onClose }: EventModalProps) {
   if (!country) return null;
@@ -106,6 +107,15 @@ export default function EventModal({ country, onClose }: EventModalProps) {
             <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
               {country.events.length} event{country.events.length !== 1 ? "s" : ""}
             </span>
+            {country.escalationIndex !== undefined && country.escalationIndex > 0 && (
+              <span
+                className="shrink-0 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                title={`7-day escalation index: ${country.escalationIndex}`}
+                aria-label={`Escalation index: ${country.escalationIndex.toFixed(1)}`}
+              >
+                ↑{country.escalationIndex.toFixed(1)}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
