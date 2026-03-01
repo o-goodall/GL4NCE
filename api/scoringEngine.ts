@@ -4,9 +4,9 @@
  * No AI, no NLP libraries — pure array and index logic.
  */
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — JSON import with attribute; esbuild bundles this automatically (no tsconfig for api/)
+import countriesJson from "./countries.json" with { type: "json" };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,20 +75,12 @@ let _countryByCode: Map<string, CountryEntry> | null = null;
 
 function loadCountries(): CountryEntry[] {
   if (_countries) return _countries;
-  try {
-    // __dirname is not available in ESM — derive it from import.meta.url when
-    // running under Node 18+. Fall back to process.cwd() for older runtimes.
-    let dir: string;
-    try {
-      dir = dirname(fileURLToPath(import.meta.url));
-    } catch {
-      dir = process.cwd();
-    }
-    const raw = readFileSync(join(dir, "countries.json"), "utf-8");
-    _countries = JSON.parse(raw) as CountryEntry[];
-  } catch {
-    _countries = [];
-  }
+  // countriesJson is bundled as a static import — no runtime file I/O needed.
+  // This is reliable across all bundlers (esbuild, ncc, etc.) and removes the
+  // dependency on readFileSync + import.meta.url path resolution, which caused
+  // countries.json to be absent from Vercel's serverless function bundle,
+  // silently returning [] and causing all events to be dropped.
+  _countries = countriesJson as CountryEntry[];
   _countryByCode = new Map(_countries.map((c) => [c.code, c]));
   return _countries;
 }

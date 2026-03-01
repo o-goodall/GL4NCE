@@ -3,7 +3,7 @@ import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
 import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
 import StatisticsChart from "../../components/ecommerce/StatisticsChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
-import RecentOrders from "../../components/ecommerce/RecentOrders";
+import GlobalNewsMap from "../../components/news-map/GlobalNewsMap";
 import PageMeta from "../../components/common/PageMeta";
 
 const NewsMapWidget = lazy(() => import("../../components/news-map/NewsMapWidget"));
@@ -41,7 +41,7 @@ export default function Intel() {
         </div>
 
         <div className="col-span-12">
-          <RecentOrders />
+          <GlobalNewsMap />
         </div>
       </div>
     </>
