@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { NewsMapData } from "./types";
 
-const DEFAULT_POLL_MINUTES = 15;
+export const DEFAULT_POLL_MINUTES = 15;
 
 interface UseNewsMapReturn {
   data: NewsMapData | null;
   loading: boolean;
   error: string | null;
+  /** Unix-ms timestamp of the next scheduled data refresh */
+  nextRefreshAt: number | null;
+  /** Trigger an immediate refresh and reset the polling interval */
+  refresh: () => void;
 }
 
 /**
@@ -20,6 +24,8 @@ export function useNewsMap(pollMinutes = DEFAULT_POLL_MINUTES): UseNewsMapReturn
   const [data, setData] = useState<NewsMapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -46,16 +52,22 @@ export function useNewsMap(pollMinutes = DEFAULT_POLL_MINUTES): UseNewsMapReturn
       }
     } finally {
       setLoading(false);
+      setNextRefreshAt(Date.now() + pollMinutes * 60_000);
     }
-  }, []); // setData/setError/setLoading are stable; no external dependencies
+  }, [pollMinutes]);
 
   useEffect(() => {
+    setLoading(true);
     void load();
     timerRef.current = setInterval(() => { void load(); }, pollMinutes * 60_000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [load, pollMinutes]);
+  }, [load, pollMinutes, refreshKey]);
 
-  return { data, loading, error };
+  const refresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  return { data, loading, error, nextRefreshAt, refresh };
 }

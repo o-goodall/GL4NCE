@@ -2,6 +2,9 @@
   "functions": {
     "api/news-map.ts": {
       "maxDuration": 30
+    },
+    "api/polymarket.ts": {
+      "maxDuration": 15
     }
   }
 }

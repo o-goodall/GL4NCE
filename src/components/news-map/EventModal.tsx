@@ -1,10 +1,16 @@
 import { memo, useEffect } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
+import type { PolymarketMarket } from "../polymarket/types";
+
+/** Maximum number of outcomes displayed per market entry */
+const MAX_DISPLAYED_OUTCOMES = 4;
 
 interface EventModalProps {
   country: CountryNewsData | null;
   onClose: () => void;
+  /** Polymarket predictions relevant to this country */
+  markets?: PolymarketMarket[];
 }
 
 const CATEGORY_STYLES: Record<EventCategory, string> = {
@@ -86,7 +92,7 @@ const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
 /** Severity order: high events first, then medium, then low */
 const SEVERITY_ORDER: Record<EventSeverity, number> = { high: 0, medium: 1, low: 2 };
 
-export default function EventModal({ country, onClose }: EventModalProps) {
+export default function EventModal({ country, onClose, markets }: EventModalProps) {
   // Close on Escape key — standard modal accessibility pattern
   useEffect(() => {
     if (!country) return;
@@ -154,8 +160,53 @@ export default function EventModal({ country, onClose }: EventModalProps) {
           </button>
         </div>
 
-        {/* Event list — sorted severity-first (high → medium → low), then newest-first */}
+        {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-5 custom-scrollbar">
+          {/* Polymarket predictions section — shown only when relevant markets exist */}
+          {markets && markets.length > 0 && (
+            <div className="py-3 border-b border-gray-100 dark:border-gray-800">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                Market Predictions
+              </p>
+              <div className="space-y-2">
+                {markets.slice(0, 3).map((m) => (
+                  <a
+                    key={m.id}
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-gray-800 dark:bg-white/[0.02] dark:hover:border-brand-700/50 dark:hover:bg-brand-900/10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="font-medium text-gray-700 dark:text-white/80 line-clamp-2 mb-1.5 group-hover:text-brand-700 dark:group-hover:text-brand-300 transition-colors">
+                      {m.question}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {m.outcomes.slice(0, MAX_DISPLAYED_OUTCOMES).map((o) => (
+                        <span
+                          key={o.label}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
+                            o.label.toLowerCase() === "yes"
+                              ? "bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300"
+                              : o.label.toLowerCase() === "no"
+                              ? "bg-error-100 text-error-700 dark:bg-error-900/30 dark:text-error-300"
+                              : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                          }`}
+                        >
+                          {o.probability}% {o.label}
+                        </span>
+                      ))}
+                      <span className="ml-auto text-[10px] text-brand-500 dark:text-brand-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                        ↗
+                      </span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Event list — sorted severity-first (high → medium → low), then newest-first */}
           {[...country.events]
             .sort(
               (a, b) =>

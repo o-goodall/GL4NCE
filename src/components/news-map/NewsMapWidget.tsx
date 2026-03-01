@@ -5,6 +5,7 @@ import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
+import { usePolymarket, filterMarketsForCountry } from "../polymarket/usePolymarket";
 import EventModal from "./EventModal";
 import LiveEventFeed from "./LiveEventFeed";
 
@@ -130,6 +131,7 @@ type AlertFilter = AlertLevel | "all";
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
+  const { markets: allMarkets } = usePolymarket();
   const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -147,6 +149,12 @@ export default function NewsMapWidget() {
   const prevHighlightedRef = useRef<Set<string>>(new Set());
 
   const allCountries = useMemo(() => data?.countries ?? [], [data]);
+
+  // Polymarket predictions relevant to the currently selected country
+  const selectedMarkets = useMemo(
+    () => filterMarketsForCountry(allMarkets, selected?.name ?? null),
+    [allMarkets, selected?.name],
+  );
 
   // Compute which categories have at least one live event
   const activeCategories = useMemo<Set<CategoryFilter>>(() => {
@@ -467,11 +475,6 @@ export default function NewsMapWidget() {
     return () => observer.disconnect();
   }, [countries]);
 
-  const totalEvents = useMemo(
-    () => countries.reduce((sum, c) => sum + c.events.length, 0),
-    [countries]
-  );
-
   /** Count of countries at each alert level — shown in the footer summary */
   const alertCounts = useMemo(() => {
     const counts: Record<AlertLevel, number> = { critical: 0, high: 0, medium: 0, watch: 0 };
@@ -486,9 +489,6 @@ export default function NewsMapWidget() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            6
-          </span>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
             Global News Map
           </h3>
@@ -567,7 +567,7 @@ export default function NewsMapWidget() {
                     aria-hidden="true"
                   />
                   <span className={`text-[10px] capitalize leading-none ${isActive ? "font-semibold text-gray-800 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>
-                    {level}
+                    {level}{alertCounts[level] > 0 ? ` · ${alertCounts[level]}` : ""}
                   </span>
                 </button>
               );
@@ -614,86 +614,43 @@ export default function NewsMapWidget() {
       </div>
 
       {data && (
-        <div className="mt-3 space-y-2">
-          {/* Row 1: count summary + timestamp */}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {countries.length} countr{countries.length !== 1 ? "ies" : "y"} · {totalEvents} event{totalEvents !== 1 ? "s" : ""}
-            </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-              {data.usingMockData && " · demo data"}
-            </span>
-          </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {/* Timestamp only */}
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+            {data.usingMockData && " · demo data"}
+          </span>
 
-          {/* Row 2: alert-level key + trending pills + conflict groups */}
-          {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0 ||
-            trendingCountries.length > 0) && (
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Alert-level badges */}
-              {(["critical", "high", "medium"] as AlertLevel[]).some((l) => alertCounts[l] > 0) && (
-                <div className="flex items-center gap-2">
-                  {(["critical", "high", "medium"] as AlertLevel[]).map((level) =>
-                    alertCounts[level] > 0 ? (
-                      <span key={level} className="inline-flex items-center gap-1 text-xs font-medium">
-                        <span
-                          className={`inline-flex h-2 w-2 rounded-full ${
-                            level === "critical" ? "bg-error-500 animate-pulse" :
-                            level === "high"     ? "bg-warning-500" :
-                                                  "bg-brand-500"
-                          }`}
-                        />
-                        <span className="text-gray-500 dark:text-gray-400">
-                          {alertCounts[level]} {level}
-                        </span>
-                      </span>
-                    ) : null
-                  )}
-                </div>
-              )}
-
-              {/* Separator between alert badges and trending pills */}
-              {(alertCounts.critical > 0 || alertCounts.high > 0 || alertCounts.medium > 0) &&
-                trendingCountries.length > 0 && (
-                <span className="text-gray-200 dark:text-gray-700" aria-hidden="true">|</span>
-              )}
-
-              {/* Trending section — all trending countries as individual ranked pills */}
-              {trendingCountries.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-                    Trending
-                  </span>
-                  {trendingCountries.map((c) => (
-                    <button
-                      key={c.code}
-                      onClick={() => handlePillClick(c)}
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
+          {/* Trending countries */}
+          {trendingCountries.length > 0 && (
+            <>
+              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                Trending
+              </span>
+              {trendingCountries.map((c) => (
+                <button
+                  key={c.code}
+                  onClick={() => handlePillClick(c)}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
+                >
+                  {c.trendingRank !== undefined && (
+                    <span
+                      className="shrink-0 font-bold underline text-error-800 dark:text-error-300"
+                      aria-label={`Rank ${c.trendingRank}`}
                     >
-                      {c.trendingRank !== undefined && (
-                        <span
-                          className="shrink-0 font-bold underline text-error-800 dark:text-error-300"
-                          aria-label={`Rank ${c.trendingRank}`}
-                        >
-                          #{c.trendingRank}
-                        </span>
-                      )}
-                      <span aria-label={c.name}>{countryFlag(c.code)}</span>
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                      #{c.trendingRank}
+                    </span>
+                  )}
+                  <span aria-label={c.name}>{countryFlag(c.code)}</span>
+                  {c.name}
+                </button>
+              ))}
+            </>
           )}
 
-          {/* Row 3: Active conflict groups — sourced from API's conflictGroups field.
-               The API already detects when trending countries are part of known conflict
-               pairs (e.g. Russia–Ukraine, Israel–Iran).  We surface those here so users
-               can see at a glance which crises are interconnected.  Each group is rendered
-               as a compact pill showing the two (or more) involved flags + country names. */}
+          {/* Active conflict groups */}
           {data.conflictGroups && data.conflictGroups.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <>
               <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
                 Active conflicts
               </span>
@@ -722,7 +679,7 @@ export default function NewsMapWidget() {
                   </span>
                 );
               })}
-            </div>
+            </>
           )}
         </div>
       )}
@@ -754,7 +711,7 @@ export default function NewsMapWidget() {
         </div>
       )}
 
-      <EventModal country={selected} onClose={handleClose} />
+      <EventModal country={selected} onClose={handleClose} markets={selectedMarkets} />
     </div>
   );
 }
