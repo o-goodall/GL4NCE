@@ -51,6 +51,10 @@ interface PulseArticle {
   link?: string;
   /** Best-effort thumbnail URL extracted from RSS media fields or enclosure */
   image?: string;
+  /** Article author from dc:creator / <author> RSS tag */
+  author?: string;
+  /** Short article excerpt (plain text, ≤ 200 chars) */
+  description?: string;
 }
 
 interface PulseData {
@@ -294,6 +298,22 @@ async function fetchFeedArticles(
 
     const pubDate = item.isoDate ?? item.pubDate ?? new Date().toISOString();
     const image = extractImage(item as Record<string, unknown>);
+
+    // Author: rss-parser surfaces dc:creator as item.creator; fall back to item.author
+    const rawAuthor: string =
+      (item as Record<string, string>).creator ??
+      (item as Record<string, string>).author ??
+      "";
+    const author = rawAuthor.trim() || undefined;
+
+    // Description: clean text snippet, capped at 200 chars
+    const rawSnippet = cleanSnippet(
+      (item.contentSnippet ?? item.summary ?? "").slice(0, 600),
+    ).trim();
+    const description = rawSnippet.length > 0
+      ? rawSnippet.slice(0, 200) + (rawSnippet.length > 200 ? "…" : "")
+      : undefined;
+
     articles.push({
       title: rawTitle.trim() || "(no title)",
       source: source.name,
@@ -301,6 +321,8 @@ async function fetchFeedArticles(
       category,
       link: item.link ?? undefined,
       ...(image ? { image } : {}),
+      ...(author ? { author } : {}),
+      ...(description ? { description } : {}),
     });
   }
   return articles;

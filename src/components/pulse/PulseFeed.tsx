@@ -88,18 +88,29 @@ const ArticleCard = memo(function ArticleCard({ article, featured = false }: Art
       </div>
 
       {/* Text content */}
-      <div className="flex flex-col flex-1 p-3">
+      <div className="flex flex-col flex-1 p-3 gap-1.5">
         <p className={`font-semibold text-gray-900 dark:text-white/90 leading-snug ${featured ? "text-base line-clamp-3" : "text-sm line-clamp-2"}`}>
           {article.title}
         </p>
-        <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500 truncate">
+        {article.description && (
+          <p className={`text-xs text-gray-500 dark:text-gray-400 leading-relaxed ${featured ? "line-clamp-3" : "line-clamp-2"}`}>
+            {article.description}
+          </p>
+        )}
+        <p className="mt-auto pt-1.5 text-[11px] text-gray-400 dark:text-gray-500 truncate">
+          {article.author ? (
+            <>
+              <span className="font-medium text-gray-500 dark:text-gray-400">{article.author}</span>
+              <span className="mx-1 opacity-50">·</span>
+            </>
+          ) : null}
           {article.source}
         </p>
       </div>
     </>
   );
 
-  const baseClass = `group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] transition-shadow hover:shadow-md`;
+  const baseClass = `group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`;
 
   if (article.link) {
     return (
@@ -124,8 +135,10 @@ function SkeletonCard({ featured = false }: { featured?: boolean }) {
       <div className={`w-full bg-gray-100 dark:bg-gray-800 ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`} />
       <div className="p-3 space-y-2">
         <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-full" />
-        <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-3/4" />
-        <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded w-1/3 mt-1" />
+        <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-4/5" />
+        {featured && <div className="h-2.5 bg-gray-100 dark:bg-gray-800 rounded w-full" />}
+        <div className="h-2.5 bg-gray-100 dark:bg-gray-800 rounded w-3/4 mt-0.5" />
+        <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded w-2/5 mt-1" />
       </div>
     </div>
   );
