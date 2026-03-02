@@ -22,8 +22,11 @@ const TF_CONFIG: Record<
 const TIMEFRAMES: Timeframe[] = ["1M", "3M", "1Y", "5Y", "ALL"];
 const GOLD_POLL_MS = 10 * 60 * 1000;
 
-// Known all-time high — BTC $106,182 / Gold $2,632 on 17 Dec 2024
+// Fallback ATH — BTC $106,182 / Gold $2,632 on 17 Dec 2024
 const INITIAL_ATH = { ratio: 38.51, date: "17 Dec 2024" };
+
+const ATH_CACHE_KEY = "btc-gold-ath";
+const ATH_CACHE_TTL = 86_400_000; // 24 hours
 
 // ── Cache helpers ──────────────────────────────────────────────────────────────
 function getCache<T>(key: string, ttl: number): T | null {
@@ -135,6 +138,39 @@ export default function BtcGoldRatio() {
     return () => ctrl.abort();
   }, [timeframe]);
 
+  // ── ATH fetch on mount — compute from full history ───────────────────────────
+  useEffect(() => {
+    // Try cache first
+    const cached = getCache<{ ratio: number; date: string }>(ATH_CACHE_KEY, ATH_CACHE_TTL);
+    if (cached) {
+      setAth((prev) => (cached.ratio > prev.ratio ? cached : prev));
+      return;
+    }
+
+    const ctrl = new AbortController();
+    Promise.all([
+      fetchBtcPrices("ALL", ctrl.signal),
+      fetchGoldPrices("ALL", ctrl.signal),
+    ])
+      .then(([btc, gold]) => {
+        const series = computeRatioSeries(btc, gold);
+        if (!series.length) return;
+        const maxPoint = series.reduce((m, p) => (p[1] > m[1] ? p : m), series[0]);
+        const athRatio = parseFloat(maxPoint[1].toFixed(2));
+        const athDate  = new Date(maxPoint[0]).toLocaleDateString("en-GB", {
+          day: "numeric", month: "short", year: "numeric",
+        });
+        const entry = { ratio: athRatio, date: athDate };
+        setCache(ATH_CACHE_KEY, entry);
+        setAth((prev) => (athRatio > prev.ratio ? entry : prev));
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (import.meta.env.DEV) console.error("[BtcGoldRatio] ATH fetch error:", err);
+      });
+    return () => ctrl.abort();
+  }, []);
+
   // ── Live BTC price via Binance WebSocket ──────────────────────────────────────
   useEffect(() => {
     const ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@ticker");
@@ -236,8 +272,29 @@ export default function BtcGoldRatio() {
       x: { format: "dd MMM yyyy" },
       y: { formatter: (val: number) => `${val.toFixed(2)} oz` },
     },
+    annotations: {
+      yaxis: [{
+        y:               ath.ratio,
+        borderColor:     "#f59e0b",
+        strokeDashArray: 4,
+        borderWidth:     1,
+        label: {
+          text:        "ATH",
+          borderColor: "transparent",
+          position:    "right",
+          offsetX:     -4,
+          offsetY:     -6,
+          style: {
+            color:      "#f59e0b",
+            background: "transparent",
+            fontSize:   "10px",
+            fontFamily: "Inter, sans-serif",
+          },
+        },
+      }],
+    },
     legend: { show: false },
-  }), []);
+  }), [ath]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
