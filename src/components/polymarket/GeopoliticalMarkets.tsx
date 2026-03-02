@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePolymarket } from "./usePolymarket";
 import type { PolymarketMarket } from "./types";
 
@@ -416,6 +416,18 @@ export default function GeopoliticalMarkets() {
     prevSnapshotRef.current = snapshotMarkets(markets);
   }, [markets]);
 
+  // Sort markets by "Yes" outcome probability (highest first) for display.
+  // Markets with no "Yes" outcome fall to the bottom (treated as 0%).
+  const sortedMarkets = useMemo(
+    () =>
+      [...markets].sort((a, b) => {
+        const yesA = a.outcomes.find((o) => o.label.toLowerCase() === "yes")?.probability ?? 0;
+        const yesB = b.outcomes.find((o) => o.label.toLowerCase() === "yes")?.probability ?? 0;
+        return yesB - yesA;
+      }),
+    [markets],
+  );
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
       {/* Header */}
@@ -462,8 +474,8 @@ export default function GeopoliticalMarkets() {
         </p>
       ) : (
         <>
-          <MobileCarousel markets={markets} flippedIds={flippedIds} />
-          <DesktopList markets={markets} flippedIds={flippedIds} />
+          <MobileCarousel markets={sortedMarkets} flippedIds={flippedIds} />
+          <DesktopList markets={sortedMarkets} flippedIds={flippedIds} />
         </>
       )}
     </div>

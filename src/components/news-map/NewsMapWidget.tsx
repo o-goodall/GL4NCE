@@ -5,8 +5,6 @@ import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
-import { usePolymarket, filterMarketsForCountry } from "../polymarket/usePolymarket";
-import EventModal from "./EventModal";
 import LiveEventFeed from "./LiveEventFeed";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
@@ -131,13 +129,13 @@ type AlertFilter = AlertLevel | "all";
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
-  const { markets: allMarkets } = usePolymarket();
-  const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
   const [showZoomHint, setShowZoomHint] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
+  /** Country to show inline in the live-feed panel (from map click or pill) */
+  const [feedActiveCountry, setFeedActiveCountry] = useState<CountryNewsData | null>(null);
   const mapRef = useRef<IMapObject | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,12 +147,6 @@ export default function NewsMapWidget() {
   const prevHighlightedRef = useRef<Set<string>>(new Set());
 
   const allCountries = useMemo(() => data?.countries ?? [], [data]);
-
-  // Polymarket predictions relevant to the currently selected country
-  const selectedMarkets = useMemo(
-    () => filterMarketsForCountry(allMarkets, selected?.name ?? null),
-    [allMarkets, selected?.name],
-  );
 
   // Compute which categories have at least one live event
   const activeCategories = useMemo<Set<CategoryFilter>>(() => {
@@ -211,7 +203,8 @@ export default function NewsMapWidget() {
     const upperCode = code.toUpperCase();
     const country = countryByCodeRef.current.get(upperCode);
     if (country) {
-      setSelected(country);
+      setFeedActiveCountry(country);
+      setFeedOpen(true);
       setTappedCode(upperCode);
     }
   }, []);
@@ -223,15 +216,22 @@ export default function NewsMapWidget() {
     e.preventDefault();
   }, []);
 
-  // Stable close handler — clears both the modal and the tap highlight
-  const handleClose = useCallback(() => {
-    setSelected(null);
+  // Dismiss the inline-detail country without closing the feed
+  const handleDismissActive = useCallback(() => {
+    setFeedActiveCountry(null);
+  }, []);
+
+  // Close the feed panel entirely — clears active country and map highlight
+  const handleFeedClose = useCallback(() => {
+    setFeedOpen(false);
+    setFeedActiveCountry(null);
     setTappedCode(null);
   }, []);
 
-  // Open modal for a country and highlight it on the map (used by trending pills)
+  // Open feed with a country's inline detail (used by trending pills + conflict groups)
   const handlePillClick = useCallback((country: CountryNewsData) => {
-    setSelected(country);
+    setFeedActiveCountry(country);
+    setFeedOpen(true);
     setTappedCode(country.code);
   }, []);
 
@@ -240,7 +240,8 @@ export default function NewsMapWidget() {
     const upperCode = code.toUpperCase();
     const country = countryByCodeRef.current.get(upperCode);
     if (country) {
-      setSelected(country);
+      setFeedActiveCountry(country);
+      setFeedOpen(true);
       setTappedCode(upperCode);
     }
   }, []);
@@ -340,11 +341,11 @@ export default function NewsMapWidget() {
   useEffect(() => {
     if (!feedOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFeedOpen(false);
+      if (e.key === "Escape") handleFeedClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [feedOpen]);
+  }, [feedOpen, handleFeedClose]);
 
   /**
    * Delta-paint jVectorMap region fills using inline styles.
@@ -649,7 +650,7 @@ export default function NewsMapWidget() {
                 Live Feed
               </span>
               <button
-                onClick={() => setFeedOpen(false)}
+                onClick={handleFeedClose}
                 aria-label="Close live feed"
                 className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
               >
@@ -661,7 +662,8 @@ export default function NewsMapWidget() {
             <LiveEventFeed
               countries={countries}
               maxRows={25}
-              onCountryClick={handlePillClick}
+              activeCountry={feedActiveCountry}
+              onDismissActive={handleDismissActive}
               panelMode
             />
           </div>
@@ -745,7 +747,7 @@ export default function NewsMapWidget() {
           {/* Backdrop */}
           <div
             className="fixed sm:hidden inset-0 bg-black/40 z-40"
-            onClick={() => setFeedOpen(false)}
+            onClick={handleFeedClose}
             aria-hidden="true"
           />
           {/* Sheet */}
@@ -767,7 +769,7 @@ export default function NewsMapWidget() {
                 Live Feed
               </span>
               <button
-                onClick={() => setFeedOpen(false)}
+                onClick={handleFeedClose}
                 aria-label="Close live feed"
                 className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
               >
@@ -779,14 +781,13 @@ export default function NewsMapWidget() {
             <LiveEventFeed
               countries={countries}
               maxRows={25}
-              onCountryClick={(c) => { handlePillClick(c); setFeedOpen(false); }}
+              activeCountry={feedActiveCountry}
+              onDismissActive={handleDismissActive}
               panelMode
             />
           </div>
         </>
       )}
-
-      <EventModal country={selected} onClose={handleClose} markets={selectedMarkets} />
     </div>
   );
 }
