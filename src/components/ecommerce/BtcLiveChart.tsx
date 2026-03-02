@@ -1,88 +1,148 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Timeframe = "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y";
-type KlinePoint = { x: number; y: number };
+type Timeframe = "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "ALL";
+/** [timestamp_ms, close_price] */
+type PricePoint = [number, number];
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: number }> = {
-  "1D": { interval: "5m",  limit: 288,  cacheTTL:       60_000 },
-  "1W": { interval: "1h",  limit: 168,  cacheTTL:      300_000 },
-  "1M": { interval: "4h",  limit: 180,  cacheTTL:      900_000 },
-  "3M": { interval: "1d",  limit: 90,   cacheTTL:    3_600_000 },
-  "1Y": { interval: "1d",  limit: 365,  cacheTTL:    3_600_000 },
-  "5Y": { interval: "1w",  limit: 260,  cacheTTL:  604_800_000 },
+  "1D":  { interval: "5m",  limit: 288,  cacheTTL:        60_000 },
+  "1W":  { interval: "1h",  limit: 168,  cacheTTL:       300_000 },
+  "1M":  { interval: "4h",  limit: 180,  cacheTTL:       900_000 },
+  "3M":  { interval: "1d",  limit: 90,   cacheTTL:     3_600_000 },
+  "1Y":  { interval: "1d",  limit: 365,  cacheTTL:     3_600_000 },
+  "5Y":  { interval: "1w",  limit: 260,  cacheTTL:   604_800_000 },
+  "ALL": { interval: "1w",  limit: 1000, cacheTTL:   604_800_000 },
 };
 
-const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "5Y"];
-const MA_PERIOD = 20;
+const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "5Y", "ALL"];
+const MA_PERIOD = 200;
+const ATH_CACHE_KEY = "btc-ath";
+const ATH_CACHE_TTL = 86_400_000; // 24 hours
+const CHART_UPDATE_THROTTLE_MS = 1_000;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function fmtNum(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
 
 // ── Cache helpers ──────────────────────────────────────────────────────────────
-function getCached(tf: Timeframe): KlinePoint[] | null {
+function getCachedPrices(tf: Timeframe): PricePoint[] | null {
   try {
-    const raw = localStorage.getItem(`btc-klines-${tf}`);
+    const raw = localStorage.getItem(`btc-ohlc-${tf}`);
     if (!raw) return null;
-    const entry = JSON.parse(raw) as { data: KlinePoint[]; fetchedAt: number };
+    const entry = JSON.parse(raw) as { data: unknown; fetchedAt: number };
     if (Date.now() - entry.fetchedAt > TF_CONFIG[tf].cacheTTL) return null;
-    return entry.data;
+    const data = entry.data;
+    if (!Array.isArray(data) || !data.length) return null;
+    // Support legacy OHLC format { time (seconds), close } and new tuple [ts_ms, close]
+    const first = data[0];
+    if (Array.isArray(first)) return data as PricePoint[];
+    return (data as Array<{ time: number; close: number }>).map(
+      (d) => [d.time * 1000, d.close] as PricePoint,
+    );
   } catch { return null; }
 }
 
-function setCache(tf: Timeframe, data: KlinePoint[]): void {
+function setCachedPrices(tf: Timeframe, data: PricePoint[]): void {
   try {
-    localStorage.setItem(`btc-klines-${tf}`, JSON.stringify({ data, fetchedAt: Date.now() }));
+    localStorage.setItem(`btc-ohlc-${tf}`, JSON.stringify({ data, fetchedAt: Date.now() }));
+  } catch { /* ignore storage quota errors */ }
+}
+
+function getCachedATH(): number | null {
+  try {
+    const raw = localStorage.getItem(ATH_CACHE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as { price: number; fetchedAt: number };
+    if (Date.now() - entry.fetchedAt > ATH_CACHE_TTL) return null;
+    return entry.price;
+  } catch { return null; }
+}
+
+function setCachedATH(price: number): void {
+  try {
+    localStorage.setItem(ATH_CACHE_KEY, JSON.stringify({ price, fetchedAt: Date.now() }));
   } catch { /* ignore storage quota errors */ }
 }
 
 // ── Binance REST fetch ─────────────────────────────────────────────────────────
-async function fetchKlines(tf: Timeframe, signal: AbortSignal): Promise<KlinePoint[]> {
+type RawKline = [number, string, string, string, string, ...unknown[]];
+
+async function fetchKlines(tf: Timeframe, signal: AbortSignal): Promise<RawKline[]> {
   const { interval, limit } = TF_CONFIG[tf];
   const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`;
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  // kline tuple: [openTime, open, high, low, close, volume, closeTime, ...]
-  const raw = (await res.json()) as [number, string, string, string, string, ...unknown[]][];
-  return raw.map((k) => ({ x: k[6] as number, y: parseFloat(k[4]) }));
+  return (await res.json()) as RawKline[];
+}
+
+async function fetchPrices(tf: Timeframe, signal: AbortSignal): Promise<PricePoint[]> {
+  const raw = await fetchKlines(tf, signal);
+  // kline tuple: [openTime, open, high, low, close, ...]
+  return raw.map((k) => [k[0] as number, parseFloat(k[4])] as PricePoint);
+}
+
+async function fetchATHHigh(signal: AbortSignal): Promise<number> {
+  const raw = await fetchKlines("ALL", signal);
+  return raw.reduce((m, k) => {
+    const high = parseFloat(k[2]);
+    return high > m ? high : m;
+  }, -Infinity);
 }
 
 // ── Simple moving average (sliding window, O(n)) ──────────────────────────────
-function calcSMA(data: KlinePoint[], period: number): KlinePoint[] {
-  const result: KlinePoint[] = [];
+function calcSMA(data: PricePoint[], period: number): PricePoint[] {
+  const result: PricePoint[] = [];
   let sum = 0;
   for (let i = 0; i < data.length; i++) {
-    sum += data[i].y;
-    if (i >= period) sum -= data[i - period].y;
-    if (i >= period - 1) result.push({ x: data[i].x, y: sum / period });
+    sum += data[i][1];
+    if (i >= period) sum -= data[i - period][1];
+    if (i >= period - 1) result.push([data[i][0], sum / period]);
   }
   return result;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function BtcLiveChart() {
+  const prevPriceRef      = useRef<number | null>(null);
+  const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastChartUpdateRef = useRef<number>(0);
+
   const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
-  const [logScale,   setLogScale]   = useState(false);
   const [showMA,     setShowMA]     = useState(false);
-  const [klines,     setKlines]     = useState<KlinePoint[]>([]);
+  const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [livePrice,  setLivePrice]  = useState<number | null>(null);
   const [change24h,  setChange24h]  = useState<number | null>(null);
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
-  const prevPrice  = useRef<number | null>(null);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ath,        setATH]        = useState<number | null>(null);
 
-  // ── Fetch historical klines (with cache) ────────────────────────────────────
+  // ── ATH fetch on mount ───────────────────────────────────────────────────────
   useEffect(() => {
-    const cached = getCached(timeframe);
-    if (cached) { setKlines(cached); setLoading(false); return; }
+    const cached = getCachedATH();
+    if (cached !== null) { setATH(cached); return; }
+    const ctrl = new AbortController();
+    fetchATHHigh(ctrl.signal)
+      .then((maxHigh) => { setCachedATH(maxHigh); setATH(maxHigh); })
+      .catch(() => { /* non-critical — ATH annotation simply won't render */ });
+    return () => ctrl.abort();
+  }, []);
+
+  // ── Historical price fetch (with cache) ──────────────────────────────────────
+  useEffect(() => {
+    const cached = getCachedPrices(timeframe);
+    if (cached) { setCloseData(cached); setLoading(false); return; }
 
     setLoading(true);
     const ctrl = new AbortController();
-    fetchKlines(timeframe, ctrl.signal)
-      .then((data) => { setCache(timeframe, data); setKlines(data); setLoading(false); })
+    fetchPrices(timeframe, ctrl.signal)
+      .then((data) => { setCachedPrices(timeframe, data); setCloseData(data); setLoading(false); })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (import.meta.env.DEV) console.error("[BtcLiveChart] fetch error:", err);
@@ -91,7 +151,7 @@ export default function BtcLiveChart() {
     return () => ctrl.abort();
   }, [timeframe]);
 
-  // ── Binance WebSocket — live price ──────────────────────────────────────────
+  // ── Binance WebSocket — live price + throttled chart update ──────────────────
   useEffect(() => {
     const ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@ticker");
 
@@ -105,15 +165,30 @@ export default function BtcLiveChart() {
         const price = parseFloat(msg.data["c"]);
         const pct   = parseFloat(msg.data["P"]);
         if (isNaN(price)) return;
+
         setLivePrice(price);
         setChange24h(pct);
-        if (prevPrice.current !== null && price !== prevPrice.current) {
-          const dir: "up" | "down" = price > prevPrice.current ? "up" : "down";
+
+        // Flash effect on price change
+        if (prevPriceRef.current !== null && price !== prevPriceRef.current) {
+          const dir: "up" | "down" = price > prevPriceRef.current ? "up" : "down";
           setFlash(dir);
-          if (flashTimer.current) clearTimeout(flashTimer.current);
-          flashTimer.current = setTimeout(() => setFlash(null), 600);
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlash(null), 600);
         }
-        prevPrice.current = price;
+        prevPriceRef.current = price;
+
+        // Throttled chart update — mutate only the last data point
+        const now = Date.now();
+        if (now - lastChartUpdateRef.current >= CHART_UPDATE_THROTTLE_MS) {
+          lastChartUpdateRef.current = now;
+          setCloseData((prev) => {
+            if (!prev.length) return prev;
+            const next = [...prev];
+            next[next.length - 1] = [next[next.length - 1][0], price];
+            return next;
+          });
+        }
       } catch { /* ignore malformed frames */ }
     };
 
@@ -123,106 +198,105 @@ export default function BtcLiveChart() {
 
     return () => {
       if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) ws.close();
-      if (flashTimer.current) clearTimeout(flashTimer.current);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
 
-  // ── Merge live tick into last candle ────────────────────────────────────────
-  const chartData = useMemo<KlinePoint[]>(() => {
-    if (!klines.length || livePrice === null) return klines;
-    const lastCandle = klines[klines.length - 1];
-    return [...klines.slice(0, -1), { x: lastCandle.x, y: livePrice }];
-  }, [klines, livePrice]);
-
-  const maSeries = useMemo<KlinePoint[]>(
-    () => (showMA && chartData.length > MA_PERIOD ? calcSMA(chartData, MA_PERIOD) : []),
-    [chartData, showMA],
-  );
-
-  // ── Chart options ────────────────────────────────────────────────────────────
-  const isUp      = change24h !== null ? change24h >= 0 : true;
-  const lineColor = isUp ? "#10b981" : "#ef4444";
-
-  const chartOptions = useMemo<ApexOptions>(() => ({
-    chart: {
-      type: "area",
-      fontFamily: "Inter, sans-serif",
-      background: "transparent",
-      toolbar: { show: false },
-      zoom: { enabled: true, type: "x" },
-      animations: { enabled: false },
-    },
-    colors: showMA ? [lineColor, "#f59e0b"] : [lineColor],
-    stroke: {
-      curve: "smooth",
-      width: showMA ? [2, 1.5] : [2],
-      dashArray: showMA ? [0, 5] : [0],
-    },
-    fill: {
-      type: "gradient",
-      gradient: { shadeIntensity: 1, opacityFrom: 0.15, opacityTo: 0, stops: [0, 100] },
-    },
-    dataLabels: { enabled: false },
-    markers: { size: 0, hover: { size: 4 } },
-    grid: {
-      borderColor: "#374151",
-      strokeDashArray: 4,
-      xaxis: { lines: { show: false } },
-      yaxis: { lines: { show: true } },
-      padding: { left: 4, right: 8, top: 0, bottom: 0 },
-    },
-    xaxis: {
-      type: "datetime",
-      labels: { style: { fontSize: "10px", colors: "#6B7280" }, datetimeUTC: false },
-      axisBorder: { show: false },
-      axisTicks: { show: false },
-      tooltip: { enabled: false },
-    },
-    yaxis: {
-      logarithmic: logScale,
-      labels: {
-        style: { fontSize: "11px", colors: ["#6B7280"] },
-        formatter: (v: number) => (v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v.toFixed(0)}`),
-      },
-      forceNiceScale: true,
-    },
-    tooltip: {
-      theme: "dark",
-      shared: true,
-      x: {
-        format:
-          timeframe === "1D" ? "HH:mm" :
-          timeframe === "1W" ? "dd MMM HH:mm" :
-          "dd MMM yyyy",
-      },
-      y: {
-        formatter: (v: number) =>
-          `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
-      },
-    },
-    crosshairs: {
-      x: { show: true, width: 1, stroke: { color: "#6B7280", dashArray: 4 } },
-      y: { show: true },
-    },
-    legend: {
-      show: showMA,
-      position: "top",
-      horizontalAlign: "right",
-      fontSize: "11px",
-      labels: { colors: "#9CA3AF" },
-    },
-  }), [logScale, lineColor, showMA, timeframe]);
+  // ── Build ApexCharts series ───────────────────────────────────────────────────
+  const maData = useMemo<PricePoint[]>(() => {
+    if (!showMA || closeData.length <= MA_PERIOD) return [];
+    return calcSMA(closeData, MA_PERIOD);
+  }, [closeData, showMA]);
 
   const series = useMemo(() => {
-    const main = { name: "BTC/USD", data: chartData };
-    if (!showMA || !maSeries.length) return [main];
-    return [main, { name: `SMA ${MA_PERIOD}`, data: maSeries }];
-  }, [chartData, maSeries, showMA]);
+    const base = [{ name: "BTC Price", data: closeData }];
+    if (showMA && maData.length > 0) {
+      base.push({ name: `MA${MA_PERIOD}`, data: maData });
+    }
+    return base;
+  }, [closeData, maData, showMA]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  const fmtPrice = (n: number) =>
-    n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  // ── Chart options (only regenerated when ath changes) ────────────────────────
+  const options = useMemo<ApexOptions>(() => ({
+    chart: {
+      fontFamily: "Inter, sans-serif",
+      type: "line",
+      toolbar: { show: false },
+      background: "transparent",
+      zoom: { enabled: true, type: "x", autoScaleYaxis: true },
+      animations: {
+        enabled: true,
+        speed: 200,
+        dynamicAnimation: { enabled: true, speed: 300 },
+        animateGradually: { enabled: false },
+      },
+    },
+    stroke: {
+      curve: "smooth",
+      width:     [2, 1.5],
+      dashArray: [0, 5],
+    },
+    colors: ["#10b981", "#f59e0b"],
+    dataLabels: { enabled: false },
+    markers: { size: 0, hover: { size: 4, sizeOffset: 2 } },
+    xaxis: {
+      type: "datetime",
+      axisBorder: { show: false },
+      axisTicks:  { show: false },
+      labels: {
+        datetimeUTC: false,
+        style: { fontSize: "11px", colors: "#6B7280", fontFamily: "Inter, sans-serif" },
+      },
+      crosshairs: { show: true },
+      tooltip:    { enabled: false },
+    },
+    yaxis: {
+      opposite: true,
+      labels: {
+        style: { fontSize: "11px", colors: ["#6B7280"] },
+        formatter: (val: number) => `$${fmtNum(val)}`,
+      },
+    },
+    grid: {
+      borderColor: "#1F2937",
+      strokeDashArray: 0,
+      xaxis: { lines: { show: false } },
+      yaxis: { lines: { show: true } },
+      padding: { left: 4, right: 4 },
+    },
+    tooltip: {
+      enabled: true,
+      shared:  true,
+      theme:   "dark",
+      x: { format: "dd MMM yyyy HH:mm" },
+      y: { formatter: (val: number) => `$${fmtNum(val)}` },
+    },
+    annotations: ath !== null ? {
+      yaxis: [{
+        y:               ath,
+        borderColor:     "#f59e0b",
+        strokeDashArray: 4,
+        borderWidth:     1,
+        label: {
+          text:        "ATH",
+          borderColor: "transparent",
+          position:    "right",
+          offsetX:     -4,
+          offsetY:     -6,
+          style: {
+            color:       "#f59e0b",
+            background:  "transparent",
+            fontSize:    "10px",
+            fontFamily:  "Inter, sans-serif",
+          },
+        },
+      }],
+    } : {},
+    legend: { show: false },
+  }), [ath]);
 
+  // ── Derived display values ────────────────────────────────────────────────────
+  const isUp      = change24h !== null ? change24h >= 0 : true;
   const flashClass =
     flash === "up"   ? "text-emerald-500" :
     flash === "down" ? "text-red-500"     :
@@ -247,26 +321,30 @@ export default function BtcLiveChart() {
             </span>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Bitcoin</h3>
           </div>
-          <div className="flex items-baseline gap-2 mt-1 ml-8">
+          <div className="flex flex-wrap items-baseline gap-2 mt-1 ml-8">
             <span
               className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
               aria-live="polite"
-              aria-label={livePrice !== null ? `Bitcoin price $${fmtPrice(livePrice)}` : "Loading"}
+              aria-label={livePrice !== null ? `Bitcoin price $${fmtNum(livePrice)}` : "Loading"}
             >
-              {livePrice !== null ? `$${fmtPrice(livePrice)}` : "—"}
+              {livePrice !== null ? `$${fmtNum(livePrice)}` : "—"}
             </span>
             {change24h !== null && (
               <Badge color={change24h >= 0 ? "success" : "error"}>
-                {change24h >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
                 {Math.abs(change24h).toFixed(2)}%
               </Badge>
+            )}
+            {ath !== null && (
+              <span className="text-xs font-medium text-amber-500 tabular-nums">
+                ATH ${fmtNum(ath)}
+              </span>
             )}
           </div>
         </div>
 
-        {/* Right: timeframe tabs + toggles */}
+        {/* Right: timeframe tabs + MA toggle */}
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {/* Timeframe selector */}
           <div
             className="flex items-center gap-1"
             role="tablist"
@@ -289,19 +367,7 @@ export default function BtcLiveChart() {
             ))}
           </div>
 
-          {/* Scale + overlay toggles */}
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setLogScale((s) => !s)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                logScale
-                  ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
-                  : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
-              }`}
-              aria-pressed={logScale}
-            >
-              Log
-            </button>
             <button
               onClick={() => setShowMA((m) => !m)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
@@ -319,24 +385,22 @@ export default function BtcLiveChart() {
 
       {/* Chart area */}
       <div
-        className="relative -mx-1 h-[280px] sm:h-[340px]"
+        className="relative -mx-3"
         aria-label="Bitcoin price chart"
       >
-        {loading ? (
-          <div className="h-full w-full animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" />
-        ) : (
-          <Chart
-            key={`btc-${timeframe}-${logScale}`}
-            options={chartOptions}
-            series={series}
-            type="area"
-            height="100%"
-          />
+        {loading && (
+          <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
         )}
+        <Chart
+          options={options}
+          series={series}
+          type="line"
+          height={300}
+        />
       </div>
 
-      <p className="mt-2 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
-        Drag to zoom · Pinch on mobile
+      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
+        Drag to zoom · Scroll / pinch to zoom
       </p>
     </div>
   );
