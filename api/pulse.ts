@@ -306,12 +306,14 @@ async function fetchFeedArticles(
       "";
     const author = rawAuthor.trim() || undefined;
 
-    // Description: clean text snippet, capped at 200 chars
+    // Description: clean text snippet, capped at MAX_DESCRIPTION_LENGTH chars
+    const MAX_RAW_SNIPPET = 600;
+    const MAX_DESCRIPTION_LENGTH = 200;
     const rawSnippet = cleanSnippet(
-      (item.contentSnippet ?? item.summary ?? "").slice(0, 600),
+      (item.contentSnippet ?? item.summary ?? "").slice(0, MAX_RAW_SNIPPET),
     ).trim();
     const description = rawSnippet.length > 0
-      ? rawSnippet.slice(0, 200) + (rawSnippet.length > 200 ? "…" : "")
+      ? rawSnippet.slice(0, MAX_DESCRIPTION_LENGTH) + (rawSnippet.length > MAX_DESCRIPTION_LENGTH ? "…" : "")
       : undefined;
 
     articles.push({

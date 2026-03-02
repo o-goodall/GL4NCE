@@ -8,32 +8,32 @@ import {
   type PulseCategory,
 } from "./types";
 
-// ── Category colours — for badge overlays and fallback card backgrounds ───────
-const CATEGORY_COLOUR: Record<PulseCategory, { badge: string; bg: string; icon: string }> = {
-  violent:        { badge: "bg-red-600     text-white", bg: "from-red-800     to-red-600",     icon: "⚔️" },
-  terrorism:      { badge: "bg-red-700     text-white", bg: "from-red-900     to-red-700",     icon: "💥" },
-  military:       { badge: "bg-orange-600  text-white", bg: "from-orange-800  to-orange-600",  icon: "🎖️" },
-  escalation:     { badge: "bg-orange-500  text-white", bg: "from-orange-700  to-orange-500",  icon: "📈" },
-  diplomatic:     { badge: "bg-purple-600  text-white", bg: "from-purple-800  to-purple-600",  icon: "🤝" },
-  extremism:      { badge: "bg-pink-600    text-white", bg: "from-pink-800    to-pink-600",    icon: "⚠️" },
-  economic:       { badge: "bg-blue-600    text-white", bg: "from-blue-800    to-blue-600",    icon: "📊" },
-  commodities:    { badge: "bg-blue-700    text-white", bg: "from-blue-900    to-blue-700",    icon: "🛢️" },
-  cyber:          { badge: "bg-indigo-600  text-white", bg: "from-indigo-800  to-indigo-600",  icon: "🔒" },
-  health:         { badge: "bg-teal-600    text-white", bg: "from-teal-800    to-teal-600",    icon: "🏥" },
-  environmental:  { badge: "bg-green-600   text-white", bg: "from-green-800   to-green-600",   icon: "🌍" },
-  disaster:       { badge: "bg-amber-600   text-white", bg: "from-amber-800   to-amber-600",   icon: "🌊" },
-  infrastructure: { badge: "bg-yellow-600  text-white", bg: "from-yellow-800  to-yellow-600",  icon: "🏗️" },
-  crime:          { badge: "bg-rose-600    text-white", bg: "from-rose-800    to-rose-600",    icon: "🚨" },
-  piracy:         { badge: "bg-cyan-600    text-white", bg: "from-cyan-800    to-cyan-600",    icon: "⚓" },
-  protest:        { badge: "bg-yellow-500  text-white", bg: "from-yellow-700  to-yellow-500",  icon: "✊" },
-  minor:          { badge: "bg-gray-500    text-white", bg: "from-gray-700    to-gray-500",    icon: "📰" },
-  human_rights:   { badge: "bg-fuchsia-600 text-white", bg: "from-fuchsia-800 to-fuchsia-600", icon: "✋" },
-  migration:      { badge: "bg-sky-600     text-white", bg: "from-sky-800     to-sky-600",     icon: "🧭" },
-  geopolitics:    { badge: "bg-violet-600  text-white", bg: "from-violet-800  to-violet-600",  icon: "🌐" },
-  energy:         { badge: "bg-lime-600    text-white", bg: "from-lime-800    to-lime-600",    icon: "⚡" },
-  crypto:         { badge: "bg-yellow-500  text-white", bg: "from-yellow-700  to-yellow-500",  icon: "₿" },
-  technology:     { badge: "bg-indigo-500  text-white", bg: "from-indigo-700  to-indigo-500",  icon: "🚀" },
-  ai_ethics:      { badge: "bg-purple-500  text-white", bg: "from-purple-700  to-purple-500",  icon: "🤖" },
+// ── Category colours — badge overlays on images + subtle accent for fallbacks ─
+const CATEGORY_COLOUR: Record<PulseCategory, { badge: string; accent: string; icon: string }> = {
+  violent:        { badge: "bg-red-600/90     text-white", accent: "bg-red-600",      icon: "⚔️" },
+  terrorism:      { badge: "bg-red-700/90     text-white", accent: "bg-red-700",      icon: "💥" },
+  military:       { badge: "bg-orange-600/90  text-white", accent: "bg-orange-600",   icon: "🎖️" },
+  escalation:     { badge: "bg-orange-500/90  text-white", accent: "bg-orange-500",   icon: "📈" },
+  diplomatic:     { badge: "bg-purple-600/90  text-white", accent: "bg-purple-600",   icon: "🤝" },
+  extremism:      { badge: "bg-pink-600/90    text-white", accent: "bg-pink-600",     icon: "⚠️" },
+  economic:       { badge: "bg-blue-600/90    text-white", accent: "bg-blue-600",     icon: "📊" },
+  commodities:    { badge: "bg-blue-700/90    text-white", accent: "bg-blue-700",     icon: "🛢️" },
+  cyber:          { badge: "bg-indigo-600/90  text-white", accent: "bg-indigo-600",   icon: "🔒" },
+  health:         { badge: "bg-teal-600/90    text-white", accent: "bg-teal-600",     icon: "🏥" },
+  environmental:  { badge: "bg-green-600/90   text-white", accent: "bg-green-600",    icon: "🌍" },
+  disaster:       { badge: "bg-amber-600/90   text-white", accent: "bg-amber-600",    icon: "🌊" },
+  infrastructure: { badge: "bg-yellow-600/90  text-white", accent: "bg-yellow-600",   icon: "🏗️" },
+  crime:          { badge: "bg-rose-600/90    text-white", accent: "bg-rose-600",     icon: "🚨" },
+  piracy:         { badge: "bg-cyan-600/90    text-white", accent: "bg-cyan-600",     icon: "⚓" },
+  protest:        { badge: "bg-yellow-500/90  text-white", accent: "bg-yellow-500",   icon: "✊" },
+  minor:          { badge: "bg-gray-500/90    text-white", accent: "bg-gray-500",     icon: "📰" },
+  human_rights:   { badge: "bg-fuchsia-600/90 text-white", accent: "bg-fuchsia-600",  icon: "✋" },
+  migration:      { badge: "bg-sky-600/90     text-white", accent: "bg-sky-600",      icon: "🧭" },
+  geopolitics:    { badge: "bg-violet-600/90  text-white", accent: "bg-violet-600",   icon: "🌐" },
+  energy:         { badge: "bg-lime-600/90    text-white", accent: "bg-lime-600",     icon: "⚡" },
+  crypto:         { badge: "bg-yellow-500/90  text-white", accent: "bg-yellow-500",   icon: "₿" },
+  technology:     { badge: "bg-indigo-500/90  text-white", accent: "bg-indigo-500",   icon: "🚀" },
+  ai_ethics:      { badge: "bg-purple-500/90  text-white", accent: "bg-purple-500",   icon: "🤖" },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -44,6 +44,16 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h`;
   return `${Math.floor(hrs / 24)}d`;
+}
+
+/** Derive a 2-4 char outlet abbreviation (e.g. "Al Jazeera" → "AJ", "BBC" → "BBC") */
+function sourceAbbr(source: string): string {
+  const words = source.split(/\s+/);
+  const abbr = words.length === 1
+    ? source.slice(0, 4).toUpperCase()
+    : words.map((w) => w[0]).join("").toUpperCase().slice(0, 4);
+  // Ensure at least 2 chars so the watermark always has visual weight
+  return abbr.length >= 2 ? abbr : abbr.padEnd(2, abbr[0] ?? "?");
 }
 
 // ── ArticleCard ────────────────────────────────────────────────────────────────
@@ -57,11 +67,12 @@ const ArticleCard = memo(function ArticleCard({ article, featured = false }: Art
   const [imgFailed, setImgFailed] = useState(false);
   const colour = CATEGORY_COLOUR[article.category];
   const showImage = article.image && !imgFailed;
+  const abbr = sourceAbbr(article.source);
 
   const cardContent = (
     <>
       {/* Image / fallback */}
-      <div className={`relative w-full overflow-hidden bg-gradient-to-br ${colour.bg} ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`}>
+      <div className={`relative w-full overflow-hidden bg-gray-950 ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`}>
         {showImage ? (
           <img
             src={article.image}
@@ -71,18 +82,27 @@ const ArticleCard = memo(function ArticleCard({ article, featured = false }: Art
             onError={() => setImgFailed(true)}
           />
         ) : (
-          <span className="absolute inset-0 flex items-center justify-center text-4xl opacity-30 select-none" aria-hidden="true">
-            {colour.icon}
-          </span>
+          <>
+            {/* Thin category colour bar at top */}
+            <div className={`absolute top-0 left-0 right-0 h-[3px] ${colour.accent}`} />
+            {/* Source abbreviation watermark */}
+            <span
+              className="absolute inset-0 flex items-center justify-center font-black tracking-widest text-white/[0.07] select-none"
+              style={{ fontSize: featured ? "5rem" : "3.5rem" }}
+              aria-hidden="true"
+            >
+              {abbr}
+            </span>
+          </>
         )}
-        {/* Dark gradient overlay for legibility */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-        {/* Category badge — bottom-left of image */}
-        <span className={`absolute bottom-2 left-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${colour.badge}`}>
+        {/* Gradient overlay for badge legibility — always present */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+        {/* Category badge — bottom-left */}
+        <span className={`absolute bottom-2 left-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${colour.badge}`}>
           {PULSE_CATEGORY_LABEL[article.category]}
         </span>
-        {/* Time badge — bottom-right */}
-        <span className="absolute bottom-2 right-2 text-[10px] text-white/80 tabular-nums">
+        {/* Time — bottom-right */}
+        <span className="absolute bottom-2 right-2 text-[10px] text-white/70 tabular-nums">
           {relativeTime(article.time)} ago
         </span>
       </div>
@@ -132,7 +152,7 @@ const ArticleCard = memo(function ArticleCard({ article, featured = false }: Art
 function SkeletonCard({ featured = false }: { featured?: boolean }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 animate-pulse">
-      <div className={`w-full bg-gray-100 dark:bg-gray-800 ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`} />
+      <div className={`w-full bg-gray-800/60 ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`} />
       <div className="p-3 space-y-2">
         <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-full" />
         <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-4/5" />
