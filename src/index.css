@@ -167,6 +167,13 @@ layer(base);
   --z-index-9999: 9999;
   --z-index-99999: 99999;
   --z-index-999999: 999999;
+
+  --animate-card-fade-in: card-fade-in 0.35s ease-out both;
+}
+
+@keyframes card-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
 }
 
 /*
