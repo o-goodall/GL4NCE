@@ -122,7 +122,7 @@ export default function MoneyPrinter() {
     <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6 h-full flex flex-col">
       {/* Tile number badge */}
       <span className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-        2
+        6
       </span>
 
       {/* Header */}
