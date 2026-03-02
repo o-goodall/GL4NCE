@@ -148,7 +148,7 @@ export default function GlobalNewsMap() {
             6
           </span>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            Global News Map
+            Flashpoints
           </h3>
         </div>
         {statusText && (

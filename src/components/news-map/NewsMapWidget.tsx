@@ -5,8 +5,6 @@ import { worldMill as rawWorldMill } from "@react-jvectormap/world";
 import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
-import { usePolymarket, filterMarketsForCountry } from "../polymarket/usePolymarket";
-import EventModal from "./EventModal";
 import LiveEventFeed from "./LiveEventFeed";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
@@ -131,13 +129,13 @@ type AlertFilter = AlertLevel | "all";
 
 export default function NewsMapWidget() {
   const { data, loading } = useNewsMap();
-  const { markets: allMarkets } = usePolymarket();
-  const [selected, setSelected] = useState<CountryNewsData | null>(null);
   const [tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
   const [showZoomHint, setShowZoomHint] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
+  /** Country to show inline in the live-feed panel (from map click or pill) */
+  const [feedActiveCountry, setFeedActiveCountry] = useState<CountryNewsData | null>(null);
   const mapRef = useRef<IMapObject | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,12 +147,6 @@ export default function NewsMapWidget() {
   const prevHighlightedRef = useRef<Set<string>>(new Set());
 
   const allCountries = useMemo(() => data?.countries ?? [], [data]);
-
-  // Polymarket predictions relevant to the currently selected country
-  const selectedMarkets = useMemo(
-    () => filterMarketsForCountry(allMarkets, selected?.name ?? null),
-    [allMarkets, selected?.name],
-  );
 
   // Compute which categories have at least one live event
   const activeCategories = useMemo<Set<CategoryFilter>>(() => {
@@ -211,7 +203,8 @@ export default function NewsMapWidget() {
     const upperCode = code.toUpperCase();
     const country = countryByCodeRef.current.get(upperCode);
     if (country) {
-      setSelected(country);
+      setFeedActiveCountry(country);
+      setFeedOpen(true);
       setTappedCode(upperCode);
     }
   }, []);
@@ -223,15 +216,22 @@ export default function NewsMapWidget() {
     e.preventDefault();
   }, []);
 
-  // Stable close handler — clears both the modal and the tap highlight
-  const handleClose = useCallback(() => {
-    setSelected(null);
+  // Dismiss the inline-detail country without closing the feed
+  const handleDismissActive = useCallback(() => {
+    setFeedActiveCountry(null);
+  }, []);
+
+  // Close the feed panel entirely — clears active country and map highlight
+  const handleFeedClose = useCallback(() => {
+    setFeedOpen(false);
+    setFeedActiveCountry(null);
     setTappedCode(null);
   }, []);
 
-  // Open modal for a country and highlight it on the map (used by trending pills)
+  // Open feed with a country's inline detail (used by trending pills + conflict groups)
   const handlePillClick = useCallback((country: CountryNewsData) => {
-    setSelected(country);
+    setFeedActiveCountry(country);
+    setFeedOpen(true);
     setTappedCode(country.code);
   }, []);
 
@@ -240,7 +240,8 @@ export default function NewsMapWidget() {
     const upperCode = code.toUpperCase();
     const country = countryByCodeRef.current.get(upperCode);
     if (country) {
-      setSelected(country);
+      setFeedActiveCountry(country);
+      setFeedOpen(true);
       setTappedCode(upperCode);
     }
   }, []);
@@ -335,6 +336,16 @@ export default function NewsMapWidget() {
       if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
     };
   }, []); // only runs once — uses refs throughout, no reactive deps
+
+  // Close the mobile bottom sheet (and desktop side panel) when Escape is pressed.
+  useEffect(() => {
+    if (!feedOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleFeedClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [feedOpen, handleFeedClose]);
 
   /**
    * Delta-paint jVectorMap region fills using inline styles.
@@ -488,12 +499,29 @@ export default function NewsMapWidget() {
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            Global News Map
+            Flashpoints
           </h3>
+          {/* Live Feed toggle — moved here from below the map */}
+          {data && countries.length > 0 && (
+            <button
+              onClick={() => setFeedOpen((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                feedOpen
+                  ? "bg-brand-500 text-gray-900"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+              }`}
+              aria-expanded={feedOpen}
+              aria-label={feedOpen ? "Collapse live feed" : "Expand live feed"}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${feedOpen ? "bg-gray-900" : "bg-error-500 animate-pulse motion-reduce:animate-none"}`} aria-hidden="true" />
+              Live Feed
+              <span className="ml-0.5" aria-hidden="true">{feedOpen ? "↑" : "↓"}</span>
+            </button>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Category filter tabs — only shown when that category has live events */}
           {(Object.keys(FILTER_LABELS) as CategoryFilter[])
             .filter((f) => activeCategories.has(f))
@@ -611,6 +639,35 @@ export default function NewsMapWidget() {
             </svg>
           </button>
         </div>
+
+        {/* Desktop side feed panel — absolute overlay on the right side of the map.
+             Shown only on sm+ screens when feedOpen is true. */}
+        {feedOpen && (
+          <div className="absolute hidden sm:flex flex-col top-0 right-0 h-full w-72 xl:w-80 bg-white/95 dark:bg-gray-900/95 border-l border-gray-200/80 dark:border-gray-700/80 backdrop-blur-sm z-10 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+              <span className="text-xs font-semibold text-gray-700 dark:text-white/80 flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-error-500 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                Live Feed
+              </span>
+              <button
+                onClick={handleFeedClose}
+                aria-label="Close live feed"
+                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <LiveEventFeed
+              countries={countries}
+              maxRows={25}
+              activeCountry={feedActiveCountry}
+              onDismissActive={handleDismissActive}
+              panelMode
+            />
+          </div>
+        )}
       </div>
 
       {data && (
@@ -684,34 +741,53 @@ export default function NewsMapWidget() {
         </div>
       )}
 
-      {/* Live event feed — pill toggle (default closed) + expandable feed */}
-      {data && countries.length > 0 && (
-        <div className="mt-4">
-          <button
-            onClick={() => setFeedOpen((v) => !v)}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              feedOpen
-                ? "bg-brand-500 text-gray-900"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-            }`}
-            aria-expanded={feedOpen}
-            aria-label={feedOpen ? "Collapse live feed" : "Expand live feed"}
+      {/* Mobile bottom sheet — fixed overlay, ~80% viewport height, visible only on mobile (below sm) */}
+      {feedOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed sm:hidden inset-0 bg-black/40 z-40"
+            onClick={handleFeedClose}
+            aria-hidden="true"
+          />
+          {/* Sheet */}
+          <div
+            className="fixed sm:hidden inset-x-0 bottom-0 z-50 flex flex-col bg-white dark:bg-gray-900 rounded-t-2xl shadow-2xl"
+            style={{ height: "80vh" }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Live Feed"
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${feedOpen ? "bg-gray-900" : "bg-error-500 animate-pulse"}`} aria-hidden="true" />
-            Live Feed
-            <span className="ml-0.5" aria-hidden="true">{feedOpen ? "↑" : "↓"}</span>
-          </button>
-          {feedOpen && (
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-12 h-1 rounded-full bg-gray-300 dark:bg-gray-700" aria-hidden="true" />
+            </div>
+            {/* Sheet header */}
+            <div className="flex items-center justify-between px-4 pb-2 flex-shrink-0">
+              <span className="text-sm font-semibold text-gray-800 dark:text-white/90 flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-error-500 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                Live Feed
+              </span>
+              <button
+                onClick={handleFeedClose}
+                aria-label="Close live feed"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
             <LiveEventFeed
               countries={countries}
-              maxRows={10}
-              onCountryClick={handlePillClick}
+              maxRows={25}
+              activeCountry={feedActiveCountry}
+              onDismissActive={handleDismissActive}
+              panelMode
             />
-          )}
-        </div>
+          </div>
+        </>
       )}
-
-      <EventModal country={selected} onClose={handleClose} markets={selectedMarkets} />
     </div>
   );
 }
