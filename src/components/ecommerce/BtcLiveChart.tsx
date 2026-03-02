@@ -1,25 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  createChart,
-  IChartApi,
-  ISeriesApi,
-  CandlestickSeries,
-  LineSeries,
-  LineStyle,
-  CrosshairMode,
-  ColorType,
-  UTCTimestamp,
-  CandlestickData,
-  LineData,
-  IPriceLine,
-} from "lightweight-charts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Chart from "react-apexcharts";
+import { ApexOptions } from "apexcharts";
 import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Timeframe = "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "ALL";
-type OHLCPoint = CandlestickData<UTCTimestamp>;
-type MAPoint = LineData<UTCTimestamp>;
+/** [timestamp_ms, close_price] */
+type PricePoint = [number, number];
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: number }> = {
@@ -36,24 +24,32 @@ const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "5Y", "ALL"];
 const MA_PERIOD = 200;
 const ATH_CACHE_KEY = "btc-ath";
 const ATH_CACHE_TTL = 86_400_000; // 24 hours
+const CHART_UPDATE_THROTTLE_MS = 1_000;
 
-// ── Helpers (module-level to use in closures) ─────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 // ── Cache helpers ──────────────────────────────────────────────────────────────
-function getCachedOHLC(tf: Timeframe): OHLCPoint[] | null {
+function getCachedPrices(tf: Timeframe): PricePoint[] | null {
   try {
     const raw = localStorage.getItem(`btc-ohlc-${tf}`);
     if (!raw) return null;
-    const entry = JSON.parse(raw) as { data: OHLCPoint[]; fetchedAt: number };
+    const entry = JSON.parse(raw) as { data: unknown; fetchedAt: number };
     if (Date.now() - entry.fetchedAt > TF_CONFIG[tf].cacheTTL) return null;
-    return entry.data;
+    const data = entry.data;
+    if (!Array.isArray(data) || !data.length) return null;
+    // Support legacy OHLC format { time (seconds), close } and new tuple [ts_ms, close]
+    const first = data[0];
+    if (Array.isArray(first)) return data as PricePoint[];
+    return (data as Array<{ time: number; close: number }>).map(
+      (d) => [d.time * 1000, d.close] as PricePoint,
+    );
   } catch { return null; }
 }
 
-function setCachedOHLC(tf: Timeframe, data: OHLCPoint[]): void {
+function setCachedPrices(tf: Timeframe, data: PricePoint[]): void {
   try {
     localStorage.setItem(`btc-ohlc-${tf}`, JSON.stringify({ data, fetchedAt: Date.now() }));
   } catch { /* ignore storage quota errors */ }
@@ -76,89 +72,77 @@ function setCachedATH(price: number): void {
 }
 
 // ── Binance REST fetch ─────────────────────────────────────────────────────────
-async function fetchOHLC(tf: Timeframe, signal: AbortSignal): Promise<OHLCPoint[]> {
+type RawKline = [number, string, string, string, string, ...unknown[]];
+
+async function fetchKlines(tf: Timeframe, signal: AbortSignal): Promise<RawKline[]> {
   const { interval, limit } = TF_CONFIG[tf];
   const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}`;
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  // kline tuple: [openTime, open, high, low, close, volume, closeTime, ...]
-  const raw = (await res.json()) as [number, string, string, string, string, ...unknown[]][];
-  return raw.map((k) => ({
-    time:  Math.floor((k[0] as number) / 1000) as UTCTimestamp,
-    open:  parseFloat(k[1]),
-    high:  parseFloat(k[2]),
-    low:   parseFloat(k[3]),
-    close: parseFloat(k[4]),
-  }));
+  return (await res.json()) as RawKline[];
+}
+
+async function fetchPrices(tf: Timeframe, signal: AbortSignal): Promise<PricePoint[]> {
+  const raw = await fetchKlines(tf, signal);
+  // kline tuple: [openTime, open, high, low, close, ...]
+  return raw.map((k) => [k[0] as number, parseFloat(k[4])] as PricePoint);
+}
+
+async function fetchATHHigh(signal: AbortSignal): Promise<number> {
+  const raw = await fetchKlines("ALL", signal);
+  return raw.reduce((m, k) => {
+    const high = parseFloat(k[2]);
+    return high > m ? high : m;
+  }, -Infinity);
 }
 
 // ── Simple moving average (sliding window, O(n)) ──────────────────────────────
-function calcSMA(data: OHLCPoint[], period: number): MAPoint[] {
-  const result: MAPoint[] = [];
+function calcSMA(data: PricePoint[], period: number): PricePoint[] {
+  const result: PricePoint[] = [];
   let sum = 0;
   for (let i = 0; i < data.length; i++) {
-    sum += data[i].close;
-    if (i >= period) sum -= data[i - period].close;
-    if (i >= period - 1) result.push({ time: data[i].time, value: sum / period });
+    sum += data[i][1];
+    if (i >= period) sum -= data[i - period][1];
+    if (i >= period - 1) result.push([data[i][0], sum / period]);
   }
   return result;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function BtcLiveChart() {
-  // DOM refs
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const tooltipRef        = useRef<HTMLDivElement>(null);
+  const prevPriceRef      = useRef<number | null>(null);
+  const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastChartUpdateRef = useRef<number>(0);
 
-  // Chart instance refs (never trigger re-renders)
-  const chartRef       = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const maSeriesRef    = useRef<ISeriesApi<"Line"> | null>(null);
-  const athLineRef     = useRef<IPriceLine | null>(null);
-  const lastCandleRef  = useRef<OHLCPoint | null>(null);
-
-  // Value refs used in callbacks to avoid stale closures
-  const athRef      = useRef<number | null>(null);
-  const prevPriceRef = useRef<number | null>(null);
-  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // React state (triggers re-renders)
   const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
   const [showMA,     setShowMA]     = useState(false);
-  const [ohlcData,   setOhlcData]   = useState<OHLCPoint[]>([]);
+  const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [livePrice,  setLivePrice]  = useState<number | null>(null);
   const [change24h,  setChange24h]  = useState<number | null>(null);
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
   const [ath,        setATH]        = useState<number | null>(null);
 
-  // Keep athRef in sync for use in crosshair callback
-  useEffect(() => { athRef.current = ath; }, [ath]);
-
   // ── ATH fetch on mount ───────────────────────────────────────────────────────
   useEffect(() => {
     const cached = getCachedATH();
     if (cached !== null) { setATH(cached); return; }
     const ctrl = new AbortController();
-    fetchOHLC("ALL", ctrl.signal)
-      .then((data) => {
-        const maxHigh = data.reduce((m, d) => (d.high > m ? d.high : m), -Infinity);
-        setCachedATH(maxHigh);
-        setATH(maxHigh);
-      })
-      .catch(() => { /* non-critical — ATH line simply won't render */ });
+    fetchATHHigh(ctrl.signal)
+      .then((maxHigh) => { setCachedATH(maxHigh); setATH(maxHigh); })
+      .catch(() => { /* non-critical — ATH annotation simply won't render */ });
     return () => ctrl.abort();
   }, []);
 
-  // ── Historical OHLC fetch (with cache) ──────────────────────────────────────
+  // ── Historical price fetch (with cache) ──────────────────────────────────────
   useEffect(() => {
-    const cached = getCachedOHLC(timeframe);
-    if (cached) { setOhlcData(cached); setLoading(false); return; }
+    const cached = getCachedPrices(timeframe);
+    if (cached) { setCloseData(cached); setLoading(false); return; }
 
     setLoading(true);
     const ctrl = new AbortController();
-    fetchOHLC(timeframe, ctrl.signal)
-      .then((data) => { setCachedOHLC(timeframe, data); setOhlcData(data); setLoading(false); })
+    fetchPrices(timeframe, ctrl.signal)
+      .then((data) => { setCachedPrices(timeframe, data); setCloseData(data); setLoading(false); })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (import.meta.env.DEV) console.error("[BtcLiveChart] fetch error:", err);
@@ -167,200 +151,7 @@ export default function BtcLiveChart() {
     return () => ctrl.abort();
   }, [timeframe]);
 
-  // ── Chart initialization (once on mount) ─────────────────────────────────────
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-
-    const chart = createChart(chartContainerRef.current, {
-      autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#6B7280",
-        fontFamily: "Inter, sans-serif",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: "#1F2937", style: LineStyle.Solid },
-        horzLines: { color: "#1F2937", style: LineStyle.Solid },
-      },
-      crosshair: {
-        mode: CrosshairMode.Magnet,
-      },
-      rightPriceScale: {
-        borderColor: "transparent",
-        scaleMargins: { top: 0.08, bottom: 0.08 },
-      },
-      leftPriceScale: { visible: false },
-      timeScale: {
-        borderColor: "transparent",
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      // Mobile-friendly scroll & pinch gestures
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: false,
-      },
-      handleScale: {
-        mouseWheel: true,
-        axisPressedMouseMove: true,
-        pinch: true,
-      },
-    });
-
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor:        "#10b981",
-      downColor:      "#ef4444",
-      borderUpColor:  "#10b981",
-      borderDownColor:"#ef4444",
-      wickUpColor:    "#10b981",
-      wickDownColor:  "#ef4444",
-    });
-
-    chartRef.current        = chart;
-    candleSeriesRef.current = candleSeries;
-
-    // ── Custom crosshair tooltip ─────────────────────────────────────────────
-    const tooltipEl = tooltipRef.current;
-    chart.subscribeCrosshairMove((param) => {
-      if (!tooltipEl || !chartContainerRef.current) return;
-
-      if (
-        !param.point ||
-        !param.time  ||
-        param.point.x < 0 ||
-        param.point.y < 0 ||
-        param.point.x > chartContainerRef.current.clientWidth ||
-        param.point.y > chartContainerRef.current.clientHeight
-      ) {
-        tooltipEl.style.display = "none";
-        return;
-      }
-
-      const bar = param.seriesData.get(candleSeries) as OHLCPoint | undefined;
-      if (!bar) { tooltipEl.style.display = "none"; return; }
-
-      const ts = (bar.time as number) * 1000;
-      const dateStr = new Date(ts).toLocaleString("en-US", {
-        month: "short", day: "numeric", year: "numeric",
-        hour: "2-digit", minute: "2-digit",
-      });
-      const athNow = athRef.current;
-
-      // Build tooltip via DOM to avoid XSS risk from locale-formatted strings
-      tooltipEl.replaceChildren();
-
-      const dateLine = document.createElement("div");
-      dateLine.style.cssText = "font-size:10px;color:#9CA3AF;margin-bottom:4px;";
-      dateLine.textContent = dateStr;
-      tooltipEl.appendChild(dateLine);
-
-      const grid = document.createElement("div");
-      grid.style.cssText = "display:grid;grid-template-columns:12px 1fr;gap:2px 8px;font-size:11px;font-family:monospace;";
-      const rows: [string, string, string][] = [
-        ["O", "#F3F4F6", `$${fmtNum(bar.open)}`],
-        ["H", "#10b981", `$${fmtNum(bar.high)}`],
-        ["L", "#ef4444", `$${fmtNum(bar.low)}`],
-        ["C", "#F3F4F6", `$${fmtNum(bar.close)}`],
-      ];
-      for (const [label, color, val] of rows) {
-        const lbl = document.createElement("span");
-        lbl.style.color = "#6B7280";
-        lbl.textContent = label;
-        const v = document.createElement("span");
-        v.style.color = color;
-        v.textContent = val;
-        grid.appendChild(lbl);
-        grid.appendChild(v);
-      }
-      tooltipEl.appendChild(grid);
-
-      if (athNow !== null) {
-        const athDiv = document.createElement("div");
-        athDiv.style.cssText = "margin-top:4px;padding-top:4px;border-top:1px solid #374151;font-size:10px;color:#f59e0b;";
-        athDiv.textContent = `ATH $${fmtNum(athNow)}`;
-        tooltipEl.appendChild(athDiv);
-      }
-
-      tooltipEl.style.display = "block";
-
-      const cw = chartContainerRef.current.clientWidth;
-      const ch = chartContainerRef.current.clientHeight;
-      const tw = tooltipEl.offsetWidth  || 160;
-      const th = tooltipEl.offsetHeight || 110;
-      let left = param.point.x + 14;
-      let top  = param.point.y - th / 2;
-      if (left + tw > cw) left = param.point.x - tw - 14;
-      if (top < 4) top = 4;
-      if (top + th > ch - 4) top = ch - th - 4;
-      tooltipEl.style.left = `${left}px`;
-      tooltipEl.style.top  = `${top}px`;
-    });
-
-    return () => {
-      chart.remove();
-      chartRef.current        = null;
-      candleSeriesRef.current = null;
-      maSeriesRef.current     = null;
-      athLineRef.current      = null;
-    };
-  }, []); // run once on mount
-
-  // ── Update candlestick data when ohlcData changes ───────────────────────────
-  useEffect(() => {
-    const series = candleSeriesRef.current;
-    if (!series || !ohlcData.length) return;
-    lastCandleRef.current = ohlcData[ohlcData.length - 1];
-    series.setData(ohlcData);
-    chartRef.current?.timeScale().fitContent();
-  }, [ohlcData]);
-
-  // ── MA series toggle + data update ──────────────────────────────────────────
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    if (showMA) {
-      if (!maSeriesRef.current) {
-        maSeriesRef.current = chart.addSeries(LineSeries, {
-          color:             "#f59e0b",
-          lineWidth:         1,
-          lineStyle:         LineStyle.Dashed,
-          priceLineVisible:  false,
-          lastValueVisible:  false,
-        });
-      }
-      if (ohlcData.length > MA_PERIOD) {
-        maSeriesRef.current.setData(calcSMA(ohlcData, MA_PERIOD));
-      }
-    } else if (maSeriesRef.current) {
-      chart.removeSeries(maSeriesRef.current);
-      maSeriesRef.current = null;
-    }
-  }, [showMA, ohlcData]);
-
-  // ── ATH reference price line ─────────────────────────────────────────────────
-  useEffect(() => {
-    const series = candleSeriesRef.current;
-    if (!series || ath === null) return;
-    if (athLineRef.current) {
-      try { series.removePriceLine(athLineRef.current); } catch (e) {
-        if (import.meta.env.DEV) console.warn("[BtcLiveChart] removePriceLine:", e);
-      }
-    }
-    athLineRef.current = series.createPriceLine({
-      price:            ath,
-      color:            "#f59e0b",
-      lineWidth:        1,
-      lineStyle:        LineStyle.Dashed,
-      axisLabelVisible: true,
-      title:            "ATH",
-    });
-  }, [ath]);
-
-  // ── Binance WebSocket — live price + real-time candle update ─────────────────
+  // ── Binance WebSocket — live price + throttled chart update ──────────────────
   useEffect(() => {
     const ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@ticker");
 
@@ -387,18 +178,16 @@ export default function BtcLiveChart() {
         }
         prevPriceRef.current = price;
 
-        // Update last candle in chart without re-fetching
-        const last = lastCandleRef.current;
-        if (candleSeriesRef.current && last) {
-          const updated: OHLCPoint = {
-            time:  last.time,
-            open:  last.open,
-            high:  Math.max(last.high, price),
-            low:   Math.min(last.low,  price),
-            close: price,
-          };
-          candleSeriesRef.current.update(updated);
-          lastCandleRef.current = updated;
+        // Throttled chart update — mutate only the last data point
+        const now = Date.now();
+        if (now - lastChartUpdateRef.current >= CHART_UPDATE_THROTTLE_MS) {
+          lastChartUpdateRef.current = now;
+          setCloseData((prev) => {
+            if (!prev.length) return prev;
+            const next = [...prev];
+            next[next.length - 1] = [next[next.length - 1][0], price];
+            return next;
+          });
         }
       } catch { /* ignore malformed frames */ }
     };
@@ -412,6 +201,99 @@ export default function BtcLiveChart() {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
+
+  // ── Build ApexCharts series ───────────────────────────────────────────────────
+  const maData = useMemo<PricePoint[]>(() => {
+    if (!showMA || closeData.length <= MA_PERIOD) return [];
+    return calcSMA(closeData, MA_PERIOD);
+  }, [closeData, showMA]);
+
+  const series = useMemo(() => {
+    const base = [{ name: "BTC Price", data: closeData }];
+    if (showMA && maData.length > 0) {
+      base.push({ name: `MA${MA_PERIOD}`, data: maData });
+    }
+    return base;
+  }, [closeData, maData, showMA]);
+
+  // ── Chart options (only regenerated when ath changes) ────────────────────────
+  const options = useMemo<ApexOptions>(() => ({
+    chart: {
+      fontFamily: "Inter, sans-serif",
+      type: "line",
+      toolbar: { show: false },
+      background: "transparent",
+      zoom: { enabled: true, type: "x", autoScaleYaxis: true },
+      animations: {
+        enabled: true,
+        speed: 200,
+        dynamicAnimation: { enabled: true, speed: 300 },
+        animateGradually: { enabled: false },
+      },
+    },
+    stroke: {
+      curve: "smooth",
+      width:     [2, 1.5],
+      dashArray: [0, 5],
+    },
+    colors: ["#10b981", "#f59e0b"],
+    dataLabels: { enabled: false },
+    markers: { size: 0, hover: { size: 4, sizeOffset: 2 } },
+    xaxis: {
+      type: "datetime",
+      axisBorder: { show: false },
+      axisTicks:  { show: false },
+      labels: {
+        datetimeUTC: false,
+        style: { fontSize: "11px", colors: "#6B7280", fontFamily: "Inter, sans-serif" },
+      },
+      crosshairs: { show: true },
+      tooltip:    { enabled: false },
+    },
+    yaxis: {
+      opposite: true,
+      labels: {
+        style: { fontSize: "11px", colors: ["#6B7280"] },
+        formatter: (val: number) => `$${fmtNum(val)}`,
+      },
+    },
+    grid: {
+      borderColor: "#1F2937",
+      strokeDashArray: 0,
+      xaxis: { lines: { show: false } },
+      yaxis: { lines: { show: true } },
+      padding: { left: 4, right: 4 },
+    },
+    tooltip: {
+      enabled: true,
+      shared:  true,
+      theme:   "dark",
+      x: { format: "dd MMM yyyy HH:mm" },
+      y: { formatter: (val: number) => `$${fmtNum(val)}` },
+    },
+    annotations: ath !== null ? {
+      yaxis: [{
+        y:               ath,
+        borderColor:     "#f59e0b",
+        strokeDashArray: 4,
+        borderWidth:     1,
+        label: {
+          text:        "ATH",
+          borderColor: "transparent",
+          position:    "right",
+          offsetX:     -4,
+          offsetY:     -6,
+          style: {
+            color:       "#f59e0b",
+            background:  "transparent",
+            fontSize:    "10px",
+            fontFamily:  "Inter, sans-serif",
+          },
+        },
+      }],
+    } : {},
+    legend: { show: false },
+  }), [ath]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
@@ -461,9 +343,8 @@ export default function BtcLiveChart() {
           </div>
         </div>
 
-        {/* Right: timeframe tabs + toggles */}
+        {/* Right: timeframe tabs + MA toggle */}
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {/* Timeframe selector */}
           <div
             className="flex items-center gap-1"
             role="tablist"
@@ -486,7 +367,6 @@ export default function BtcLiveChart() {
             ))}
           </div>
 
-          {/* MA overlay toggle */}
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowMA((m) => !m)}
@@ -505,29 +385,22 @@ export default function BtcLiveChart() {
 
       {/* Chart area */}
       <div
-        className="relative -mx-1 h-[280px] sm:h-[340px]"
+        className="relative -mx-3"
         aria-label="Bitcoin price chart"
       >
         {loading && (
-          <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" />
+          <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
         )}
-        <div ref={chartContainerRef} className="h-full w-full" />
-        {/* Floating OHLC tooltip */}
-        <div
-          ref={tooltipRef}
-          className="pointer-events-none absolute z-20 hidden rounded-lg shadow-xl"
-          style={{
-            background: "rgba(17,24,39,0.92)",
-            backdropFilter: "blur(6px)",
-            border: "1px solid #374151",
-            padding: "8px 10px",
-            minWidth: "152px",
-          }}
+        <Chart
+          options={options}
+          series={series}
+          type="line"
+          height={300}
         />
       </div>
 
-      <p className="mt-2 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
-        Drag to pan · Scroll / pinch to zoom
+      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
+        Drag to zoom · Scroll / pinch to zoom
       </p>
     </div>
   );
