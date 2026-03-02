@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePolymarket } from "./usePolymarket";
+import { usePolymarket, type MarketCategory } from "./usePolymarket";
 import type { PolymarketMarket } from "./types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -20,6 +20,37 @@ const FLIP_THRESHOLD_PP = 30;
 const SWIPE_THRESHOLD_PX = 40;
 
 const POLYMARKET_BASE = "https://polymarket.com";
+
+// ── Category metadata ─────────────────────────────────────────────────────────
+const CATEGORIES: Array<{
+  id: MarketCategory;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+  link: string;
+}> = [
+  {
+    id: "geo",
+    label: "Geopolitical",
+    shortLabel: "Geo",
+    subtitle: "Crowd-sourced geopolitical prediction markets",
+    link: `${POLYMARKET_BASE}/world`,
+  },
+  {
+    id: "macro",
+    label: "Macro / Fed Rates",
+    shortLabel: "Macro",
+    subtitle: "Federal Reserve, interest rates & macro economics",
+    link: `${POLYMARKET_BASE}/dashboards/fed-rates`,
+  },
+  {
+    id: "crypto",
+    label: "Crypto",
+    shortLabel: "Crypto",
+    subtitle: "Bitcoin, Ethereum & digital-asset markets",
+    link: `${POLYMARKET_BASE}/browse?c=crypto`,
+  },
+];
 
 // ── Flip-detection helpers ────────────────────────────────────────────────────
 type ProbMap = Map<string, number>;       // outcomeLabel → probability
@@ -403,11 +434,20 @@ function DesktopList({
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export default function GeopoliticalMarkets() {
-  const { markets, loading, error } = usePolymarket();
+  const [category, setCategory] = useState<MarketCategory>("geo");
+  const { markets, loading, error } = usePolymarket(category);
+
+  const activeCat = CATEGORIES.find((c) => c.id === category)!;
 
   // Flip detection: compare current probabilities against the previous snapshot
   const prevSnapshotRef = useRef<Snapshot>(new Map());
   const [flippedIds, setFlippedIds] = useState<Set<string>>(new Set());
+
+  // Reset flips when category changes
+  useEffect(() => {
+    prevSnapshotRef.current = new Map();
+    setFlippedIds(new Set());
+  }, [category]);
 
   useEffect(() => {
     if (markets.length === 0) return;
@@ -435,9 +475,9 @@ export default function GeopoliticalMarkets() {
         <div>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Triggers</h3>
           <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-            Crowd-sourced probability markets from{" "}
+            {activeCat.subtitle} from{" "}
             <a
-              href={POLYMARKET_BASE}
+              href={activeCat.link}
               target="_blank"
               rel="noopener noreferrer"
               className="underline underline-offset-2 hover:text-brand-600 dark:hover:text-brand-300"
@@ -446,6 +486,25 @@ export default function GeopoliticalMarkets() {
             </a>
           </p>
         </div>
+      </div>
+
+      {/* Category tabs */}
+      <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 no-scrollbar">
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => setCategory(cat.id)}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              category === cat.id
+                ? "bg-brand-500 text-white dark:bg-brand-600"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+            }`}
+            aria-pressed={category === cat.id}
+          >
+            <span className="sm:hidden">{cat.shortLabel}</span>
+            <span className="hidden sm:inline">{cat.label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Content */}
