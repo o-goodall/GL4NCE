@@ -53,8 +53,6 @@ export interface PulseArticle {
   time: string;
   category: PulseCategory;
   link?: string;
-  /** Best-effort thumbnail URL extracted from RSS media fields */
-  image?: string;
   /** Article author from dc:creator / <author> RSS tag */
   author?: string;
   /** Short article excerpt (plain text, ≤ 200 chars) */
