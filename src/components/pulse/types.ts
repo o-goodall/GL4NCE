@@ -53,6 +53,8 @@ export interface PulseArticle {
   time: string;
   category: PulseCategory;
   link?: string;
+  /** Best-effort thumbnail URL extracted from RSS media fields */
+  image?: string;
 }
 
 export interface PulseData {
@@ -96,7 +98,15 @@ export const PULSE_CATEGORY_GROUPS: {
   },
 ];
 
-/** Human-readable label for each category. */
+/** Short labels for the horizontal scroll tabs on mobile. */
+export const PULSE_GROUP_SHORT_LABEL: Record<string, string> = {
+  "Global Security & Conflict": "Security",
+  "Social & Political":         "Social",
+  "Disasters & Health":         "Health",
+  "Economic & Financial":       "Economy",
+  "Technology & Innovation":    "Tech",
+  "Infrastructure & Crime":     "Crime",
+};
 export const PULSE_CATEGORY_LABEL: Record<PulseCategory, string> = {
   // Flashpoint-inherited
   violent:        "Conflict",

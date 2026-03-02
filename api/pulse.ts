@@ -49,6 +49,8 @@ interface PulseArticle {
   time: string;
   category: PulseCategory;
   link?: string;
+  /** Best-effort thumbnail URL extracted from RSS media fields or enclosure */
+  image?: string;
 }
 
 interface PulseData {
@@ -204,6 +206,70 @@ async function withConcurrencyLimit<T>(
   return results;
 }
 
+// ── Image extraction ──────────────────────────────────────────────────────────
+/**
+ * Extract the best-available thumbnail URL from a parsed RSS item.
+ * Priority order (most reliable → least reliable):
+ *   1. media:thumbnail (widely supported — BBC, Guardian, Al Jazeera, etc.)
+ *   2. media:content with medium="image" or type starting with "image/"
+ *   3. Standard RSS enclosure typed as an image
+ *   4. First <img src> found inside the description/content HTML
+ */
+
+/** Pull url string from a media:thumbnail or media:content element */
+function mediaUrl(element: unknown): string | undefined {
+  if (!element) return undefined;
+  if (typeof element === "string" && element.startsWith("http")) return element;
+  const el = element as Record<string, unknown>;
+  if (el.$ && typeof (el.$ as Record<string, string>).url === "string")
+    return (el.$ as Record<string, string>).url;
+  return undefined;
+}
+
+function extractImage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item: Record<string, any>,
+): string | undefined {
+  // 1. media:thumbnail — can be an object with $ attribute map, or a string
+  const thumb = item["mediaThumbnail"];
+  if (thumb) {
+    const url = Array.isArray(thumb) ? mediaUrl(thumb[0]) : mediaUrl(thumb);
+    if (url) return url;
+  }
+
+  // 2. media:content
+  const mc = item["mediaContent"];
+  if (mc) {
+    const candidates: unknown[] = Array.isArray(mc) ? mc : [mc];
+    // Prefer explicitly image-typed entry
+    for (const c of candidates) {
+      const el = c as Record<string, Record<string, string>>;
+      const medium: string = el?.$?.medium ?? "";
+      const mtype: string = el?.$?.type ?? "";
+      if (medium === "image" || mtype.startsWith("image/")) {
+        const url = mediaUrl(c);
+        if (url) return url;
+      }
+    }
+    // Accept any media:content URL as fallback
+    for (const c of candidates) {
+      const url = mediaUrl(c);
+      if (url) return url;
+    }
+  }
+
+  // 3. Standard RSS enclosure
+  const enc = item["enclosure"];
+  if (enc?.url && (enc.type ?? "").startsWith("image/")) return enc.url as string;
+
+  // 4. First <img src> in description or content HTML
+  const html = item["content"] ?? item["summary"] ?? "";
+  const imgMatch = /<img[^>]+src=["']([^"']+)["']/i.exec(html as string);
+  if (imgMatch?.[1] && imgMatch[1].startsWith("http")) return imgMatch[1];
+
+  return undefined;
+}
+
 // ── RSS fetch ─────────────────────────────────────────────────────────────────
 const DEDUP_KEY_LENGTH = 48;
 
@@ -227,12 +293,14 @@ async function fetchFeedArticles(
     if (!category) continue;
 
     const pubDate = item.isoDate ?? item.pubDate ?? new Date().toISOString();
+    const image = extractImage(item as Record<string, unknown>);
     articles.push({
       title: rawTitle.trim() || "(no title)",
       source: source.name,
       time: pubDate,
       category,
       link: item.link ?? undefined,
+      ...(image ? { image } : {}),
     });
   }
   return articles;
@@ -246,7 +314,12 @@ export default async function handler(
   const parser = new Parser({
     timeout: FETCH_TIMEOUT,
     headers: { "User-Agent": NEWS_MAP_UA },
-    customFields: { item: [["media:thumbnail", "mediaThumbnail"]] },
+    customFields: {
+      item: [
+        ["media:thumbnail", "mediaThumbnail"],
+        ["media:content",   "mediaContent"],
+      ],
+    },
   });
 
   const tasks = RSS_SOURCES.map(

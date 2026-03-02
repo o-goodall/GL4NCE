@@ -1,40 +1,39 @@
-import { useState, useMemo, memo } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
 import { usePulse } from "./usePulse";
 import {
   PULSE_CATEGORY_GROUPS,
   PULSE_CATEGORY_LABEL,
+  PULSE_GROUP_SHORT_LABEL,
   type PulseArticle,
   type PulseCategory,
 } from "./types";
 
-// ── Colour palette for category badges ────────────────────────────────────────
-const CATEGORY_BADGE_COLOUR: Record<PulseCategory, string> = {
-  // Flashpoint-inherited
-  violent:        "bg-red-100    text-red-700    dark:bg-red-900/30    dark:text-red-300",
-  terrorism:      "bg-red-100    text-red-800    dark:bg-red-900/30    dark:text-red-200",
-  military:       "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-  escalation:     "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
-  diplomatic:     "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-  extremism:      "bg-pink-100   text-pink-700   dark:bg-pink-900/30   dark:text-pink-300",
-  economic:       "bg-blue-100   text-blue-700   dark:bg-blue-900/30   dark:text-blue-300",
-  commodities:    "bg-blue-100   text-blue-800   dark:bg-blue-900/30   dark:text-blue-200",
-  cyber:          "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
-  health:         "bg-teal-100   text-teal-700   dark:bg-teal-900/30   dark:text-teal-300",
-  environmental:  "bg-green-100  text-green-700  dark:bg-green-900/30  dark:text-green-300",
-  disaster:       "bg-amber-100  text-amber-700  dark:bg-amber-900/30  dark:text-amber-300",
-  infrastructure: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
-  crime:          "bg-rose-100   text-rose-700   dark:bg-rose-900/30   dark:text-rose-300",
-  piracy:         "bg-cyan-100   text-cyan-700   dark:bg-cyan-900/30   dark:text-cyan-300",
-  protest:        "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200",
-  minor:          "bg-gray-100   text-gray-600   dark:bg-gray-800      dark:text-gray-400",
-  // Pulse-only
-  human_rights:   "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300",
-  migration:      "bg-sky-100    text-sky-700    dark:bg-sky-900/30    dark:text-sky-300",
-  geopolitics:    "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  energy:         "bg-lime-100   text-lime-700   dark:bg-lime-900/30   dark:text-lime-300",
-  crypto:         "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
-  technology:     "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
-  ai_ethics:      "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400",
+// ── Category colours — for badge overlays and fallback card backgrounds ───────
+const CATEGORY_COLOUR: Record<PulseCategory, { badge: string; bg: string; icon: string }> = {
+  violent:        { badge: "bg-red-600     text-white", bg: "from-red-800     to-red-600",     icon: "⚔️" },
+  terrorism:      { badge: "bg-red-700     text-white", bg: "from-red-900     to-red-700",     icon: "💥" },
+  military:       { badge: "bg-orange-600  text-white", bg: "from-orange-800  to-orange-600",  icon: "🎖️" },
+  escalation:     { badge: "bg-orange-500  text-white", bg: "from-orange-700  to-orange-500",  icon: "📈" },
+  diplomatic:     { badge: "bg-purple-600  text-white", bg: "from-purple-800  to-purple-600",  icon: "🤝" },
+  extremism:      { badge: "bg-pink-600    text-white", bg: "from-pink-800    to-pink-600",    icon: "⚠️" },
+  economic:       { badge: "bg-blue-600    text-white", bg: "from-blue-800    to-blue-600",    icon: "📊" },
+  commodities:    { badge: "bg-blue-700    text-white", bg: "from-blue-900    to-blue-700",    icon: "🛢️" },
+  cyber:          { badge: "bg-indigo-600  text-white", bg: "from-indigo-800  to-indigo-600",  icon: "🔒" },
+  health:         { badge: "bg-teal-600    text-white", bg: "from-teal-800    to-teal-600",    icon: "🏥" },
+  environmental:  { badge: "bg-green-600   text-white", bg: "from-green-800   to-green-600",   icon: "🌍" },
+  disaster:       { badge: "bg-amber-600   text-white", bg: "from-amber-800   to-amber-600",   icon: "🌊" },
+  infrastructure: { badge: "bg-yellow-600  text-white", bg: "from-yellow-800  to-yellow-600",  icon: "🏗️" },
+  crime:          { badge: "bg-rose-600    text-white", bg: "from-rose-800    to-rose-600",    icon: "🚨" },
+  piracy:         { badge: "bg-cyan-600    text-white", bg: "from-cyan-800    to-cyan-600",    icon: "⚓" },
+  protest:        { badge: "bg-yellow-500  text-white", bg: "from-yellow-700  to-yellow-500",  icon: "✊" },
+  minor:          { badge: "bg-gray-500    text-white", bg: "from-gray-700    to-gray-500",    icon: "📰" },
+  human_rights:   { badge: "bg-fuchsia-600 text-white", bg: "from-fuchsia-800 to-fuchsia-600", icon: "✋" },
+  migration:      { badge: "bg-sky-600     text-white", bg: "from-sky-800     to-sky-600",     icon: "🧭" },
+  geopolitics:    { badge: "bg-violet-600  text-white", bg: "from-violet-800  to-violet-600",  icon: "🌐" },
+  energy:         { badge: "bg-lime-600    text-white", bg: "from-lime-800    to-lime-600",    icon: "⚡" },
+  crypto:         { badge: "bg-yellow-500  text-white", bg: "from-yellow-700  to-yellow-500",  icon: "₿" },
+  technology:     { badge: "bg-indigo-500  text-white", bg: "from-indigo-700  to-indigo-500",  icon: "🚀" },
+  ai_ethics:      { badge: "bg-purple-500  text-white", bg: "from-purple-700  to-purple-500",  icon: "🤖" },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,66 +47,117 @@ function relativeTime(iso: string): string {
 }
 
 // ── ArticleCard ────────────────────────────────────────────────────────────────
-const ArticleCard = memo(function ArticleCard({ article }: { article: PulseArticle }) {
-  return (
-    <div className="flex flex-col gap-1 py-3 border-b border-gray-100 last:border-0 dark:border-gray-800">
-      <div className="flex items-start justify-between gap-2">
-        <p className="flex-1 text-sm font-medium text-gray-800 dark:text-white/90 leading-snug line-clamp-2">
-          {article.title}
-        </p>
-        {article.link && (
-          <a
-            href={article.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
-            aria-label={`Read: ${article.title}`}
-          >
-            Read ↗
-          </a>
+interface ArticleCardProps {
+  article: PulseArticle;
+  /** When true, renders a taller "featured" card (first item) */
+  featured?: boolean;
+}
+
+const ArticleCard = memo(function ArticleCard({ article, featured = false }: ArticleCardProps) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const colour = CATEGORY_COLOUR[article.category];
+  const showImage = article.image && !imgFailed;
+
+  const cardContent = (
+    <>
+      {/* Image / fallback */}
+      <div className={`relative w-full overflow-hidden bg-gradient-to-br ${colour.bg} ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`}>
+        {showImage ? (
+          <img
+            src={article.image}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-4xl opacity-30 select-none" aria-hidden="true">
+            {colour.icon}
+          </span>
         )}
-      </div>
-      <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-gray-400 dark:text-gray-500">
-        <span className="truncate">{article.source}</span>
-        <span aria-hidden="true">·</span>
-        <span className="tabular-nums">{relativeTime(article.time)}</span>
-        <span aria-hidden="true">·</span>
-        <span
-          className={`inline-flex items-center rounded px-1.5 py-0.5 font-medium uppercase tracking-wide ${CATEGORY_BADGE_COLOUR[article.category]}`}
-        >
+        {/* Dark gradient overlay for legibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+        {/* Category badge — bottom-left of image */}
+        <span className={`absolute bottom-2 left-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${colour.badge}`}>
           {PULSE_CATEGORY_LABEL[article.category]}
         </span>
+        {/* Time badge — bottom-right */}
+        <span className="absolute bottom-2 right-2 text-[10px] text-white/80 tabular-nums">
+          {relativeTime(article.time)} ago
+        </span>
+      </div>
+
+      {/* Text content */}
+      <div className="flex flex-col flex-1 p-3">
+        <p className={`font-semibold text-gray-900 dark:text-white/90 leading-snug ${featured ? "text-base line-clamp-3" : "text-sm line-clamp-2"}`}>
+          {article.title}
+        </p>
+        <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500 truncate">
+          {article.source}
+        </p>
+      </div>
+    </>
+  );
+
+  const baseClass = `group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] transition-shadow hover:shadow-md`;
+
+  if (article.link) {
+    return (
+      <a
+        href={article.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={baseClass}
+        aria-label={article.title}
+      >
+        {cardContent}
+      </a>
+    );
+  }
+  return <div className={baseClass}>{cardContent}</div>;
+});
+
+// ── Loading skeleton card ──────────────────────────────────────────────────────
+function SkeletonCard({ featured = false }: { featured?: boolean }) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 animate-pulse">
+      <div className={`w-full bg-gray-100 dark:bg-gray-800 ${featured ? "aspect-[16/8]" : "aspect-[16/9]"}`} />
+      <div className="p-3 space-y-2">
+        <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-full" />
+        <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-3/4" />
+        <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded w-1/3 mt-1" />
       </div>
     </div>
   );
-});
+}
 
 // ── PulseFeed ──────────────────────────────────────────────────────────────────
 const ALL_GROUP = "All";
-const ARTICLES_PER_PAGE = 20;
+const PAGE_SIZE = 12;
 
 export default function PulseFeed() {
   const { data, loading, error, refresh } = usePulse();
   const [activeGroup, setActiveGroup] = useState<string>(ALL_GROUP);
   const [search, setSearch] = useState("");
-  const [showAll, setShowAll] = useState(false);
+  const [page, setPage] = useState(1);
 
-  // Reset pagination when filter changes
-  const handleGroupChange = (group: string) => {
+  const resetPagination = useCallback(() => setPage(1), []);
+
+  const handleGroupChange = useCallback((group: string) => {
     setActiveGroup(group);
-    setShowAll(false);
-  };
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    resetPagination();
+  }, [resetPagination]);
+
+  const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
-    setShowAll(false);
-  };
+    resetPagination();
+  }, [resetPagination]);
 
   // Derive the set of categories for the active group
   const groupCategories = useMemo<PulseCategory[] | null>(() => {
     if (activeGroup === ALL_GROUP) return null;
     return (
-      PULSE_CATEGORY_GROUPS.find((g) => g.label === activeGroup)?.categories ??
-      null
+      PULSE_CATEGORY_GROUPS.find((g) => g.label === activeGroup)?.categories ?? null
     );
   }, [activeGroup]);
 
@@ -131,23 +181,23 @@ export default function PulseFeed() {
     return articles;
   }, [data, groupCategories, search]);
 
-  const displayed = showAll ? filtered : filtered.slice(0, ARTICLES_PER_PAGE);
-  const hasMore = !showAll && filtered.length > ARTICLES_PER_PAGE;
+  const totalShown = Math.min(page * PAGE_SIZE, filtered.length);
+  const displayed = filtered.slice(0, totalShown);
+  const hasMore = totalShown < filtered.length;
 
-  // ── Loading skeleton ────────────────────────────────────────────────────────
+  // ── Loading skeleton ──────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-8 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-        <div className="mb-4">
+        <div className="mb-5">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
-          <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
-            General News / Context
-          </p>
+          <p className="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
         </div>
-        <div className="space-y-3 animate-pulse">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-12 rounded-lg bg-gray-100 dark:bg-gray-800" />
-          ))}
+        {/* Featured skeleton */}
+        <SkeletonCard featured />
+        {/* Grid skeleton */}
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
     );
@@ -160,9 +210,7 @@ export default function PulseFeed() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
-            <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
-              General News / Context
-            </p>
+            <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
           </div>
           <button
             onClick={refresh}
@@ -179,16 +227,16 @@ export default function PulseFeed() {
     );
   }
 
+  const [featured, ...rest] = displayed;
+
   // ── Main render ─────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-6 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
+    <div className="rounded-2xl border border-gray-200 bg-white px-4 pb-6 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
       {/* Header */}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
-          <p className="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400">
-            General News / Context
-          </p>
+          <p className="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {data?.feedStats && (
@@ -206,11 +254,11 @@ export default function PulseFeed() {
         </div>
       </div>
 
-      {/* Category group tabs */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
+      {/* Category tabs — horizontal scroll on mobile, no wrapping */}
+      <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 no-scrollbar">
         <button
           onClick={() => handleGroupChange(ALL_GROUP)}
-          className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+          className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
             activeGroup === ALL_GROUP
               ? "bg-brand-500 text-white dark:bg-brand-600"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -222,61 +270,79 @@ export default function PulseFeed() {
           <button
             key={group.label}
             onClick={() => handleGroupChange(group.label)}
-            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               activeGroup === group.label
                 ? "bg-brand-500 text-white dark:bg-brand-600"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
             }`}
           >
-            {group.label}
+            {/* Short label on mobile, full label on sm+ */}
+            <span className="sm:hidden">{PULSE_GROUP_SHORT_LABEL[group.label] ?? group.label}</span>
+            <span className="hidden sm:inline">{group.label}</span>
           </button>
         ))}
       </div>
 
       {/* Search */}
-      <div className="mb-3">
+      <div className="mb-4">
         <input
           type="search"
           value={search}
           onChange={handleSearch}
           placeholder="Search articles…"
           aria-label="Search pulse articles"
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:border-brand-500"
         />
       </div>
 
-      {/* Article list */}
+      {/* Empty state */}
       {displayed.length === 0 ? (
-        <p className="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-          {search.trim()
-            ? `No articles match "${search}"`
-            : "No articles in this category yet."}
+        <p className="text-center text-sm text-gray-400 dark:text-gray-500 py-10">
+          {search.trim() ? `No articles match "${search}"` : "No articles in this category yet."}
         </p>
       ) : (
         <>
-          <div>
-            {displayed.map((article, idx) => (
-              <ArticleCard key={`${article.source}-${article.time}-${article.title.slice(0, 24)}-${idx}`} article={article} />
-            ))}
-          </div>
+          {/* Featured card — full width at top */}
+          {featured && (
+            <div className="mb-3">
+              <ArticleCard article={featured} featured />
+            </div>
+          )}
+
+          {/* Article grid — 2 col on mobile, 3 col on md, 4 col on xl */}
+          {rest.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              {rest.map((article, idx) => (
+                <ArticleCard
+                  key={`${article.source}-${article.time}-${article.title.slice(0, 24)}-${idx}`}
+                  article={article}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Load more */}
           {hasMore && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="mt-3 w-full text-center text-xs font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors py-1"
-            >
-              Show {filtered.length - ARTICLES_PER_PAGE} more ↓
-            </button>
+            <div className="mt-5 flex justify-center">
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-full border border-brand-300 bg-brand-50 px-5 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+              >
+                Load more
+              </button>
+            </div>
           )}
         </>
       )}
 
-      {/* Footer: article count + last updated */}
+      {/* Footer */}
       {data && (
-        <p className="mt-4 text-center text-[10px] text-gray-300 dark:text-gray-700">
-          {filtered.length} article{filtered.length !== 1 ? "s" : ""} · updated{" "}
-          {relativeTime(data.lastUpdated)} ago
+        <p className="mt-5 text-center text-[10px] text-gray-300 dark:text-gray-700">
+          Showing {totalShown} of {filtered.length} articles
+          {data.lastUpdated && ` · updated ${relativeTime(data.lastUpdated)} ago`}
         </p>
       )}
     </div>
   );
 }
+
