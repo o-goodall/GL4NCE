@@ -188,13 +188,25 @@ for (const c of COUNTRIES) {
 
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
-/** Multipliers by category — escalation signals get extra weight for alert-level scoring */
+/** Multipliers by category — conflict/terrorism signals get extra weight for alert-level scoring */
 const CATEGORY_SCORE_MULTIPLIERS: Record<EventCategory, number> = {
-  violent:    2.0,
-  escalation: 1.8,
-  extremism:  1.3,
-  economic:   1.0,
-  minor:      0.5,
+  violent:        2.0,
+  terrorism:      2.0,  // terrorism is treated as equal weight to direct conflict
+  military:       1.8,  // active military operations = high urgency
+  escalation:     1.8,
+  diplomatic:     1.4,  // diplomatic crises can precede conflict
+  extremism:      1.3,
+  cyber:          1.3,  // state-level cyber incidents are significant
+  health:         1.2,  // pandemics affect large populations
+  infrastructure: 1.2,  // critical infrastructure attacks
+  commodities:    1.0,
+  economic:       1.0,
+  piracy:         1.0,
+  crime:          0.9,
+  environmental:  0.8,
+  disaster:       0.8,
+  protest:        0.6,
+  minor:          0.5,
 };
 const RETENTION_HOURS = 48;
 /** "Breaking" window: events within this many hours are scored as recent */
@@ -520,20 +532,47 @@ function generateMockData(): NewsMapData {
     { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"  },
     { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"  },
     { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"  },
+    // ── Terrorism ─────────────────────────────────────────────────────────────
+    { title: "Mass casualties in coordinated terrorist attack on market",  source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "terrorism"  },
+    { title: "ISIS car bomb kills dozens in crowded marketplace",          source: "Al Jazeera", time: h(5),   country: "Iraq",          severity: "high",   category: "terrorism"  },
+    // ── Military ──────────────────────────────────────────────────────────────
+    { title: "Military offensive launched against rebel stronghold",       source: "BBC",        time: h(4),   country: "Myanmar",       severity: "high",   category: "military"   },
+    // ── Diplomatic ────────────────────────────────────────────────────────────
+    { title: "Peace talks collapse as both sides reject ceasefire terms",  source: "Guardian",   time: h(8),   country: "Ukraine",       severity: "high",   category: "diplomatic" },
+    { title: "Foreign minister meets counterpart amid tension over deal",  source: "BBC",        time: h(12),  country: "India",         severity: "medium", category: "diplomatic" },
     // ── Economic ─────────────────────────────────────────────────────────────
     { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic" },
     { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic" },
     { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic" },
     { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic" },
+    // ── Commodities ───────────────────────────────────────────────────────────
+    { title: "Oil price crash triggers emergency OPEC meeting",            source: "BBC",        time: h(3),   country: "Saudi Arabia",  severity: "high",   category: "commodities"},
+    { title: "Wheat prices surge after Black Sea grain deal suspended",    source: "Guardian",   time: h(7),   country: "Ukraine",       severity: "high",   category: "commodities"},
+    // ── Cyber ─────────────────────────────────────────────────────────────────
+    { title: "State-sponsored cyberattack takes down government systems",  source: "BBC",        time: h(3),   country: "Estonia",       severity: "high",   category: "cyber"      },
+    { title: "Ransomware attack cripples hospital network across country",  source: "Guardian",   time: h(6),   country: "United Kingdom",severity: "high",   category: "cyber"      },
+    // ── Health ────────────────────────────────────────────────────────────────
+    { title: "WHO declares public health emergency over new outbreak",     source: "BBC",        time: h(4),   country: "Congo",         severity: "high",   category: "health"     },
+    { title: "Ebola outbreak confirmed in border region, quarantine imposed",source:"Al Jazeera",time: h(8),   country: "Uganda",        severity: "high",   category: "health"     },
+    // ── Environmental ─────────────────────────────────────────────────────────
+    { title: "Catastrophic wildfires spread across southern region",       source: "BBC",        time: h(5),   country: "Greece",        severity: "high",   category: "environmental"},
+    { title: "Major hurricane makes landfall causing widespread damage",   source: "Guardian",   time: h(10),  country: "Cuba",          severity: "high",   category: "environmental"},
+    // ── Disaster ──────────────────────────────────────────────────────────────
+    { title: "Major earthquake kills hundreds, rescue teams deployed",     source: "BBC",        time: h(6),   country: "Turkey",        severity: "high",   category: "disaster"   },
+    { title: "Humanitarian crisis deepens as famine spreads",              source: "Al Jazeera", time: h(9),   country: "Sudan",         severity: "high",   category: "disaster"   },
+    // ── Infrastructure ────────────────────────────────────────────────────────
+    { title: "Pipeline explosion disrupts energy supply to region",        source: "BBC",        time: h(7),   country: "Poland",        severity: "high",   category: "infrastructure"},
+    // ── Crime ─────────────────────────────────────────────────────────────────
+    { title: "Drug cartel massacre leaves dozens dead in northern province",source: "Guardian",  time: h(6),   country: "Mexico",        severity: "high",   category: "crime"      },
+    // ── Piracy ────────────────────────────────────────────────────────────────
+    { title: "Commercial vessel seized by pirates in Gulf of Aden",        source: "BBC",        time: h(8),   country: "Somalia",       severity: "high",   category: "piracy"     },
     // ── Unrest / minor ────────────────────────────────────────────────────────
     { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"  },
     { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"  },
     { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"  },
-    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"    },
+    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "protest"  },
     { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"    },
     { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"    },
-    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic" },
-    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"  },
     { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"  },
     // ── Extremism ─────────────────────────────────────────────────────────────
     { title: "Neo-nazi march through city centre draws counter-protests",  source: "Guardian",   time: h(5),   country: "Germany",       severity: "medium", category: "extremism" },

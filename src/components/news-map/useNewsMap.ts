@@ -63,7 +63,7 @@ export function useNewsMap(pollMinutes = DEFAULT_POLL_MINUTES): UseNewsMapReturn
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [load, pollMinutes, refreshKey]);
+  }, [load, refreshKey]);
 
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);

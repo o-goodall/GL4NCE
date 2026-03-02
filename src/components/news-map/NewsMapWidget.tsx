@@ -75,12 +75,24 @@ const REGION_LABEL_STYLE: ISVGElementStyleAttributes = {
 type CategoryFilter = "all" | EventCategory;
 
 const FILTER_LABELS: Record<CategoryFilter, string> = {
-  all:        "All",
-  violent:    "Violent",
-  economic:   "Economic",
-  minor:      "Minor",
-  extremism:  "Extremism",
-  escalation: "Escalation",
+  all:            "All",
+  violent:        "Conflict",
+  terrorism:      "Terrorism",
+  military:       "Military",
+  escalation:     "Escalation",
+  diplomatic:     "Diplomatic",
+  extremism:      "Extremism",
+  economic:       "Economic",
+  commodities:    "Commodities",
+  cyber:          "Cyber",
+  health:         "Health",
+  environmental:  "Environmental",
+  disaster:       "Disaster",
+  infrastructure: "Infrastructure",
+  crime:          "Crime",
+  piracy:         "Piracy",
+  protest:        "Protest",
+  minor:          "Minor",
 };
 
 /**
