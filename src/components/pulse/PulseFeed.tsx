@@ -134,7 +134,7 @@ const ArticleCard = memo(function ArticleCard({
       )}
     >
       {/* Gradient header */}
-      <div className={`flex flex-col gap-2 p-4 bg-gradient-to-br ${gradient} min-h-[9rem]`}>
+      <div className={`flex flex-col gap-2 p-3 bg-gradient-to-br ${gradient}`}>
         {/* Top row: icon + category badge + time */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -149,14 +149,14 @@ const ArticleCard = memo(function ArticleCard({
         </div>
         {/* Title */}
         <h3
-          className="text-base font-bold text-white leading-snug line-clamp-3 flex-1"
+          className="text-sm font-semibold text-white leading-snug line-clamp-2"
           title={article.title}
         >
           {article.title}
         </h3>
         {/* Description */}
         {article.description && (
-          <p className="text-sm text-white/75 leading-relaxed line-clamp-2">
+          <p className="text-xs text-white/75 leading-relaxed line-clamp-1">
             {article.description}
           </p>
         )}
@@ -190,7 +190,7 @@ const ArticleCard = memo(function ArticleCard({
 function SkeletonCard() {
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 animate-pulse">
-      <div className="p-4 bg-gray-800/60 min-h-[9rem] flex flex-col gap-2">
+      <div className="p-3 bg-gray-800/60 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <div className="h-7 w-7 rounded-full bg-white/10 shrink-0" />
