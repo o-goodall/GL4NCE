@@ -40,11 +40,23 @@ const SEVERITY_DOT: Record<EventSeverity, string> = {
 
 /** Compact category label colour */
 const CATEGORY_BADGE: Record<EventCategory, string> = {
-  violent:    "text-error-600   dark:text-error-400",
-  escalation: "text-orange-600  dark:text-orange-400",
-  extremism:  "text-brand-600   dark:text-brand-300",
-  economic:   "text-blue-600    dark:text-blue-400",
-  minor:      "text-warning-600 dark:text-warning-400",
+  violent:        "text-error-600   dark:text-error-400",
+  terrorism:      "text-error-700   dark:text-error-300",
+  military:       "text-orange-700  dark:text-orange-300",
+  escalation:     "text-orange-600  dark:text-orange-400",
+  diplomatic:     "text-purple-600  dark:text-purple-400",
+  extremism:      "text-brand-600   dark:text-brand-300",
+  economic:       "text-blue-600    dark:text-blue-400",
+  commodities:    "text-blue-700    dark:text-blue-300",
+  cyber:          "text-indigo-600  dark:text-indigo-400",
+  health:         "text-teal-600    dark:text-teal-400",
+  environmental:  "text-green-600   dark:text-green-400",
+  disaster:       "text-amber-600   dark:text-amber-400",
+  infrastructure: "text-yellow-600  dark:text-yellow-400",
+  crime:          "text-rose-600    dark:text-rose-400",
+  piracy:         "text-cyan-600    dark:text-cyan-400",
+  protest:        "text-warning-600 dark:text-warning-400",
+  minor:          "text-warning-600 dark:text-warning-400",
 };
 
 /** Alert level badge styles for the inline detail header */

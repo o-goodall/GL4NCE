@@ -6,10 +6,189 @@ const SORTED_KEYWORDS = [...KEYWORD_MAP.keys()].sort((a, b) => b.length - a.leng
 
 // ── Classification keyword lists ──────────────────────────────────────────────
 // Ordered most-specific / most-severe first so the earliest match wins.
+// New categories (terrorism, cyber, health, etc.) are checked before the
+// legacy broad categories so that specific patterns are not swallowed by
+// generic violence or minor-event keywords.
+
+// ── Terrorism ────────────────────────────────────────────────────────────────
+const HIGH_TERRORISM = [
+  "terrorist attack", "suicide bomb", "suicide bomber", "suicide bombing",
+  "car bomb", "car bombing", "vehicle ramming",
+  "isis attack", "isil attack", "al-qaeda attack", "al qaeda attack",
+  "jihadist attack", "jihadi attack", "islamist attack",
+  "coordinated attack", "mass casualty attack",
+  "terror plot", "terror attack",
+];
+const MEDIUM_TERRORISM = [
+  "terrorism", "terrorist", "jihadist", "jihadists", "islamist militant",
+  "isis", "isil", "al-qaeda", "al qaeda", "boko haram", "hamas attack",
+  "hezbollah attack", "ied detonated", "ied explosion",
+  "terror suspect", "terror cell", "terror threat", "bomb threat",
+];
+
+// ── Cyber ─────────────────────────────────────────────────────────────────────
+const HIGH_CYBER = [
+  "cyberattack", "cyber attack", "ransomware attack", "ransomware",
+  "state-sponsored hack", "state sponsored hack",
+  "critical infrastructure hack", "power grid hack", "power grid attack",
+  "government systems hacked", "election interference hack",
+  "data breach", "massive data breach",
+];
+const MEDIUM_CYBER = [
+  "cyber espionage", "cyber warfare", "ddos attack", "ddos",
+  "malware campaign", "phishing campaign", "hacking campaign",
+  "network intrusion", "systems compromised", "systems breached",
+  "zero-day exploit", "zero day exploit",
+  "national security breach", "intelligence hack",
+];
+
+// ── Health / Pandemic ─────────────────────────────────────────────────────────
+const HIGH_HEALTH = [
+  "pandemic", "global pandemic", "health emergency", "public health emergency",
+  "disease outbreak", "outbreak declared", "epidemic outbreak",
+  "mass casualty disease", "virus spreading", "pathogen outbreak",
+  "covid", "ebola", "mpox", "monkeypox", "plague outbreak",
+  "who declares emergency", "health crisis",
+];
+const MEDIUM_HEALTH = [
+  "epidemic", "disease spread", "outbreak", "quarantine",
+  "vaccination campaign", "vaccine shortage", "drug-resistant",
+  "cholera", "measles outbreak", "dengue outbreak", "malaria surge",
+  "mass vaccination", "contact tracing", "health alert",
+];
+
+// ── Environmental / Climate ───────────────────────────────────────────────────
+const HIGH_ENVIRONMENTAL = [
+  "catastrophic wildfire", "massive wildfire", "wildfire emergency",
+  "climate emergency", "climate catastrophe",
+  "catastrophic flooding", "extreme flooding", "flash flood kills",
+  "category 5", "major hurricane", "super typhoon",
+  "ecological disaster", "environmental catastrophe",
+];
+const MEDIUM_ENVIRONMENTAL = [
+  "wildfire", "forest fire", "bushfire",
+  "flooding", "floods", "flood warning",
+  "drought emergency", "water crisis",
+  "hurricane", "typhoon", "cyclone",
+  "heatwave", "extreme heat", "record temperatures",
+  "pollution crisis", "toxic spill",
+  "deforestation", "environmental damage",
+];
+
+// ── Disaster (natural / humanitarian) ────────────────────────────────────────
+const HIGH_DISASTER = [
+  "major earthquake", "devastating earthquake", "earthquake kills",
+  "tsunami warning", "tsunami hits",
+  "volcanic eruption", "volcano erupts",
+  "humanitarian catastrophe", "mass displacement",
+  "famine declared", "starvation crisis",
+];
+const MEDIUM_DISASTER = [
+  "earthquake", "tsunami", "volcanic",
+  "humanitarian crisis", "humanitarian emergency",
+  "refugee crisis", "displaced persons", "mass evacuation",
+  "famine", "drought", "food insecurity",
+  "aid workers", "relief operations",
+];
+
+// ── Infrastructure ────────────────────────────────────────────────────────────
+const HIGH_INFRASTRUCTURE = [
+  "infrastructure attack", "pipeline attack", "power grid down",
+  "communications blackout", "internet shutdown",
+  "bridge collapse", "dam collapse",
+  "water supply contaminated", "water system attack",
+  "port blocked", "supply route cut",
+];
+const MEDIUM_INFRASTRUCTURE = [
+  "power outage", "blackout", "grid failure",
+  "pipeline disruption", "pipeline explosion",
+  "communications disrupted", "satellite disruption",
+  "critical infrastructure",
+];
+
+// ── Crime / Organised Crime ───────────────────────────────────────────────────
+const HIGH_CRIME = [
+  "cartel massacre", "gang massacre", "cartel war",
+  "drug cartel kills", "organised crime killing", "mob hit",
+  "human trafficking network", "human smuggling network",
+  "arms trafficking bust", "drug trafficking bust",
+];
+const MEDIUM_CRIME = [
+  "cartel", "drug trafficking", "drug cartel", "narco",
+  "organised crime", "organized crime", "criminal gang",
+  "gang war", "gang violence", "mafia", "mob violence",
+  "human trafficking", "arms smuggling", "money laundering",
+  "kidnap for ransom",
+];
+
+// ── Piracy / Maritime Security ────────────────────────────────────────────────
+const HIGH_PIRACY = [
+  "ship hijacked", "vessel hijacked", "vessel seized",
+  "pirates attack", "piracy attack", "maritime attack",
+  "sailors held hostage", "crew kidnapped",
+];
+const MEDIUM_PIRACY = [
+  "piracy", "pirates", "pirate",
+  "maritime security incident", "shipping lane attack",
+  "houthi ship attack", "houthi vessel", "red sea attack",
+  "tanker seized", "cargo ship attacked",
+];
+
+// ── Diplomatic ────────────────────────────────────────────────────────────────
+const HIGH_DIPLOMATIC = [
+  "peace talks collapse", "ceasefire collapse", "peace deal collapsed",
+  "diplomatic rupture", "diplomatic relations severed",
+  "ambassador expelled", "expels ambassador", "ambassador recalled",
+];
+const MEDIUM_DIPLOMATIC = [
+  "peace talks", "peace deal", "ceasefire agreement",
+  "diplomatic talks", "summit meeting", "state visit",
+  "trade negotiations", "bilateral talks",
+  "diplomatic incident", "persona non grata",
+  "foreign minister meets", "secretary of state meets",
+];
+
+// ── Military ──────────────────────────────────────────────────────────────────
+const HIGH_MILITARY = [
+  "military offensive", "military invasion", "ground offensive",
+  "military operation launched", "combat operation",
+  "troops advance", "forces seize", "military assault",
+];
+const MEDIUM_MILITARY = [
+  "military operation", "special operation", "military exercise",
+  "defense contract", "military aid", "arms delivery", "weapons delivery",
+  "troop withdrawal", "military withdrawal", "peacekeeping mission",
+  "military deployment", "naval patrol",
+  "defense spending", "military budget",
+];
+
+// ── Commodities / Resource Supply ────────────────────────────────────────────
+const HIGH_COMMODITIES = [
+  "oil price surge", "oil price crash", "oil embargo",
+  "gas supply cut", "energy supply crisis",
+  "wheat shortage", "grain embargo", "food prices surge",
+  "commodity shortage", "crop failure", "harvest failure",
+  "fuel shortage", "petrol shortage",
+];
+const MEDIUM_COMMODITIES = [
+  "oil prices", "gas prices", "energy prices",
+  "wheat prices", "grain prices", "food prices",
+  "commodity markets", "supply disruption",
+  "opec", "oil production cut", "lng supply",
+];
+
+// ── Protest / Civil Unrest ───────────────────────────────────────────────────
+const MEDIUM_PROTEST = [
+  "protests", "protesters", "protest", "protesters take to the streets",
+  "mass protest", "nationwide protest", "general strike",
+  "worker strike", "workers strike", "trade union strike",
+  "demonstration", "demonstrators", "march",
+  "civil disobedience", "sit-in",
+];
 
 // ── Violent ──────────────────────────────────────────────────────────────────
 const HIGH_VIOLENT = [
-  "bombing", "explosion", "suicide attack", "terrorist attack",
+  "bombing", "explosion",
   "killed", "death toll", "casualties", "massacre", "murder", "homicide",
   "airstrike", "air strike", "missile strike", "drone strike",
   "arson", "fire bomb",
@@ -23,14 +202,11 @@ const MEDIUM_VIOLENT = [
 
 // ── Civil unrest / minor / humanitarian ──────────────────────────────────────
 const LOW_MINOR = [
-  "peaceful protest", "demonstration", "march", "worker strike",
   "civil unrest", "blockade", "curfew", "evacuation",
-  "power outage", "flooding", "earthquake", "storm",
   "social unrest", "tension", "dispute",
   // Humanitarian / disaster terms
   "refugee", "refugees", "displaced", "displacement",
-  "humanitarian", "famine", "drought",
-  "disease outbreak", "epidemic", "aid convoy",
+  "humanitarian", "aid convoy",
 ];
 
 // ── Economic ─────────────────────────────────────────────────────────────────
@@ -90,11 +266,11 @@ const MEDIUM_ESCALATION = [
   // Military movements
   "troops deployed", "troops massing", "military buildup",
   "military mobilization", "mobilisation near",
-  "military exercises", "war games", "live-fire drill",
+  "war games", "live-fire drill",
   "warships deployed", "naval standoff", "aircraft carrier deployed",
   "tanks at border", "forces at border",
   // Diplomatic breakdown
-  "expels ambassador", "ambassador expelled", "recalls ambassador",
+  "recalls ambassador",
   "diplomatic crisis", "severed diplomatic ties", "diplomatic breakdown",
   "new sanctions", "sanctions package", "sanctions announced",
   "border closed", "border closure", "border sealed",
@@ -112,15 +288,32 @@ const MEDIUM_ESCALATION = [
   "president detained", "prime minister detained",
 ];
 
+/** Check if any keyword is contained in the text */
+function matchesAny(text: string, keywords: string[]): boolean {
+  return keywords.some((kw) => text.includes(kw));
+}
+
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
-/** Multipliers by category — escalation signals get extra weight for alert-level scoring */
+/** Multipliers by category — conflict/terrorism signals get extra weight for alert-level scoring */
 const CATEGORY_SCORE_MULTIPLIERS: Record<EventCategory, number> = {
-  violent:    2.0,
-  escalation: 1.8,
-  extremism:  1.3,
-  economic:   1.0,
-  minor:      0.5,
+  violent:        2.0,
+  terrorism:      2.0,  // terrorism is treated as equal weight to direct conflict
+  military:       1.8,  // active military operations = high urgency
+  escalation:     1.8,
+  diplomatic:     1.4,  // diplomatic crises can precede conflict
+  extremism:      1.3,
+  cyber:          1.3,  // state-level cyber incidents are significant
+  health:         1.2,  // pandemics affect large populations
+  infrastructure: 1.2,  // critical infrastructure attacks
+  commodities:    1.0,
+  economic:       1.0,
+  piracy:         1.0,
+  crime:          0.9,
+  environmental:  0.8,
+  disaster:       0.8,
+  protest:        0.6,
+  minor:          0.5,
 };
 const RETENTION_HOURS = 48;
 /** "Breaking" window: events within this many hours are scored as recent */
@@ -156,29 +349,61 @@ export const CONFLICT_GROUPS: readonly (readonly string[])[] = [
   ["SD", "SS"],     // Sudan – South Sudan
 ] as const;
 
-/** Check if any keyword is contained in the text */
-function matchesAny(text: string, keywords: string[]): boolean {
-  return keywords.some((kw) => text.includes(kw));
-}
-
 /** Classify an article's severity and category */
 export function classifyEvent(text: string): { severity: EventSeverity; category: EventCategory } | null {
   const lower = text.toLowerCase();
-  // Economic crises first — they are distinct from violence and should not be
-  // overridden by later violence keywords in the same headline.
-  if (matchesAny(lower, HIGH_ECONOMIC))     return { severity: "high",   category: "economic"    };
-  // Extremism attacks (ideologically motivated violence)
-  if (matchesAny(lower, HIGH_EXTREMISM))    return { severity: "high",   category: "extremism"   };
-  if (matchesAny(lower, MEDIUM_EXTREMISM))  return { severity: "medium", category: "extremism"   };
+  // ── Specific categories first (highest precision) ─────────────────────────
+  // Terrorism — checked before generic violence so "terrorist attack kills 5"
+  // routes to terrorism rather than violent.
+  if (matchesAny(lower, HIGH_TERRORISM))       return { severity: "high",   category: "terrorism"     };
+  if (matchesAny(lower, MEDIUM_TERRORISM))     return { severity: "medium", category: "terrorism"     };
+  // Cyber — highly specific technical vocabulary
+  if (matchesAny(lower, HIGH_CYBER))           return { severity: "high",   category: "cyber"         };
+  if (matchesAny(lower, MEDIUM_CYBER))         return { severity: "medium", category: "cyber"         };
+  // Piracy — specific maritime terms
+  if (matchesAny(lower, HIGH_PIRACY))          return { severity: "high",   category: "piracy"        };
+  if (matchesAny(lower, MEDIUM_PIRACY))        return { severity: "medium", category: "piracy"        };
+  // Crime — organised crime / cartels (before generic violent)
+  if (matchesAny(lower, HIGH_CRIME))           return { severity: "high",   category: "crime"         };
+  if (matchesAny(lower, MEDIUM_CRIME))         return { severity: "medium", category: "crime"         };
+  // Health — pandemic / outbreak signals (before minor to elevate severity)
+  if (matchesAny(lower, HIGH_HEALTH))          return { severity: "high",   category: "health"        };
+  if (matchesAny(lower, MEDIUM_HEALTH))        return { severity: "medium", category: "health"        };
+  // Military operations (before escalation to distinguish active ops from threats)
+  if (matchesAny(lower, HIGH_MILITARY))        return { severity: "high",   category: "military"      };
+  if (matchesAny(lower, MEDIUM_MILITARY))      return { severity: "medium", category: "military"      };
+  // Diplomatic — peace / negotiations (before escalation)
+  if (matchesAny(lower, HIGH_DIPLOMATIC))      return { severity: "high",   category: "diplomatic"    };
+  if (matchesAny(lower, MEDIUM_DIPLOMATIC))    return { severity: "medium", category: "diplomatic"    };
+  // Commodities — resource / supply shocks (before generic economic)
+  if (matchesAny(lower, HIGH_COMMODITIES))     return { severity: "high",   category: "commodities"   };
+  if (matchesAny(lower, MEDIUM_COMMODITIES))   return { severity: "medium", category: "commodities"   };
+  // Infrastructure — before minor to elevate severity
+  if (matchesAny(lower, HIGH_INFRASTRUCTURE))  return { severity: "high",   category: "infrastructure"};
+  if (matchesAny(lower, MEDIUM_INFRASTRUCTURE))return { severity: "medium", category: "infrastructure"};
+  // Environmental — before minor / disaster
+  if (matchesAny(lower, HIGH_ENVIRONMENTAL))   return { severity: "high",   category: "environmental" };
+  if (matchesAny(lower, MEDIUM_ENVIRONMENTAL)) return { severity: "medium", category: "environmental" };
+  // Natural / humanitarian disasters
+  if (matchesAny(lower, HIGH_DISASTER))        return { severity: "high",   category: "disaster"      };
+  if (matchesAny(lower, MEDIUM_DISASTER))      return { severity: "medium", category: "disaster"      };
+  // ── Legacy broad categories ───────────────────────────────────────────────
+  // Economic crises — distinct from violence; checked before violence keywords
+  if (matchesAny(lower, HIGH_ECONOMIC))        return { severity: "high",   category: "economic"      };
+  // Extremism (ideologically motivated hate / movements)
+  if (matchesAny(lower, HIGH_EXTREMISM))       return { severity: "high",   category: "extremism"     };
+  if (matchesAny(lower, MEDIUM_EXTREMISM))     return { severity: "medium", category: "extremism"     };
   // Pre-conflict escalation signals — checked BEFORE generic violence so that
   // "killed during coup attempt" maps to escalation, not just violent.
-  if (matchesAny(lower, HIGH_ESCALATION))   return { severity: "high",   category: "escalation"  };
-  if (matchesAny(lower, MEDIUM_ESCALATION)) return { severity: "medium", category: "escalation"  };
+  if (matchesAny(lower, HIGH_ESCALATION))      return { severity: "high",   category: "escalation"    };
+  if (matchesAny(lower, MEDIUM_ESCALATION))    return { severity: "medium", category: "escalation"    };
   // Active violent events
-  if (matchesAny(lower, HIGH_VIOLENT))      return { severity: "high",   category: "violent"     };
-  if (matchesAny(lower, MEDIUM_VIOLENT))    return { severity: "medium", category: "violent"     };
-  // Civil unrest / humanitarian / minor
-  if (matchesAny(lower, LOW_MINOR))         return { severity: "low",    category: "minor"       };
+  if (matchesAny(lower, HIGH_VIOLENT))         return { severity: "high",   category: "violent"       };
+  if (matchesAny(lower, MEDIUM_VIOLENT))       return { severity: "medium", category: "violent"       };
+  // Civil demonstrations / protests
+  if (matchesAny(lower, MEDIUM_PROTEST))       return { severity: "low",    category: "protest"       };
+  // Catch-all low-level / context events
+  if (matchesAny(lower, LOW_MINOR))            return { severity: "low",    category: "minor"         };
   return null;
 }
 
@@ -378,19 +603,40 @@ export function generateMockData(): NewsMapData {
     { title: "Missile strike reported on port city",                       source: "Al Jazeera", time: h(1.5), country: "Yemen",         severity: "high",   category: "violent"  },
     { title: "Casualties reported after drone strike",                     source: "BBC",        time: h(3),   country: "Ukraine",       severity: "high",   category: "violent"  },
     { title: "Bombing attack on market leaves dozens dead",                source: "Guardian",   time: h(4),   country: "Afghanistan",   severity: "high",   category: "violent"  },
+    // ── Terrorism ─────────────────────────────────────────────────────────────
+    { title: "Mass casualties in coordinated terrorist attack on market",  source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "terrorism"  },
+    { title: "ISIS car bomb kills dozens in crowded marketplace",          source: "Al Jazeera", time: h(5),   country: "Iraq",          severity: "high",   category: "terrorism"  },
+    // ── Military ──────────────────────────────────────────────────────────────
+    { title: "Military offensive launched against rebel stronghold",       source: "BBC",        time: h(4),   country: "Myanmar",       severity: "high",   category: "military"   },
+    // ── Diplomatic ────────────────────────────────────────────────────────────
+    { title: "Peace talks collapse as both sides reject ceasefire terms",  source: "Guardian",   time: h(8),   country: "Ukraine",       severity: "high",   category: "diplomatic" },
     // ── Economic ─────────────────────────────────────────────────────────────
     { title: "Stock market crash wipes billions off exchange",             source: "BBC",        time: h(2),   country: "China",         severity: "high",   category: "economic" },
     { title: "Currency collapses amid economic meltdown",                  source: "Guardian",   time: h(6),   country: "Venezuela",     severity: "high",   category: "economic" },
     { title: "Banking crisis deepens as runs continue",                    source: "BBC",        time: h(8),   country: "Nigeria",       severity: "high",   category: "economic" },
     { title: "Trade embargo escalates trade war tensions",                 source: "Al Jazeera", time: h(3),   country: "Russia",        severity: "high",   category: "economic" },
+    // ── Commodities ───────────────────────────────────────────────────────────
+    { title: "Oil price crash triggers emergency OPEC meeting",            source: "BBC",        time: h(3),   country: "Saudi Arabia",  severity: "high",   category: "commodities"},
+    // ── Cyber ─────────────────────────────────────────────────────────────────
+    { title: "State-sponsored cyberattack takes down government systems",  source: "BBC",        time: h(3),   country: "Estonia",       severity: "high",   category: "cyber"      },
+    // ── Health ────────────────────────────────────────────────────────────────
+    { title: "WHO declares public health emergency over new outbreak",     source: "BBC",        time: h(4),   country: "Congo",         severity: "high",   category: "health"     },
+    // ── Environmental ─────────────────────────────────────────────────────────
+    { title: "Catastrophic wildfires spread across southern region",       source: "BBC",        time: h(5),   country: "Greece",        severity: "high",   category: "environmental"},
+    // ── Disaster ──────────────────────────────────────────────────────────────
+    { title: "Major earthquake kills hundreds, rescue teams deployed",     source: "BBC",        time: h(6),   country: "Turkey",        severity: "high",   category: "disaster"   },
+    // ── Infrastructure ────────────────────────────────────────────────────────
+    { title: "Pipeline explosion disrupts energy supply to region",        source: "BBC",        time: h(7),   country: "Poland",        severity: "high",   category: "infrastructure"},
+    // ── Crime ─────────────────────────────────────────────────────────────────
+    { title: "Drug cartel massacre leaves dozens dead in northern province",source: "Guardian",  time: h(6),   country: "Mexico",        severity: "high",   category: "crime"      },
+    // ── Piracy ────────────────────────────────────────────────────────────────
+    { title: "Commercial vessel seized by pirates in Gulf of Aden",        source: "BBC",        time: h(8),   country: "Somalia",       severity: "high",   category: "piracy"     },
     // ── Unrest / minor ────────────────────────────────────────────────────────
     { title: "Riot police clash with demonstrators downtown",              source: "Guardian",   time: h(7),   country: "France",        severity: "medium", category: "violent"  },
     { title: "Armed confrontation near disputed border",                   source: "BBC",        time: h(10),  country: "India",         severity: "medium", category: "violent"  },
-    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "minor"    },
+    { title: "Thousands march in peaceful climate demonstration",          source: "BBC",        time: h(4),   country: "Germany",       severity: "low",    category: "protest"  },
     { title: "Civil unrest follows disputed election results",             source: "Al Jazeera", time: h(11),  country: "Ethiopia",      severity: "low",    category: "minor"    },
     { title: "Evacuation ordered after minor earthquake",                  source: "DW",         time: h(15),  country: "Japan",         severity: "low",    category: "minor"    },
-    { title: "Food shortage worsens amid supply chain collapse",           source: "Al Jazeera", time: h(6),   country: "Sudan",         severity: "high",   category: "economic" },
-    { title: "Mass casualties in coordinated terrorist attack",            source: "BBC",        time: h(2),   country: "Somalia",       severity: "high",   category: "violent"  },
     { title: "Tensions rise as military buildup continues",                source: "DW",         time: h(8),   country: "North Korea",   severity: "low",    category: "minor"    },
     { title: "Violent clashes erupt at border crossing",                   source: "Al Jazeera", time: h(16),  country: "Myanmar",       severity: "medium", category: "violent"  },
     { title: "Kidnapping of journalists reported in conflict zone",        source: "Al Jazeera", time: h(12),  country: "Libya",         severity: "medium", category: "violent"  },

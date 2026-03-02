@@ -1,5 +1,22 @@
 export type EventSeverity = "high" | "medium" | "low";
-export type EventCategory = "violent" | "minor" | "economic" | "extremism" | "escalation";
+export type EventCategory =
+  | "violent"       // active armed conflict / generic violence
+  | "terrorism"     // terrorism, suicide attacks, car bombs
+  | "military"      // military operations, offensives, exercises
+  | "escalation"    // pre-conflict signals, coups, WMD threats
+  | "diplomatic"    // peace talks, summits, diplomatic breakdowns
+  | "extremism"     // ideologically motivated hate / extremist movements
+  | "economic"      // financial crises, market crashes, sanctions
+  | "commodities"   // food, energy and resource supply shocks
+  | "cyber"         // cyberattacks, ransomware, state-sponsored hacking
+  | "health"        // pandemics, disease outbreaks, health emergencies
+  | "environmental" // climate disasters, wildfires, major ecological events
+  | "disaster"      // natural disasters — earthquakes, tsunamis, hurricanes
+  | "infrastructure"// attacks or failures of critical infrastructure
+  | "crime"         // organised crime, cartels, gang warfare
+  | "piracy"        // maritime piracy, vessel seizures
+  | "protest"       // civil demonstrations, strikes, civil unrest
+  | "minor";        // low-level / context events not covered above
 /**
  * Computed urgency level for a country, derived from recent event severity,
  * category mix, and trending velocity.  Used for map marker sizing/colour and
