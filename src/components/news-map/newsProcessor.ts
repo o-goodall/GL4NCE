@@ -286,10 +286,52 @@ const MEDIUM_ESCALATION = [
   "president detained", "prime minister detained",
 ];
 
-/** Check if any keyword is contained in the text */
-function matchesAny(text: string, keywords: string[]): boolean {
-  return keywords.some((kw) => text.includes(kw));
+/**
+ * Build a single precompiled RegExp from a keyword list.
+ * Joining all keywords with `|` means V8's regex engine scans the lowercased
+ * text in one pass rather than calling String.prototype.includes() once per
+ * keyword.  Metacharacters in keywords are escaped so they match literally.
+ * Using case-sensitive matching here because callers always lowercase the text
+ * before calling classifyEvent — faster than the `i` flag.
+ */
+function buildClassifyRe(keywords: string[]): RegExp {
+  return new RegExp(
+    keywords.map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+  );
 }
+
+// Precompiled once at module load — reused for every article.
+const RE_HIGH_TERRORISM       = buildClassifyRe(HIGH_TERRORISM);
+const RE_MEDIUM_TERRORISM     = buildClassifyRe(MEDIUM_TERRORISM);
+const RE_HIGH_CYBER           = buildClassifyRe(HIGH_CYBER);
+const RE_MEDIUM_CYBER         = buildClassifyRe(MEDIUM_CYBER);
+const RE_HIGH_HEALTH          = buildClassifyRe(HIGH_HEALTH);
+const RE_MEDIUM_HEALTH        = buildClassifyRe(MEDIUM_HEALTH);
+const RE_HIGH_ENVIRONMENTAL   = buildClassifyRe(HIGH_ENVIRONMENTAL);
+const RE_MEDIUM_ENVIRONMENTAL = buildClassifyRe(MEDIUM_ENVIRONMENTAL);
+const RE_HIGH_DISASTER        = buildClassifyRe(HIGH_DISASTER);
+const RE_MEDIUM_DISASTER      = buildClassifyRe(MEDIUM_DISASTER);
+const RE_HIGH_INFRASTRUCTURE  = buildClassifyRe(HIGH_INFRASTRUCTURE);
+const RE_MEDIUM_INFRASTRUCTURE= buildClassifyRe(MEDIUM_INFRASTRUCTURE);
+const RE_HIGH_CRIME           = buildClassifyRe(HIGH_CRIME);
+const RE_MEDIUM_CRIME         = buildClassifyRe(MEDIUM_CRIME);
+const RE_HIGH_PIRACY          = buildClassifyRe(HIGH_PIRACY);
+const RE_MEDIUM_PIRACY        = buildClassifyRe(MEDIUM_PIRACY);
+const RE_HIGH_DIPLOMATIC      = buildClassifyRe(HIGH_DIPLOMATIC);
+const RE_MEDIUM_DIPLOMATIC    = buildClassifyRe(MEDIUM_DIPLOMATIC);
+const RE_HIGH_MILITARY        = buildClassifyRe(HIGH_MILITARY);
+const RE_MEDIUM_MILITARY      = buildClassifyRe(MEDIUM_MILITARY);
+const RE_HIGH_COMMODITIES     = buildClassifyRe(HIGH_COMMODITIES);
+const RE_MEDIUM_COMMODITIES   = buildClassifyRe(MEDIUM_COMMODITIES);
+const RE_MEDIUM_PROTEST       = buildClassifyRe(MEDIUM_PROTEST);
+const RE_HIGH_ECONOMIC        = buildClassifyRe(HIGH_ECONOMIC);
+const RE_HIGH_EXTREMISM       = buildClassifyRe(HIGH_EXTREMISM);
+const RE_MEDIUM_EXTREMISM     = buildClassifyRe(MEDIUM_EXTREMISM);
+const RE_HIGH_ESCALATION      = buildClassifyRe(HIGH_ESCALATION);
+const RE_MEDIUM_ESCALATION    = buildClassifyRe(MEDIUM_ESCALATION);
+const RE_HIGH_VIOLENT         = buildClassifyRe(HIGH_VIOLENT);
+const RE_MEDIUM_VIOLENT       = buildClassifyRe(MEDIUM_VIOLENT);
+const RE_LOW_MINOR            = buildClassifyRe(LOW_MINOR);
 
 const TRENDING_THRESHOLD = 3;
 const SEVERITY_WEIGHTS: Record<EventSeverity, number> = { high: 3, medium: 2, low: 1 };
@@ -353,55 +395,55 @@ export function classifyEvent(text: string): { severity: EventSeverity; category
   // ── Specific categories first (highest precision) ─────────────────────────
   // Terrorism — checked before generic violence so "terrorist attack kills 5"
   // routes to terrorism rather than violent.
-  if (matchesAny(lower, HIGH_TERRORISM))       return { severity: "high",   category: "terrorism"     };
-  if (matchesAny(lower, MEDIUM_TERRORISM))     return { severity: "medium", category: "terrorism"     };
+  if (RE_HIGH_TERRORISM.test(lower))       return { severity: "high",   category: "terrorism"     };
+  if (RE_MEDIUM_TERRORISM.test(lower))     return { severity: "medium", category: "terrorism"     };
   // Cyber — highly specific technical vocabulary
-  if (matchesAny(lower, HIGH_CYBER))           return { severity: "high",   category: "cyber"         };
-  if (matchesAny(lower, MEDIUM_CYBER))         return { severity: "medium", category: "cyber"         };
+  if (RE_HIGH_CYBER.test(lower))           return { severity: "high",   category: "cyber"         };
+  if (RE_MEDIUM_CYBER.test(lower))         return { severity: "medium", category: "cyber"         };
   // Piracy — specific maritime terms
-  if (matchesAny(lower, HIGH_PIRACY))          return { severity: "high",   category: "piracy"        };
-  if (matchesAny(lower, MEDIUM_PIRACY))        return { severity: "medium", category: "piracy"        };
+  if (RE_HIGH_PIRACY.test(lower))          return { severity: "high",   category: "piracy"        };
+  if (RE_MEDIUM_PIRACY.test(lower))        return { severity: "medium", category: "piracy"        };
   // Crime — organised crime / cartels (before generic violent)
-  if (matchesAny(lower, HIGH_CRIME))           return { severity: "high",   category: "crime"         };
-  if (matchesAny(lower, MEDIUM_CRIME))         return { severity: "medium", category: "crime"         };
+  if (RE_HIGH_CRIME.test(lower))           return { severity: "high",   category: "crime"         };
+  if (RE_MEDIUM_CRIME.test(lower))         return { severity: "medium", category: "crime"         };
   // Health — pandemic / outbreak signals (before minor to elevate severity)
-  if (matchesAny(lower, HIGH_HEALTH))          return { severity: "high",   category: "health"        };
-  if (matchesAny(lower, MEDIUM_HEALTH))        return { severity: "medium", category: "health"        };
+  if (RE_HIGH_HEALTH.test(lower))          return { severity: "high",   category: "health"        };
+  if (RE_MEDIUM_HEALTH.test(lower))        return { severity: "medium", category: "health"        };
   // Military operations (before escalation to distinguish active ops from threats)
-  if (matchesAny(lower, HIGH_MILITARY))        return { severity: "high",   category: "military"      };
-  if (matchesAny(lower, MEDIUM_MILITARY))      return { severity: "medium", category: "military"      };
+  if (RE_HIGH_MILITARY.test(lower))        return { severity: "high",   category: "military"      };
+  if (RE_MEDIUM_MILITARY.test(lower))      return { severity: "medium", category: "military"      };
   // Diplomatic — peace / negotiations (before escalation)
-  if (matchesAny(lower, HIGH_DIPLOMATIC))      return { severity: "high",   category: "diplomatic"    };
-  if (matchesAny(lower, MEDIUM_DIPLOMATIC))    return { severity: "medium", category: "diplomatic"    };
+  if (RE_HIGH_DIPLOMATIC.test(lower))      return { severity: "high",   category: "diplomatic"    };
+  if (RE_MEDIUM_DIPLOMATIC.test(lower))    return { severity: "medium", category: "diplomatic"    };
   // Commodities — resource / supply shocks (before generic economic)
-  if (matchesAny(lower, HIGH_COMMODITIES))     return { severity: "high",   category: "commodities"   };
-  if (matchesAny(lower, MEDIUM_COMMODITIES))   return { severity: "medium", category: "commodities"   };
+  if (RE_HIGH_COMMODITIES.test(lower))     return { severity: "high",   category: "commodities"   };
+  if (RE_MEDIUM_COMMODITIES.test(lower))   return { severity: "medium", category: "commodities"   };
   // Infrastructure — before minor to elevate severity
-  if (matchesAny(lower, HIGH_INFRASTRUCTURE))  return { severity: "high",   category: "infrastructure"};
-  if (matchesAny(lower, MEDIUM_INFRASTRUCTURE))return { severity: "medium", category: "infrastructure"};
+  if (RE_HIGH_INFRASTRUCTURE.test(lower))  return { severity: "high",   category: "infrastructure"};
+  if (RE_MEDIUM_INFRASTRUCTURE.test(lower))return { severity: "medium", category: "infrastructure"};
   // Environmental — before minor / disaster
-  if (matchesAny(lower, HIGH_ENVIRONMENTAL))   return { severity: "high",   category: "environmental" };
-  if (matchesAny(lower, MEDIUM_ENVIRONMENTAL)) return { severity: "medium", category: "environmental" };
+  if (RE_HIGH_ENVIRONMENTAL.test(lower))   return { severity: "high",   category: "environmental" };
+  if (RE_MEDIUM_ENVIRONMENTAL.test(lower)) return { severity: "medium", category: "environmental" };
   // Natural / humanitarian disasters
-  if (matchesAny(lower, HIGH_DISASTER))        return { severity: "high",   category: "disaster"      };
-  if (matchesAny(lower, MEDIUM_DISASTER))      return { severity: "medium", category: "disaster"      };
+  if (RE_HIGH_DISASTER.test(lower))        return { severity: "high",   category: "disaster"      };
+  if (RE_MEDIUM_DISASTER.test(lower))      return { severity: "medium", category: "disaster"      };
   // ── Legacy broad categories ───────────────────────────────────────────────
   // Economic crises — distinct from violence; checked before violence keywords
-  if (matchesAny(lower, HIGH_ECONOMIC))        return { severity: "high",   category: "economic"      };
+  if (RE_HIGH_ECONOMIC.test(lower))        return { severity: "high",   category: "economic"      };
   // Extremism (ideologically motivated hate / movements)
-  if (matchesAny(lower, HIGH_EXTREMISM))       return { severity: "high",   category: "extremism"     };
-  if (matchesAny(lower, MEDIUM_EXTREMISM))     return { severity: "medium", category: "extremism"     };
+  if (RE_HIGH_EXTREMISM.test(lower))       return { severity: "high",   category: "extremism"     };
+  if (RE_MEDIUM_EXTREMISM.test(lower))     return { severity: "medium", category: "extremism"     };
   // Pre-conflict escalation signals — checked BEFORE generic violence so that
   // "killed during coup attempt" maps to escalation, not just violent.
-  if (matchesAny(lower, HIGH_ESCALATION))      return { severity: "high",   category: "escalation"    };
-  if (matchesAny(lower, MEDIUM_ESCALATION))    return { severity: "medium", category: "escalation"    };
+  if (RE_HIGH_ESCALATION.test(lower))      return { severity: "high",   category: "escalation"    };
+  if (RE_MEDIUM_ESCALATION.test(lower))    return { severity: "medium", category: "escalation"    };
   // Active violent events
-  if (matchesAny(lower, HIGH_VIOLENT))         return { severity: "high",   category: "violent"       };
-  if (matchesAny(lower, MEDIUM_VIOLENT))       return { severity: "medium", category: "violent"       };
+  if (RE_HIGH_VIOLENT.test(lower))         return { severity: "high",   category: "violent"       };
+  if (RE_MEDIUM_VIOLENT.test(lower))       return { severity: "medium", category: "violent"       };
   // Civil demonstrations / protests
-  if (matchesAny(lower, MEDIUM_PROTEST))       return { severity: "low",    category: "protest"       };
+  if (RE_MEDIUM_PROTEST.test(lower))       return { severity: "low",    category: "protest"       };
   // Catch-all low-level / context events
-  if (matchesAny(lower, LOW_MINOR))            return { severity: "low",    category: "minor"         };
+  if (RE_LOW_MINOR.test(lower))            return { severity: "low",    category: "minor"         };
   return null;
 }
 
@@ -416,10 +458,28 @@ export function detectCountry(text: string): string | null {
   return null;
 }
 
+/**
+ * Memoised ISO-8601 → epoch-ms conversion.
+ * Each unique timestamp string is parsed only once; the result is reused
+ * across isWithinRetentionWindow, computeAlertLevel, computeTrending, and
+ * the events sort in aggregateCountries.  Cache is capped at 2 000 entries
+ * and evicts the oldest entry on overflow (Map preserves insertion order).
+ */
+const _timeMsCache = new Map<string, number>();
+function parseTimeMs(iso: string): number {
+  let ms = _timeMsCache.get(iso);
+  if (ms === undefined) {
+    ms = new Date(iso).getTime();
+    if (_timeMsCache.size >= 2000) {
+      _timeMsCache.delete(_timeMsCache.keys().next().value as string);
+    }
+    _timeMsCache.set(iso, ms);
+  }
+  return ms;
+}
+
 function isWithinRetentionWindow(isoTime: string): boolean {
-  const eventMs = new Date(isoTime).getTime();
-  const cutoffMs = Date.now() - RETENTION_HOURS * 3_600_000;
-  return eventMs >= cutoffMs;
+  return parseTimeMs(isoTime) >= Date.now() - RETENTION_HOURS * 3_600_000;
 }
 
 /**
@@ -428,7 +488,7 @@ function isWithinRetentionWindow(isoTime: string): boolean {
  */
 function computeAlertLevel(events: NewsEvent[], isTrending: boolean): AlertLevel {
   const cutoff24h = Date.now() - 24 * 3_600_000;
-  const recent = events.filter((e) => new Date(e.time).getTime() >= cutoff24h);
+  const recent = events.filter((e) => parseTimeMs(e.time) >= cutoff24h);
   const pool = recent.length > 0 ? recent : events;
   const score = pool.reduce(
     (sum, ev) => sum + SEVERITY_WEIGHTS[ev.severity] * CATEGORY_SCORE_MULTIPLIERS[ev.category],
@@ -467,7 +527,7 @@ function computeTrending(events: NewsEvent[]): { trending: Set<string>; trending
   const codesWithEvents = new Set<string>();
 
   for (const ev of events) {
-    const evTime = new Date(ev.time).getTime();
+    const evTime = parseTimeMs(ev.time);
     if (evTime < baselineCutoff) continue;
 
     // Every event within the window counts as "active" for conflict-group linking
@@ -557,7 +617,7 @@ export function aggregateCountries(events: NewsEvent[]): NewsMapData {
       trending: isTrending,
       trendingRank: isTrending ? (trendingRanks.get(code) ?? undefined) : undefined,
       alertLevel: computeAlertLevel(evs, isTrending),
-      events: evs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()),
+      events: evs.sort((a, b) => parseTimeMs(b.time) - parseTimeMs(a.time)),
     };
   });
 
