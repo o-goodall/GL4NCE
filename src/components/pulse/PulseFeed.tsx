@@ -8,34 +8,33 @@ import {
   type PulseCategory,
 } from "./types";
 
-// ── Category styles — dot colour + text label colour ──────────────────────────
-// Inherits the same palette used by LiveEventFeed for flashpoint categories;
-// extended with Pulse-only additions.
-const CATEGORY_COLOUR: Record<PulseCategory, { dot: string; label: string }> = {
-  violent:        { dot: "bg-error-500",   label: "text-error-600   dark:text-error-400"   },
-  terrorism:      { dot: "bg-error-600",   label: "text-error-700   dark:text-error-300"   },
-  military:       { dot: "bg-orange-600",  label: "text-orange-700  dark:text-orange-300"  },
-  escalation:     { dot: "bg-orange-500",  label: "text-orange-600  dark:text-orange-400"  },
-  diplomatic:     { dot: "bg-purple-600",  label: "text-purple-600  dark:text-purple-400"  },
-  extremism:      { dot: "bg-brand-600",   label: "text-brand-600   dark:text-brand-300"   },
-  economic:       { dot: "bg-blue-600",    label: "text-blue-600    dark:text-blue-400"    },
-  commodities:    { dot: "bg-blue-700",    label: "text-blue-700    dark:text-blue-300"    },
-  cyber:          { dot: "bg-indigo-600",  label: "text-indigo-600  dark:text-indigo-400"  },
-  health:         { dot: "bg-teal-600",    label: "text-teal-600    dark:text-teal-400"    },
-  environmental:  { dot: "bg-green-600",   label: "text-green-600   dark:text-green-400"   },
-  disaster:       { dot: "bg-amber-600",   label: "text-amber-600   dark:text-amber-400"   },
-  infrastructure: { dot: "bg-yellow-600",  label: "text-yellow-600  dark:text-yellow-400"  },
-  crime:          { dot: "bg-rose-600",    label: "text-rose-600    dark:text-rose-400"    },
-  piracy:         { dot: "bg-cyan-600",    label: "text-cyan-600    dark:text-cyan-400"    },
-  protest:        { dot: "bg-warning-500", label: "text-warning-600 dark:text-warning-400" },
-  minor:          { dot: "bg-gray-400",    label: "text-gray-500    dark:text-gray-400"    },
-  human_rights:   { dot: "bg-fuchsia-600", label: "text-fuchsia-600 dark:text-fuchsia-400" },
-  migration:      { dot: "bg-sky-600",     label: "text-sky-600     dark:text-sky-400"     },
-  geopolitics:    { dot: "bg-violet-600",  label: "text-violet-600  dark:text-violet-400"  },
-  energy:         { dot: "bg-lime-600",    label: "text-lime-600    dark:text-lime-400"    },
-  crypto:         { dot: "bg-yellow-500",  label: "text-yellow-600  dark:text-yellow-400"  },
-  technology:     { dot: "bg-indigo-500",  label: "text-indigo-500  dark:text-indigo-400"  },
-  ai_ethics:      { dot: "bg-purple-500",  label: "text-purple-500  dark:text-purple-400"  },
+// ── Category gradients — dark-to-lighter header backgrounds ──────────────────
+// Uses standard Tailwind color scale (dark shades so white text is legible).
+const CATEGORY_GRADIENT: Record<PulseCategory, string> = {
+  violent:        "from-red-900    to-red-700",
+  terrorism:      "from-rose-900   to-red-900",
+  military:       "from-orange-900 to-orange-700",
+  escalation:     "from-orange-900 to-amber-800",
+  diplomatic:     "from-purple-900 to-purple-700",
+  extremism:      "from-pink-900   to-pink-700",
+  economic:       "from-blue-900   to-blue-700",
+  commodities:    "from-blue-900   to-sky-800",
+  cyber:          "from-indigo-900 to-indigo-700",
+  health:         "from-teal-900   to-teal-700",
+  environmental:  "from-green-900  to-green-700",
+  disaster:       "from-amber-900  to-amber-700",
+  infrastructure: "from-yellow-900 to-yellow-700",
+  crime:          "from-rose-900   to-rose-700",
+  piracy:         "from-cyan-900   to-cyan-700",
+  protest:        "from-orange-900 to-yellow-900",
+  minor:          "from-gray-800   to-gray-700",
+  human_rights:   "from-fuchsia-900 to-fuchsia-700",
+  migration:      "from-sky-900    to-sky-700",
+  geopolitics:    "from-violet-900 to-violet-700",
+  energy:         "from-lime-900   to-lime-700",
+  crypto:         "from-yellow-900 to-amber-900",
+  technology:     "from-indigo-900 to-blue-900",
+  ai_ethics:      "from-purple-900 to-purple-700",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,68 +47,75 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d`;
 }
 
-// ── ArticleRow ─────────────────────────────────────────────────────────────────
-const ArticleRow = memo(function ArticleRow({ article }: { article: PulseArticle }) {
-  const colour = CATEGORY_COLOUR[article.category];
+// ── ArticleCard ────────────────────────────────────────────────────────────────
+const ArticleCard = memo(function ArticleCard({ article }: { article: PulseArticle }) {
+  const gradient = CATEGORY_GRADIENT[article.category];
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0 dark:border-gray-800">
-      {/* Category dot */}
-      <span
-        className={`mt-1.5 shrink-0 h-2 w-2 rounded-full ${colour.dot}`}
-        aria-label={PULSE_CATEGORY_LABEL[article.category]}
-      />
-      <div className="flex-1 min-w-0">
-        {/* Headline */}
-        <p className="text-sm font-semibold text-gray-800 dark:text-white/90 leading-snug line-clamp-2">
+    <div className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl">
+      {/* Gradient header — contains category, time, title, description, Read More */}
+      <div className={`flex flex-col gap-2 p-4 bg-gradient-to-br ${gradient} min-h-[9rem]`}>
+        {/* Top row: category badge + time */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+            {PULSE_CATEGORY_LABEL[article.category]}
+          </span>
+          <span className="text-[10px] text-white/60 tabular-nums shrink-0">
+            {relativeTime(article.time)}
+          </span>
+        </div>
+        {/* Title */}
+        <h3 className="text-base font-bold text-white leading-snug line-clamp-3 flex-1" title={article.title}>
           {article.title}
-        </p>
+        </h3>
         {/* Description */}
         {article.description && (
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2">
+          <p className="text-sm text-white/75 leading-relaxed line-clamp-2">
             {article.description}
           </p>
         )}
-        {/* Meta row — matches LiveEventFeed FeedRow style */}
-        <div className="flex items-center gap-1.5 mt-1 flex-wrap text-[10px] text-gray-400 dark:text-gray-500">
+        {/* Read More button */}
+        {article.link && (
+          <a
+            href={article.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 self-start inline-flex items-center rounded-lg border border-white/50 bg-transparent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/15"
+            aria-label={`Read: ${article.title}`}
+          >
+            Read More ↗
+          </a>
+        )}
+      </div>
+      {/* Meta footer — author / source */}
+      <div className="px-4 py-2.5 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">
           {article.author && (
-            <>
-              <span className="font-medium truncate max-w-[14ch]">{article.author}</span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="font-medium text-gray-500 dark:text-gray-400">{article.author} · </span>
           )}
-          <span className="truncate">{article.source}</span>
-          <span aria-hidden="true">·</span>
-          <span className="tabular-nums shrink-0">{relativeTime(article.time)}</span>
-          <span aria-hidden="true">·</span>
-          <span className={`shrink-0 font-medium uppercase ${colour.label}`}>
-            {PULSE_CATEGORY_LABEL[article.category]}
-          </span>
-          {article.link && (
-            <a
-              href={article.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
-              aria-label={`Read: ${article.title}`}
-            >
-              Read ↗
-            </a>
-          )}
-        </div>
+          {article.source}
+        </p>
       </div>
     </div>
   );
 });
 
-// ── Loading skeleton row ───────────────────────────────────────────────────────
-function SkeletonRow() {
+// ── Loading skeleton card ──────────────────────────────────────────────────────
+function SkeletonCard() {
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-800 animate-pulse">
-      <div className="mt-1.5 shrink-0 h-2 w-2 rounded-full bg-gray-200 dark:bg-gray-700" />
-      <div className="flex-1 space-y-1.5">
-        <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-full" />
-        <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-4/5" />
-        <div className="h-2.5 bg-gray-100 dark:bg-gray-800 rounded w-3/5 mt-1" />
+    <div className="flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 animate-pulse">
+      <div className="p-4 bg-gray-800/60 min-h-[9rem] flex flex-col gap-2">
+        <div className="flex justify-between gap-2">
+          <div className="h-4 bg-white/10 rounded-full w-20" />
+          <div className="h-3 bg-white/10 rounded w-8" />
+        </div>
+        <div className="h-4 bg-white/10 rounded w-full mt-1" />
+        <div className="h-4 bg-white/10 rounded w-4/5" />
+        <div className="h-3 bg-white/10 rounded w-full mt-1" />
+        <div className="h-3 bg-white/10 rounded w-3/4" />
+        <div className="mt-1 h-7 bg-white/10 rounded-lg w-24" />
+      </div>
+      <div className="px-4 py-2.5 border-t border-gray-100 dark:border-gray-800">
+        <div className="h-2.5 bg-gray-100 dark:bg-gray-800 rounded w-2/5" />
       </div>
     </div>
   );
@@ -117,7 +123,7 @@ function SkeletonRow() {
 
 // ── PulseFeed ──────────────────────────────────────────────────────────────────
 const ALL_GROUP = "All";
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 12;
 
 export default function PulseFeed() {
   const { data, loading, error, refresh } = usePulse();
@@ -173,7 +179,9 @@ export default function PulseFeed() {
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
           <p className="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
         </div>
-        {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
       </div>
     );
   }
@@ -267,16 +275,16 @@ export default function PulseFeed() {
         />
       </div>
 
-      {/* Article list */}
+      {/* Article grid — 1 col mobile, 2 col sm, 3 col xl */}
       {displayed.length === 0 ? (
         <p className="text-center text-sm text-gray-400 dark:text-gray-500 py-10">
           {search.trim() ? `No articles match "${search}"` : "No articles in this category yet."}
         </p>
       ) : (
         <>
-          <div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {displayed.map((article, idx) => (
-              <ArticleRow
+              <ArticleCard
                 key={`${article.source}-${article.time}-${article.title.slice(0, 24)}-${idx}`}
                 article={article}
               />
@@ -287,7 +295,7 @@ export default function PulseFeed() {
           {hasMore && (
             <button
               onClick={() => setPage((p) => p + 1)}
-              className="mt-3 w-full text-center text-xs font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors py-1"
+              className="mt-4 w-full text-center text-xs font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors py-1"
             >
               Show {Math.min(PAGE_SIZE, filtered.length - totalShown)} more ↓
             </button>
