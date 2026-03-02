@@ -5,7 +5,6 @@ import {
   ISeriesApi,
   CandlestickSeries,
   LineSeries,
-  PriceScaleMode,
   LineStyle,
   CrosshairMode,
   ColorType,
@@ -34,7 +33,7 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
 };
 
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "5Y", "ALL"];
-const MA_PERIOD = 20;
+const MA_PERIOD = 200;
 const ATH_CACHE_KEY = "btc-ath";
 const ATH_CACHE_TTL = 86_400_000; // 24 hours
 
@@ -125,7 +124,6 @@ export default function BtcLiveChart() {
 
   // React state (triggers re-renders)
   const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
-  const [logScale,   setLogScale]   = useState(false);
   const [showMA,     setShowMA]     = useState(false);
   const [ohlcData,   setOhlcData]   = useState<OHLCPoint[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -182,8 +180,8 @@ export default function BtcLiveChart() {
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "#374151", style: LineStyle.Dotted },
-        horzLines: { color: "#374151", style: LineStyle.Dotted },
+        vertLines: { color: "#1F2937", style: LineStyle.Solid },
+        horzLines: { color: "#1F2937", style: LineStyle.Solid },
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
@@ -318,13 +316,6 @@ export default function BtcLiveChart() {
     series.setData(ohlcData);
     chartRef.current?.timeScale().fitContent();
   }, [ohlcData]);
-
-  // ── Log / linear scale toggle ────────────────────────────────────────────────
-  useEffect(() => {
-    chartRef.current?.priceScale("right").applyOptions({
-      mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-    });
-  }, [logScale]);
 
   // ── MA series toggle + data update ──────────────────────────────────────────
   useEffect(() => {
@@ -495,19 +486,8 @@ export default function BtcLiveChart() {
             ))}
           </div>
 
-          {/* Scale + overlay toggles */}
+          {/* MA overlay toggle */}
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setLogScale((s) => !s)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                logScale
-                  ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
-                  : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
-              }`}
-              aria-pressed={logScale}
-            >
-              Log
-            </button>
             <button
               onClick={() => setShowMA((m) => !m)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
