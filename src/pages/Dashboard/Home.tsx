@@ -12,39 +12,39 @@ export default function Home() {
         description="GL4NCE - Bitcoin DCA Signal Dashboard"
       />
       <div className="grid grid-cols-12 gap-4 md:gap-6">
-        {/* Row 1: Tile 2 (Money Printer) + Tile 4 (DCA Signal) — inline */}
+        {/* Row 1: Tile 1 (₿ Bitcoin Live Chart) + Tile 4 (DCA Signal) — inline */}
         <div className="col-span-12 xl:col-span-7">
-          <MoneyPrinter />
+          <BtcLiveChart />
         </div>
 
         <div className="col-span-12 xl:col-span-5">
           <MonthlyTarget />
         </div>
 
-        {/* Row 2: Tile 3 (BTC/Gold) + Tile 6 (coming soon) — inline */}
+        {/* Row 2: Tile 3 (BTC/Gold) + Tile 6 (Money Printer) — inline */}
         <div className="col-span-12 xl:col-span-7">
           <BtcGoldRatio />
         </div>
 
         <div className="col-span-12 xl:col-span-5">
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6 h-full flex flex-col">
+          <MoneyPrinter />
+        </div>
+
+        {/* Tile 2: Coming Soon (content moved to tile 6) */}
+        <div className="col-span-12">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-8 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
             <div className="flex items-center gap-2 mb-4">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                6
+                2
               </span>
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
                 Coming Soon
               </h3>
             </div>
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center justify-center h-40">
               <p className="text-gray-400 dark:text-gray-500 text-sm">Coming soon</p>
             </div>
           </div>
-        </div>
-
-        {/* Tile 1: BTC Live Chart (replaces tile 1 ₿ Bitcoin) */}
-        <div className="col-span-12">
-          <BtcLiveChart />
         </div>
 
         {/* Tile 7: Coming Soon (placeholder) */}
