@@ -266,11 +266,9 @@ const MEDIUM_ESCALATION = [
   // Military movements
   "troops deployed", "troops massing", "military buildup",
   "military mobilization", "mobilisation near",
-  "war games", "live-fire drill",
   "warships deployed", "naval standoff", "aircraft carrier deployed",
   "tanks at border", "forces at border",
   // Diplomatic breakdown
-  "recalls ambassador",
   "diplomatic crisis", "severed diplomatic ties", "diplomatic breakdown",
   "new sanctions", "sanctions package", "sanctions announced",
   "border closed", "border closure", "border sealed",
