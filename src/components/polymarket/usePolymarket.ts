@@ -3,6 +3,8 @@ import type { PolymarketData, PolymarketMarket } from "./types";
 
 const POLL_MINUTES = 10;
 
+export type MarketCategory = "geo" | "macro" | "crypto";
+
 interface UsePolymarketReturn {
   data: PolymarketData | null;
   loading: boolean;
@@ -12,11 +14,11 @@ interface UsePolymarketReturn {
 }
 
 /**
- * Fetches geopolitical Polymarket predictions from the server-side API route
- * (/api/polymarket) and polls every 10 minutes. Returns empty markets on error
- * so consumers degrade gracefully.
+ * Fetches Polymarket predictions for a given category from the server-side
+ * API route (/api/polymarket?category=...) and polls every 10 minutes.
+ * Returns empty markets on error so consumers degrade gracefully.
  */
-export function usePolymarket(): UsePolymarketReturn {
+export function usePolymarket(category: MarketCategory = "geo"): UsePolymarketReturn {
   const [data, setData] = useState<PolymarketData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export function usePolymarket(): UsePolymarketReturn {
 
   const load = useCallback(async () => {
     try {
-      const resp = await fetch("/api/polymarket");
+      const resp = await fetch(`/api/polymarket?category=${encodeURIComponent(category)}`);
       if (resp.ok) {
         const result = (await resp.json()) as PolymarketData;
         setData(result);
@@ -37,9 +39,12 @@ export function usePolymarket(): UsePolymarketReturn {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [category]);
 
   useEffect(() => {
+    // Reset to loading state when category changes (clears stale data immediately).
+    setData(null);
+    setLoading(true);
     void load();
     timerRef.current = setInterval(() => { void load(); }, POLL_MINUTES * 60_000);
     return () => {

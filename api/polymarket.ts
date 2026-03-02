@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { URL } from "node:url";
 
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
 const CACHE_TTL_MS = 5 * 60 * 1_000; // 5 minutes
@@ -49,8 +50,17 @@ export interface PolymarketData {
   lastUpdated: string;
 }
 
-// ── In-memory cache ───────────────────────────────────────────────────────────
-let cache: { data: PolymarketData; expiresAt: number } | null = null;
+// ── Category tags ─────────────────────────────────────────────────────────────
+export type MarketCategory = "geo" | "macro" | "crypto";
+
+const CATEGORY_TAGS: Record<MarketCategory, readonly string[]> = {
+  geo:    ["geopolitics", "war", "ukraine", "middle-east", "nato"],
+  macro:  ["federal-reserve", "economics", "interest-rates", "g7", "finance"],
+  crypto: ["crypto", "bitcoin", "ethereum", "defi"],
+};
+
+// ── In-memory cache (per category) ────────────────────────────────────────────
+const cache = new Map<MarketCategory, { data: PolymarketData; expiresAt: number }>();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function parseJsonArray(value: unknown): string[] {
@@ -114,15 +124,14 @@ async function fetchEventsForTag(tag: string): Promise<RawEvent[]> {
   }
 }
 
-const GEOPOLITICAL_TAGS = ["geopolitics", "war", "ukraine", "middle-east", "nato"] as const;
-
-async function fetchGeopoliticalMarkets(): Promise<PolymarketMarket[]> {
+async function fetchMarketsForCategory(category: MarketCategory): Promise<PolymarketMarket[]> {
+  const tags = CATEGORY_TAGS[category];
   const seen = new Set<string>();
   const markets: PolymarketMarket[] = [];
 
   // Fan out in parallel — one request per tag, fastest-first merge
   const results = await Promise.allSettled(
-    GEOPOLITICAL_TAGS.map((tag) => fetchEventsForTag(tag)),
+    tags.map((tag) => fetchEventsForTag(tag)),
   );
 
   for (const result of results) {
@@ -148,20 +157,28 @@ async function fetchGeopoliticalMarkets(): Promise<PolymarketMarket[]> {
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(
-  _req: IncomingMessage,
+  req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   try {
-    if (cache && Date.now() < cache.expiresAt) {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const raw = url.searchParams.get("category") ?? "geo";
+    const validCategories = Object.keys(CATEGORY_TAGS) as MarketCategory[];
+    const category: MarketCategory = validCategories.includes(raw as MarketCategory)
+      ? (raw as MarketCategory)
+      : "geo";
+
+    const cached = cache.get(category);
+    if (cached && Date.now() < cached.expiresAt) {
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
-      res.end(JSON.stringify(cache.data));
+      res.end(JSON.stringify(cached.data));
       return;
     }
 
-    const markets = await fetchGeopoliticalMarkets();
+    const markets = await fetchMarketsForCategory(category);
     const data: PolymarketData = { markets, lastUpdated: new Date().toISOString() };
-    cache = { data, expiresAt: Date.now() + CACHE_TTL_MS };
+    cache.set(category, { data, expiresAt: Date.now() + CACHE_TTL_MS });
 
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
