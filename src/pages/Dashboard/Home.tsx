@@ -1,5 +1,5 @@
 import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
-import StatisticsChart from "../../components/ecommerce/StatisticsChart";
+import BtcLiveChart from "../../components/ecommerce/BtcLiveChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import RecentOrders from "../../components/ecommerce/RecentOrders";
 import PageMeta from "../../components/common/PageMeta";
@@ -21,7 +21,7 @@ export default function Home() {
         </div>
 
         <div className="col-span-12">
-          <StatisticsChart />
+          <BtcLiveChart />
         </div>
 
         <div className="col-span-12">
