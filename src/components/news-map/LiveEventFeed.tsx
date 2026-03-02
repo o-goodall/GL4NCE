@@ -242,7 +242,7 @@ const MAX_ROWS_EXPANDED = 25;
 export default function LiveEventFeed({
   countries,
   maxRows = 10,
-  onCountryClick,
+  onCountryClick: _onCountryClick,
   panelMode = false,
   activeCountry,
   onDismissActive,
