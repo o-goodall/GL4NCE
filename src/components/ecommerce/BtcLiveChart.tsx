@@ -597,63 +597,62 @@ export default function BtcLiveChart() {
             </span>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Bitcoin</h3>
           </div>
-          <div className="mt-1 ml-8 space-y-1.5">
-            {/* Row 1: USD price + change badge (24h only on 1D, else tf%) */}
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span
-                className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
-                aria-live="polite"
-                aria-label={livePrice !== null ? `Bitcoin price $${fmtNum(livePrice)}` : "Loading"}
-              >
-                {livePrice !== null ? `$${fmtNum(livePrice)}` : "—"}
-              </span>
-              {timeframe === "1D" && change24h !== null && (
-                <Badge color={change24h >= 0 ? "success" : "error"} size="sm">
-                  {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                  {Math.abs(change24h).toFixed(2)}% 24h
-                </Badge>
-              )}
-              {timeframe !== "1D" && tfChangePct !== null && (
-                <Badge color={tfChangePct >= 0 ? "success" : "error"} size="sm">
-                  {tfChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                  {Math.abs(tfChangePct).toFixed(2)}% {timeframe}
-                </Badge>
-              )}
-            </div>
+          {/* Price columns: BTC USD | BTC/Gold oz (side-by-side when gold active) */}
+          <div className="mt-1 ml-8 flex items-start gap-4">
 
-            {/* Row 2: Gold oz price + timeframe % badge (only when gold overlay active) */}
-            {showGold && (
+            {/* ── USD column ── */}
+            <div className="flex flex-col gap-1">
               <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-lg font-semibold tabular-nums text-yellow-400">
-                  {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
+                <span
+                  className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
+                  aria-live="polite"
+                  aria-label={livePrice !== null ? `Bitcoin price $${fmtNum(livePrice)}` : "Loading"}
+                >
+                  {livePrice !== null ? `$${fmtNum(livePrice)}` : "—"}
                 </span>
-                {tfGoldChangePct !== null && (
-                  <Badge color={tfGoldChangePct >= 0 ? "success" : "error"} size="sm">
-                    {tfGoldChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                    {Math.abs(tfGoldChangePct).toFixed(2)}% {timeframe} oz
+                {timeframe === "1D" && change24h !== null && (
+                  <Badge color={change24h >= 0 ? "success" : "error"} size="sm">
+                    {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                    {Math.abs(change24h).toFixed(2)}% 24h
+                  </Badge>
+                )}
+                {timeframe !== "1D" && tfChangePct !== null && (
+                  <Badge color={tfChangePct >= 0 ? "success" : "error"} size="sm">
+                    {tfChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                    {Math.abs(tfChangePct).toFixed(2)}% {timeframe}
                   </Badge>
                 )}
               </div>
-            )}
+              {ath !== null && (
+                <span className="text-xs font-medium text-amber-500 tabular-nums">
+                  ATH ${fmtNum(ath)}
+                </span>
+              )}
+            </div>
 
-            {/* Row 3: ATH values in muted text */}
-            {(ath !== null || showGold) && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {ath !== null && (
-                  <span className="text-xs font-medium text-amber-500 tabular-nums">
-                    ATH ${fmtNum(ath)}
-                  </span>
-                )}
-                {ath !== null && showGold && (
-                  <span className="text-xs text-gray-400 dark:text-gray-600 select-none">·</span>
-                )}
-                {showGold && (
+            {/* ── Gold oz column (only when overlay active) ── */}
+            {showGold && (
+              <>
+                <div className="w-px self-stretch bg-gray-200 dark:bg-gray-700" />
+                <div className="flex flex-col gap-1">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-2xl font-bold tabular-nums text-yellow-400">
+                      {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
+                    </span>
+                    {tfGoldChangePct !== null && (
+                      <Badge color={tfGoldChangePct >= 0 ? "success" : "error"} size="sm">
+                        {tfGoldChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                        {Math.abs(tfGoldChangePct).toFixed(2)}% {timeframe} oz
+                      </Badge>
+                    )}
+                  </div>
                   <span className="text-xs font-medium text-yellow-400/70 tabular-nums">
                     ATH {goldAth.ratio.toFixed(2)} oz
                   </span>
-                )}
-              </div>
+                </div>
+              </>
             )}
+
           </div>
         </div>
 
