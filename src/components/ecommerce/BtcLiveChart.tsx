@@ -560,6 +560,24 @@ export default function BtcLiveChart() {
     ? livePrice / liveGoldPrice
     : null;
 
+  // % change over the currently loaded timeframe (first candle → live price)
+  const tfChangePct = useMemo<number | null>(() => {
+    if (!closeData.length) return null;
+    const first = closeData[0][1];
+    if (!first) return null;
+    const last = livePrice ?? closeData[closeData.length - 1][1];
+    return ((last - first) / first) * 100;
+  }, [closeData, livePrice]);
+
+  // Same but for the BTC/Gold ratio series
+  const tfGoldChangePct = useMemo<number | null>(() => {
+    if (!showGold || !ratioData.length) return null;
+    const first = ratioData[0][1];
+    if (!first) return null;
+    const last = liveRatio ?? ratioData[ratioData.length - 1][1];
+    return ((last - first) / first) * 100;
+  }, [showGold, ratioData, liveRatio]);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
@@ -579,34 +597,59 @@ export default function BtcLiveChart() {
             </span>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Bitcoin</h3>
           </div>
-          <div className="flex flex-wrap items-baseline gap-2 mt-1 ml-8">
-            <span
-              className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
-              aria-live="polite"
-              aria-label={livePrice !== null ? `Bitcoin price $${fmtNum(livePrice)}` : "Loading"}
-            >
-              {livePrice !== null ? `$${fmtNum(livePrice)}` : "—"}
-            </span>
+          <div className="mt-1 ml-8 space-y-1.5">
+            {/* Row 1: USD price + 24h badge + timeframe % badge */}
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span
+                className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
+                aria-live="polite"
+                aria-label={livePrice !== null ? `Bitcoin price $${fmtNum(livePrice)}` : "Loading"}
+              >
+                {livePrice !== null ? `$${fmtNum(livePrice)}` : "—"}
+              </span>
+              {change24h !== null && (
+                <Badge color={change24h >= 0 ? "success" : "error"} size="sm">
+                  {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                  {Math.abs(change24h).toFixed(2)}% 24h
+                </Badge>
+              )}
+              {tfChangePct !== null && timeframe !== "1D" && (
+                <Badge color={tfChangePct >= 0 ? "success" : "error"} size="sm">
+                  {tfChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                  {Math.abs(tfChangePct).toFixed(2)}% {timeframe}
+                </Badge>
+              )}
+            </div>
+
+            {/* Row 2: Gold oz price + timeframe % badge (only when gold overlay active) */}
             {showGold && (
-              <span className="text-xl font-semibold tabular-nums text-yellow-400">
-                {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
-              </span>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="text-lg font-semibold tabular-nums text-yellow-400">
+                  {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
+                </span>
+                {tfGoldChangePct !== null && (
+                  <Badge color={tfGoldChangePct >= 0 ? "success" : "error"} size="sm">
+                    {tfGoldChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                    {Math.abs(tfGoldChangePct).toFixed(2)}% {timeframe} oz
+                  </Badge>
+                )}
+              </div>
             )}
-            {change24h !== null && (
-              <Badge color={change24h >= 0 ? "success" : "error"}>
-                {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                {Math.abs(change24h).toFixed(2)}%
-              </Badge>
-            )}
-            {ath !== null && (
-              <span className="text-xs font-medium text-amber-500 tabular-nums">
-                ATH ${fmtNum(ath)}
-              </span>
-            )}
-            {showGold && (
-              <span className="text-xs font-medium text-yellow-400 tabular-nums">
-                ATH {goldAth.ratio.toFixed(2)} oz
-              </span>
+
+            {/* Row 3: ATH values in muted text */}
+            {(ath !== null || showGold) && (
+              <div className="flex flex-wrap items-center gap-3">
+                {ath !== null && (
+                  <span className="text-xs font-medium text-amber-500 tabular-nums">
+                    ATH ${fmtNum(ath)}
+                  </span>
+                )}
+                {showGold && (
+                  <span className="text-xs font-medium text-yellow-400/70 tabular-nums">
+                    ATH {goldAth.ratio.toFixed(2)} oz
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
