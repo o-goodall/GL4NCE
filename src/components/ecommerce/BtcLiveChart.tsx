@@ -126,6 +126,7 @@ const GOLD_TF_CONFIG: Record<GoldTF, { goldRange: string; goldInterval: string; 
 const GOLD_RATIO_ATH_FALLBACK = { ratio: 38.51, date: "17 Dec 2024" };
 const GOLD_ATH_CACHE_KEY = "btc-gold-ath";
 const GOLD_ATH_CACHE_TTL = 86_400_000;
+const GOLD_POLL_MS = 10 * 60 * 1_000; // 10 minutes
 
 // ── Generic localStorage cache helpers (for gold overlay) ─────────────────────
 function getCache<T>(key: string, ttl: number): T | null {
@@ -142,6 +143,15 @@ function setCache<T>(key: string, data: T): void {
   try {
     localStorage.setItem(key, JSON.stringify({ data, fetchedAt: Date.now() }));
   } catch { /* ignore storage quota errors */ }
+}
+
+// ── Gold spot price fetch ─────────────────────────────────────────────────────
+async function fetchGoldSpotPrice(signal: AbortSignal): Promise<number> {
+  const res = await fetch("/api/gold-price", { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { price: number };
+  if (!data.price || isNaN(data.price)) throw new Error("Invalid gold price");
+  return data.price;
 }
 
 // ── Gold history fetch ────────────────────────────────────────────────────────
@@ -195,6 +205,7 @@ export default function BtcLiveChart() {
   const [ath,        setATH]        = useState<number | null>(null);
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [goldAth,    setGoldAth]    = useState(GOLD_RATIO_ATH_FALLBACK);
+  const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
   // ── ATH fetch on mount ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -229,6 +240,20 @@ export default function BtcLiveChart() {
       });
     return () => ctrl.abort();
   }, [showGold, timeframe]);
+
+  // ── Gold spot price poll (active only while gold overlay is on) ───────────────
+  useEffect(() => {
+    if (!showGold) { setLiveGoldPrice(null); return; }
+    const ctrl = new AbortController();
+    const poll = () =>
+      fetchGoldSpotPrice(ctrl.signal).then(setLiveGoldPrice).catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (import.meta.env.DEV) console.error("[BtcLiveChart] Gold price error:", err);
+      });
+    poll();
+    const id = setInterval(poll, GOLD_POLL_MS);
+    return () => { ctrl.abort(); clearInterval(id); };
+  }, [showGold]);
 
   // ── Historical price fetch (with cache) ──────────────────────────────────────
   useEffect(() => {
@@ -309,6 +334,21 @@ export default function BtcLiveChart() {
     if (!showGold || !closeData.length || !goldPriceHistory.length) return [];
     return computeRatioSeries(closeData, goldPriceHistory);
   }, [showGold, closeData, goldPriceHistory]);
+
+  // ── Keep goldAth in sync with actual ratio series ─────────────────────────────
+  useEffect(() => {
+    if (!ratioData.length) return;
+    const maxPoint = ratioData.reduce((m: PricePoint, p: PricePoint) => (p[1] > m[1] ? p : m), ratioData[0]);
+    setGoldAth((prev: { ratio: number; date: string }) => {
+      if (maxPoint[1] <= prev.ratio) return prev;
+      const date = new Date(maxPoint[0]).toLocaleDateString("en-GB", {
+        day: "numeric", month: "short", year: "numeric",
+      });
+      const entry = { ratio: maxPoint[1], date };
+      setCache(GOLD_ATH_CACHE_KEY, entry);
+      return entry;
+    });
+  }, [ratioData]);
 
   const series = useMemo(() => {
     const result: { name: string; data: PricePoint[] }[] = [
@@ -465,6 +505,9 @@ export default function BtcLiveChart() {
     flash === "up"   ? "text-emerald-500" :
     flash === "down" ? "text-red-500"     :
     "text-gray-800 dark:text-white/90";
+  const liveRatio = livePrice !== null && liveGoldPrice !== null && liveGoldPrice > 0
+    ? livePrice / liveGoldPrice
+    : null;
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -493,6 +536,11 @@ export default function BtcLiveChart() {
             >
               {livePrice !== null ? `$${fmtNum(livePrice)}` : "—"}
             </span>
+            {showGold && (
+              <span className="text-xl font-semibold tabular-nums text-yellow-400">
+                {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
+              </span>
+            )}
             {change24h !== null && (
               <Badge color={change24h >= 0 ? "success" : "error"}>
                 {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
@@ -506,7 +554,7 @@ export default function BtcLiveChart() {
             )}
             {showGold && (
               <span className="text-xs font-medium text-yellow-400 tabular-nums">
-                ATH {goldAth.ratio} oz
+                ATH {goldAth.ratio.toFixed(2)} oz
               </span>
             )}
           </div>
