@@ -465,7 +465,7 @@ export default function BtcLiveChart() {
         type: "line",
         toolbar: { show: false },
         background: "transparent",
-        zoom: { enabled: true, type: "x", autoScaleYaxis: true },
+        zoom: { enabled: true, type: "x", autoScaleYaxis: !showGold },
         animations: {
           enabled: true,
           speed: 200,
