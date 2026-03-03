@@ -364,18 +364,26 @@ export default function BtcLiveChart() {
   }, [closeData, showGold, ratioData, showMA, maData]);
 
   // ── Chart options ─────────────────────────────────────────────────────────────
-  const options = useMemo<ApexOptions>(() => {
-    // Series colors — always include MA slot last so it works regardless of showMA
-    const colors = showGold
-      ? ["#10b981", "#FFD300", "#f59e0b"]   // BTC/USD, BTC/Gold oz, MA
-      : ["#10b981", "#f59e0b"];              // BTC/USD, MA
-    const strokeWidths = showGold ? [2, 2, 1.5] : [2, 1.5];
-    const strokeDashes = showGold ? [0, 0, 5]   : [0, 5];
+  // maActive: true only when the MA series is actually present in `series`
+  const maActive = showMA && maData.length > 0;
 
-    // Y-axis — single when no gold, dual when gold overlay is active
+  const options = useMemo<ApexOptions>(() => {
+    // Series colors — sized to the exact number of active series
+    const colors = showGold
+      ? (maActive ? ["#10b981", "#FFD300", "#f59e0b"] : ["#10b981", "#FFD300"])
+      : (maActive ? ["#10b981", "#f59e0b"] : ["#10b981"]);
+    const strokeWidths = showGold
+      ? (maActive ? [2, 2, 1.5] : [2, 2])
+      : (maActive ? [2, 1.5]   : [2]);
+    const strokeDashes = showGold
+      ? (maActive ? [0, 0, 5]  : [0, 0])
+      : (maActive ? [0, 5]     : [0]);
+
+    // Y-axis — single when no gold, dual (or triple with hidden MA axis) with gold
     const yaxisConfig: ApexOptions["yaxis"] = showGold
       ? [
           {
+            seriesName: "BTC/USD",
             opposite: true,
             labels: {
               style: { fontSize: "11px", colors: ["#6B7280"] },
@@ -383,16 +391,21 @@ export default function BtcLiveChart() {
             },
           },
           {
+            seriesName: "BTC/Gold (oz)",
             opposite: false,
             labels: {
               style: { fontSize: "11px", colors: ["#6B7280"] },
               formatter: (val: number) => `${val.toFixed(1)} oz`,
             },
           },
-          // Hidden axis: ApexCharts assigns series[2] (MA) to yaxis[2]; setting
-          // seriesName:"BTC/USD" here makes it mirror the BTC/USD scale without
-          // rendering an extra axis on the chart.
-          { seriesName: "BTC/USD", show: false },
+          // Add hidden MA axis ONLY when the MA series is actually in `series`.
+          // Keeping yaxis count === series count prevents ApexCharts from
+          // mis-assigning the oz axis to the MA line.
+          ...(maActive ? [{
+            seriesName: "BTC/USD",
+            opposite:   true,
+            show:       false,
+          }] : []),
         ]
       : {
           opposite: true,
@@ -401,6 +414,50 @@ export default function BtcLiveChart() {
             formatter: (val: number) => `$${fmtNum(val)}`,
           },
         };
+
+    // Custom tooltip — better spacing than the default shared tooltip
+    const tooltipCustom = ({
+      series,
+      dataPointIndex,
+      w,
+    }: {
+      series: number[][];
+      dataPointIndex: number;
+      w: { globals: { seriesX: number[][] } };
+    }): string => {
+      const ts = w.globals.seriesX[0]?.[dataPointIndex];
+      const dateStr = ts
+        ? new Date(ts).toLocaleString("en-GB", {
+            day: "numeric", month: "short",
+            hour: "2-digit", minute: "2-digit",
+          })
+        : "";
+
+      const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
+        { color: "#10b981", label: "BTC",          fmt: (v) => `$${fmtNum(v)}` },
+        ...(showGold ? [{ color: "#FFD300", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
+        ...(maActive ? [{ color: "#f59e0b", label: `MA${MA_PERIOD}`, fmt: (v: number) => `$${fmtNum(v)}` }] : []),
+      ];
+
+      const rows = defs.map((d, i) => {
+        const val = series[i]?.[dataPointIndex];
+        if (val == null) return "";
+        return (
+          `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">` +
+          `<span style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0"></span>` +
+          `<span style="color:#9ca3af;flex:1">${d.label}</span>` +
+          `<span style="color:#f9fafb;font-weight:600">${d.fmt(val)}</span>` +
+          `</div>`
+        );
+      }).join("");
+
+      return (
+        `<div style="padding:8px 12px;font-family:Inter,sans-serif;font-size:12px;min-width:170px">` +
+        `<div style="color:#6b7280;font-size:11px;margin-bottom:5px">${dateStr}</div>` +
+        rows +
+        `</div>`
+      );
+    };
 
     return {
       chart: {
@@ -443,13 +500,7 @@ export default function BtcLiveChart() {
         enabled: true,
         shared:  true,
         theme:   "dark",
-        x: { format: "dd MMM yyyy HH:mm" },
-        y: {
-          formatter: (val: number, opts?: { seriesIndex: number }) => {
-            if (showGold && opts?.seriesIndex === 1) return `${val.toFixed(2)} oz`;
-            return `$${fmtNum(val)}`;
-          },
-        },
+        custom:  tooltipCustom,
       },
       annotations: (ath !== null || showGold) ? {
         yaxis: [
@@ -497,7 +548,7 @@ export default function BtcLiveChart() {
       } : {},
       legend: { show: false },
     };
-  }, [ath, showGold, goldAth]);
+  }, [ath, showGold, goldAth, maActive]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
