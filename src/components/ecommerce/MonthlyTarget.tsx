@@ -34,8 +34,12 @@ const BOOST_MAYER_LOW    = 15; // Mayer Multiple < 1 (price below 200DMA)
 const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
 
 // ── Chart style ────────────────────────────────────────────────────────────
-const CHART_FONT     = "Inter, sans-serif";
-const CHART_TRACK_BG = "#E5E5E7";
+const CHART_FONT        = "Inter, sans-serif";
+const CHART_TRACK_BG    = "#E5E5E7";
+// ApexCharts positions the semicircle arc center ~77% down the bounding box,
+// so the chord (open bottom) is at ~87% of the chart height. Pulling the label
+// up by this many pixels closes the gap without overlapping the arc.
+const ARC_BOTTOM_OFFSET = 28;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function roundToNearest50(n: number): number {
@@ -386,7 +390,7 @@ export default function MonthlyTarget() {
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-2 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1 flex flex-col justify-center">
+      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-2 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1 flex flex-col">
 
         {/* Header — title */}
         <div className="flex items-center gap-2">
@@ -403,7 +407,6 @@ export default function MonthlyTarget() {
           style={{
             transform: animate ? "scale(1.02)" : "scale(1)",
             transition: "transform 0.3s ease",
-            position: "relative",
           }}
         >
           <Chart
@@ -412,32 +415,22 @@ export default function MonthlyTarget() {
             type="radialBar"
             height={220}
           />
+        </div>
 
-          {/* Overlay — $ amount centred inside the arc */}
-          <div
+        {/* Recommended buy amount — pulled up flush with the arc opening */}
+        <div className="flex justify-center pb-4" style={{ marginTop: `-${ARC_BOTTOM_OFFSET}px` }}>
+          <span
             style={{
-              position: "absolute",
-              bottom: "16px",
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              pointerEvents: "none",
+              color: gaugeColor,
+              fontSize: "clamp(36px, 9vw, 52px)",
+              fontWeight: 600,
+              fontFamily: CHART_FONT,
+              lineHeight: 1,
+              transition: "color 0.3s ease",
             }}
           >
-            {/* Recommended buy amount */}
-            <span
-              style={{
-                color: gaugeColor,
-                fontSize: "clamp(36px, 9vw, 52px)",
-                fontWeight: 600,
-                fontFamily: CHART_FONT,
-                lineHeight: 1,
-                transition: "color 0.3s ease",
-              }}
-            >
-              {centerLabel}
-            </span>
-          </div>
+            {centerLabel}
+          </span>
         </div>
       </div>
 
