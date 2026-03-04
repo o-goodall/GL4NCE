@@ -24,6 +24,8 @@ const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "5Y", "ALL"];
 const MA_PERIOD = 200;
 const ATH_CACHE_KEY = "btc-ath";
 const ATH_CACHE_TTL = 86_400_000; // 24 hours
+const WMA_CACHE_KEY = "btc-200wma";
+const WMA_CACHE_TTL = 7 * 86_400_000; // 7 days (shared with MonthlyTarget)
 const CHART_UPDATE_THROTTLE_MS = 1_000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -86,14 +88,6 @@ async function fetchPrices(tf: Timeframe, signal: AbortSignal): Promise<PricePoi
   const raw = await fetchKlines(tf, signal);
   // kline tuple: [openTime, open, high, low, close, ...]
   return raw.map((k) => [k[0] as number, parseFloat(k[4])] as PricePoint);
-}
-
-async function fetchATHHigh(signal: AbortSignal): Promise<number> {
-  const raw = await fetchKlines("ALL", signal);
-  return raw.reduce((m, k) => {
-    const high = parseFloat(k[2]);
-    return high > m ? high : m;
-  }, -Infinity);
 }
 
 // ── Simple moving average (sliding window, O(n)) ──────────────────────────────
@@ -203,18 +197,38 @@ export default function BtcLiveChart() {
   const [change24h,  setChange24h]  = useState<number | null>(null);
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
   const [ath,        setATH]        = useState<number | null>(null);
+  const [wmaPrice,   setWmaPrice]   = useState<number | null>(null);
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [goldAth,    setGoldAth]    = useState(GOLD_RATIO_ATH_FALLBACK);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
-  // ── ATH fetch on mount ───────────────────────────────────────────────────────
+  // ── ATH + 200WMA fetch on mount (single ALL weekly klines call) ──────────────
   useEffect(() => {
-    const cached = getCachedATH();
-    if (cached !== null) { setATH(cached); return; }
+    const cachedATH = getCachedATH();
+    const cachedWMA = getCache<number>(WMA_CACHE_KEY, WMA_CACHE_TTL);
+    if (cachedATH !== null) setATH(cachedATH);
+    if (cachedWMA !== null) setWmaPrice(cachedWMA);
+    if (cachedATH !== null && cachedWMA !== null) return;
     const ctrl = new AbortController();
-    fetchATHHigh(ctrl.signal)
-      .then((maxHigh) => { setCachedATH(maxHigh); setATH(maxHigh); })
-      .catch(() => { /* non-critical — ATH annotation simply won't render */ });
+    fetchKlines("ALL", ctrl.signal)
+      .then((raw) => {
+        if (cachedATH === null) {
+          const maxHigh = raw.reduce((m, k) => {
+            const h = parseFloat(k[2]);
+            return h > m ? h : m;
+          }, -Infinity);
+          if (isFinite(maxHigh)) { setCachedATH(maxHigh); setATH(maxHigh); }
+        }
+        if (cachedWMA === null) {
+          const closes = raw.map((k) => parseFloat(k[4])).filter((v) => !isNaN(v));
+          if (closes.length >= MA_PERIOD) {
+            const ma200w = closes.slice(-MA_PERIOD).reduce((s, v) => s + v, 0) / MA_PERIOD;
+            setCache(WMA_CACHE_KEY, ma200w);
+            setWmaPrice(ma200w);
+          }
+        }
+      })
+      .catch(() => { /* non-critical — ATH/WMA annotations simply won't render */ });
     return () => ctrl.abort();
   }, []);
 
@@ -324,10 +338,12 @@ export default function BtcLiveChart() {
   }, []);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
+  // Rolling 200WMA line only makes sense on weekly-interval timeframes (ALL, 5Y)
+  const isWeeklyTF = TF_CONFIG[timeframe].interval === "1w";
   const maData = useMemo<PricePoint[]>(() => {
-    if (!showMA || closeData.length <= MA_PERIOD) return [];
+    if (!showMA || !isWeeklyTF || closeData.length <= MA_PERIOD) return [];
     return calcSMA(closeData, MA_PERIOD);
-  }, [closeData, showMA]);
+  }, [closeData, showMA, isWeeklyTF]);
 
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
   const ratioData = useMemo<PricePoint[]>(() => {
@@ -358,7 +374,7 @@ export default function BtcLiveChart() {
       result.push({ name: "BTC/Gold (oz)", data: ratioData });
     }
     if (showMA && maData.length > 0) {
-      result.push({ name: `MA${MA_PERIOD}`, data: maData });
+      result.push({ name: "200WMA", data: maData });
     }
     return result;
   }, [closeData, showGold, ratioData, showMA, maData]);
@@ -366,6 +382,9 @@ export default function BtcLiveChart() {
   // ── Chart options ─────────────────────────────────────────────────────────────
   // maActive: true only when the MA series is actually present in `series`
   const maActive = showMA && maData.length > 0;
+  // showWmaAnnotation: on non-weekly TFs the rolling line isn't drawn; show the
+  // current 200WMA as a horizontal reference annotation instead.
+  const showWmaAnnotation = showMA && wmaPrice !== null && !maActive;
 
   const options = useMemo<ApexOptions>(() => {
     // Series colors — sized to the exact number of active series
@@ -436,7 +455,7 @@ export default function BtcLiveChart() {
       const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
         { color: "#10b981", label: "BTC",          fmt: (v) => `$${fmtNum(v)}` },
         ...(showGold ? [{ color: "#FFD300", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
-        ...(maActive ? [{ color: "#f59e0b", label: `MA${MA_PERIOD}`, fmt: (v: number) => `$${fmtNum(v)}` }] : []),
+        ...(maActive ? [{ color: "#f59e0b", label: "200WMA", fmt: (v: number) => `$${fmtNum(v)}` }] : []),
       ];
 
       const rows = defs.map((d, i) => {
@@ -502,7 +521,7 @@ export default function BtcLiveChart() {
         theme:   "dark",
         custom:  tooltipCustom,
       },
-      annotations: (ath !== null || showGold) ? {
+      annotations: (ath !== null || showGold || showWmaAnnotation) ? {
         yaxis: [
           ...(ath !== null ? [{
             y:               ath,
@@ -544,11 +563,33 @@ export default function BtcLiveChart() {
               },
             },
           }] : []),
+          // On non-weekly timeframes the rolling MA line isn't drawn, so show
+          // the current 200WMA as a horizontal reference annotation instead.
+          ...(showWmaAnnotation ? [{
+            y:               wmaPrice as number,
+            ...(showGold ? { yAxisIndex: 0 } : {}),
+            borderColor:     "#f59e0b",
+            strokeDashArray: 4,
+            borderWidth:     1,
+            label: {
+              text:        "200WMA",
+              borderColor: "transparent",
+              position:    "right",
+              offsetX:     -4,
+              offsetY:     -6,
+              style: {
+                color:      "#f59e0b",
+                background: "transparent",
+                fontSize:   "10px",
+                fontFamily: "Inter, sans-serif",
+              },
+            },
+          }] : []),
         ],
       } : {},
       legend: { show: false },
     };
-  }, [ath, showGold, goldAth, maActive]);
+  }, [ath, showGold, goldAth, maActive, showMA, wmaPrice, showWmaAnnotation]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
@@ -693,7 +734,7 @@ export default function BtcLiveChart() {
               }`}
               aria-pressed={showMA}
             >
-              MA{MA_PERIOD}
+              200WMA
             </button>
             <button
               onClick={() => {
