@@ -112,10 +112,9 @@ interface SignalItemProps {
   active: boolean;
   label: string;
   sub: string;
-  boost: number;
 }
 
-function SignalItem({ active, label, sub, boost }: SignalItemProps) {
+function SignalItem({ active, label, sub }: SignalItemProps) {
   return (
     <div className="flex flex-col items-center gap-0.5 py-2.5 px-0.5">
       <div className="flex items-center gap-1">
@@ -142,13 +141,6 @@ function SignalItem({ active, label, sub, boost }: SignalItemProps) {
         }`}
       >
         {sub}
-      </span>
-      <span
-        className={`text-[9px] font-semibold transition-colors duration-300 ${
-          active ? "text-emerald-400 dark:text-emerald-500" : "text-gray-300 dark:text-gray-700"
-        }`}
-      >
-        +{boost}%
       </span>
     </div>
   );
@@ -325,23 +317,17 @@ export default function MonthlyTarget() {
     }
   }
 
-  // ── Signal strength label ──────────────────────────────────────────────
-  type StrengthLabel = "—" | "PASS" | "HOLD" | "BUY" | "STRONG BUY";
-  let strengthLabel: StrengthLabel = "—";
+  // ── Gauge colour ──────────────────────────────────────────────────────
   let gaugeColor = "#98a2b3";
 
   if (priceUSD !== null) {
     if (priceUSD > highPriceUSD) {
-      strengthLabel = "PASS";
       gaugeColor    = "#EF4444";
     } else if (belowWMA || (allocationPct >= 0.85 && totalBoost >= 20)) {
-      strengthLabel = "STRONG BUY";
       gaugeColor    = "#10B981";
     } else if (allocationPct >= 0.45 || totalBoost >= 10) {
-      strengthLabel = "BUY";
       gaugeColor    = "#FFD300";
     } else {
-      strengthLabel = "HOLD";
       gaugeColor    = "#F59E0B";
     }
   }
@@ -438,7 +424,7 @@ export default function MonthlyTarget() {
             height={300}
           />
 
-          {/* Overlay labels centred inside the arc */}
+          {/* Overlay — $ amount centred inside the arc */}
           <div
             style={{
               position: "absolute",
@@ -449,28 +435,11 @@ export default function MonthlyTarget() {
               pointerEvents: "none",
             }}
           >
-            {/* Signal strength label */}
-            {!isLoading && (
-              <div
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  fontFamily: CHART_FONT,
-                  letterSpacing: "0.08em",
-                  color: gaugeColor,
-                  marginBottom: "2px",
-                  transition: "color 0.3s ease",
-                }}
-              >
-                {strengthLabel}
-              </div>
-            )}
-
             {/* Recommended buy amount */}
             <span
               style={{
                 color: gaugeColor,
-                fontSize: "52px",
+                fontSize: "clamp(36px, 9vw, 52px)",
                 fontWeight: 600,
                 fontFamily: CHART_FONT,
                 lineHeight: 1,
@@ -479,21 +448,6 @@ export default function MonthlyTarget() {
             >
               {centerLabel}
             </span>
-
-            {/* Active boost indicator */}
-            {totalBoost > 0 && !isLoading && !isPass && (
-              <div
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  fontFamily: CHART_FONT,
-                  color: "#10B981",
-                  marginTop: "3px",
-                }}
-              >
-                +{totalBoost}% boost active
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -504,31 +458,26 @@ export default function MonthlyTarget() {
           active={fearActive}
           label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
           sub={fearGreed !== null ? String(fearGreed) : "—"}
-          boost={fearExtreme ? BOOST_FEAR_EXTREME : BOOST_FEAR_ACTIVE}
         />
         <SignalItem
           active={diffActive}
           label="Diff Drop"
           sub={diffChange !== null ? `${diffChange.toFixed(1)}%` : "—"}
-          boost={BOOST_DIFF_DROP}
         />
         <SignalItem
           active={halvingActive}
           label={halvingActive ? "Pre-Halving" : "Halving"}
           sub={halvingActive ? `${daysToHalving}d` : `in ${daysToWindow}d`}
-          boost={BOOST_HALVING}
         />
         <SignalItem
           active={belowWMA}
           label="Below WMA"
           sub={fmtK(lowPriceUSD)}
-          boost={BOOST_BELOW_WMA}
         />
         <SignalItem
           active={mayerActive}
           label="Mayer <1"
           sub={mayerMultiple !== null ? mayerMultiple.toFixed(2) : "—"}
-          boost={BOOST_MAYER_LOW}
         />
       </div>
     </div>
