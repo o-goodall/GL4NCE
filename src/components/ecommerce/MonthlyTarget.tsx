@@ -12,15 +12,12 @@ const ATH_CACHE_KEY = "btc-ath";       // shared with BtcLiveChart
 const ATH_CACHE_TTL = 86_400_000;      // 24 h
 const WMA_CACHE_KEY = "btc-200wma";
 const WMA_CACHE_TTL = 7 * 86_400_000;  // 7 days
-const DMA_CACHE_KEY = "btc-200dma";
-const DMA_CACHE_TTL = 86_400_000;      // 24 h
 const WMA_PERIOD    = 200;
 
 // ── Signal thresholds ──────────────────────────────────────────────────────
 const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
-const MAYER_BUY_THRESHOLD    = 1.0; // Mayer Multiple below 1 = price < 200DMA
 
 // ── Boost percentages per signal ───────────────────────────────────────────
 const BOOST_FEAR_EXTREME = 20;
@@ -28,7 +25,6 @@ const BOOST_FEAR_ACTIVE  = 10;
 const BOOST_DIFF_DROP    = 10;
 const BOOST_HALVING      = 10;
 const BOOST_BELOW_WMA    = 25; // price below 200WMA = historically rare extreme buy zone
-const BOOST_MAYER_LOW    = 15; // Mayer Multiple < 1 (price below 200DMA)
 
 // ── Next halving ───────────────────────────────────────────────────────────
 const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
@@ -72,13 +68,6 @@ type RawKline = [number, string, string, string, string, ...unknown[]];
 
 async function fetchWeeklyKlines(signal: AbortSignal): Promise<RawKline[]> {
   const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=250";
-  const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as RawKline[];
-}
-
-async function fetchDailyKlines(signal: AbortSignal): Promise<RawKline[]> {
-  const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=200";
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as RawKline[];
@@ -147,7 +136,6 @@ export default function MonthlyTarget() {
   const [priceUSD,   setPriceUSD]   = useState<number | null>(null);
   const [fearGreed,  setFearGreed]  = useState<number | null>(null);
   const [diffChange, setDiffChange] = useState<number | null>(null);
-  const [dmaPrice,   setDmaPrice]   = useState<number | null>(null);
 
   // Dynamic price boundaries
   const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
@@ -184,24 +172,6 @@ export default function MonthlyTarget() {
         }
       })
       .catch(() => { /* keep fallback values */ });
-    return () => ctrl.abort();
-  }, []);
-
-  // ── Fetch daily klines for 200DMA (Mayer Multiple) ──────────────────────
-  useEffect(() => {
-    const cached = getCachedNumber(DMA_CACHE_KEY, DMA_CACHE_TTL);
-    if (cached !== null) { setDmaPrice(cached); return; }
-
-    const ctrl = new AbortController();
-    fetchDailyKlines(ctrl.signal)
-      .then((klines) => {
-        const dma = deriveSMA(klines, 200);
-        if (dma !== null && dma > 0) {
-          setCachedNumber(DMA_CACHE_KEY, dma);
-          setDmaPrice(dma);
-        }
-      })
-      .catch(() => { /* non-critical — signal simply won't render */ });
     return () => ctrl.abort();
   }, []);
 
@@ -273,12 +243,6 @@ export default function MonthlyTarget() {
   const diffActive  = diffChange !== null && diffChange < DIFF_DROP_THRESHOLD;
   const belowWMA    = priceUSD !== null && priceUSD < lowPriceUSD;
 
-  const mayerMultiple =
-    priceUSD !== null && dmaPrice !== null && dmaPrice > 0
-      ? priceUSD / dmaPrice
-      : null;
-  const mayerActive = mayerMultiple !== null && mayerMultiple < MAYER_BUY_THRESHOLD;
-
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
@@ -291,7 +255,6 @@ export default function MonthlyTarget() {
   if (diffActive)      totalBoost += BOOST_DIFF_DROP;
   if (halvingActive)   totalBoost += BOOST_HALVING;
   if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
-  if (mayerActive)     totalBoost += BOOST_MAYER_LOW;
 
   // ── DCA calculation ────────────────────────────────────────────────────
   let recommendedBuy: number | "PASS" | null = null;
@@ -449,8 +412,8 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* Signals footer — 5 signals */}
-      <div className="grid grid-cols-5 divide-x divide-gray-200 dark:divide-gray-800">
+      {/* Signals footer — 4 signals */}
+      <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
         <SignalItem
           active={fearActive}
           label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
@@ -470,11 +433,6 @@ export default function MonthlyTarget() {
           active={belowWMA}
           label="Below WMA"
           sub={fmtK(lowPriceUSD)}
-        />
-        <SignalItem
-          active={mayerActive}
-          label="Mayer <1"
-          sub={mayerMultiple !== null ? mayerMultiple.toFixed(2) : "—"}
         />
       </div>
     </div>

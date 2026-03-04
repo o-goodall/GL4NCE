@@ -8,9 +8,10 @@ const FRED_BASE_URL  = "https://api.stlouisfed.org/fred/series/observations";
 // Balance sheet must grow by at least this percentage week-on-week to be "ON"
 const EXPAND_THRESHOLD_PCT = 0.1;
 
-// Number of weekly observations to fetch — 2 years of history is enough to
-// find the most recent expansion episode even during extended QT periods.
-const FRED_FETCH_LIMIT = 104;
+// Number of weekly observations to fetch — 5 years of history ensures we
+// can find the most recent expansion episode even during extended QT periods
+// (e.g. the Fed's 2022–2026 contraction).
+const FRED_FETCH_LIMIT = 260;
 
 // ── Central bank definitions ────────────────────────────────────────────────
 interface Bank {
