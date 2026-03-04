@@ -2,19 +2,57 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useEffect, useRef, useState } from "react";
 
-// ── POC constants ──────────────────────────────────────────────────────────
-// LOW_PRICE_USD and HIGH_PRICE_USD are now dynamic — see state below.
-// These fallbacks are used only while the async fetch is in-flight.
+// ── Fallback constants (used while async fetches are in-flight) ────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
-const HIGH_PRICE_USD_FALLBACK = 126_200; // current ATH at time of writing
-const MAX_DCA_AUD    = 1_000;
+const HIGH_PRICE_USD_FALLBACK = 126_200;
+const MAX_DCA_AUD             = 1_000;
 
 // ── Cache config ───────────────────────────────────────────────────────────
-const ATH_CACHE_KEY   = "btc-ath";          // shared with BtcLiveChart
-const ATH_CACHE_TTL   = 86_400_000;         // 24 h
-const WMA_CACHE_KEY   = "btc-200wma";
-const WMA_CACHE_TTL   = 7 * 86_400_000;     // 7 days
-const WMA_PERIOD      = 200;
+const ATH_CACHE_KEY = "btc-ath";       // shared with BtcLiveChart
+const ATH_CACHE_TTL = 86_400_000;      // 24 h
+const WMA_CACHE_KEY = "btc-200wma";
+const WMA_CACHE_TTL = 7 * 86_400_000;  // 7 days
+const DMA_CACHE_KEY = "btc-200dma";
+const DMA_CACHE_TTL = 86_400_000;      // 24 h
+const WMA_PERIOD    = 200;
+
+// ── Signal thresholds ──────────────────────────────────────────────────────
+const FEAR_EXTREME_THRESHOLD = 20;
+const FEAR_ACTIVE_THRESHOLD  = 40;
+const DIFF_DROP_THRESHOLD    = -5;
+const MAYER_BUY_THRESHOLD    = 1.0; // Mayer Multiple below 1 = price < 200DMA
+
+// ── Boost percentages per signal ───────────────────────────────────────────
+const BOOST_FEAR_EXTREME = 20;
+const BOOST_FEAR_ACTIVE  = 10;
+const BOOST_DIFF_DROP    = 10;
+const BOOST_HALVING      = 10;
+const BOOST_BELOW_WMA    = 25; // price below 200WMA = historically rare extreme buy zone
+const BOOST_MAYER_LOW    = 15; // Mayer Multiple < 1 (price below 200DMA)
+
+// ── Next halving ───────────────────────────────────────────────────────────
+const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
+
+// ── Chart style ────────────────────────────────────────────────────────────
+const CHART_FONT     = "Inter, sans-serif";
+const CHART_TRACK_BG = "#E5E5E7";
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function roundToNearest50(n: number): number {
+  return Math.round(n / 50) * 50;
+}
+
+function fmtAUD(n: number): string {
+  return n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtUSD(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtK(n: number): string {
+  return `$${Math.round(n / 1_000)}K`;
+}
 
 // ── Cache helpers ──────────────────────────────────────────────────────────
 function getCachedNumber(key: string, ttl: number): number | null {
@@ -33,20 +71,24 @@ function setCachedNumber(key: string, price: number): void {
   } catch { /* ignore storage quota errors */ }
 }
 
-// ── Binance weekly kline fetch ─────────────────────────────────────────────
-// Returns array of [openTime_ms, open, high, low, close, ...]
+// ── Binance kline fetchers ─────────────────────────────────────────────────
 type RawKline = [number, string, string, string, string, ...unknown[]];
 
 async function fetchWeeklyKlines(signal: AbortSignal): Promise<RawKline[]> {
-  // 250 weeks covers well over 200 data-points for the WMA calculation
-  const url =
-    "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=250";
+  const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=250";
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as RawKline[];
 }
 
-// ── Derive ATH and 200WMA from a weekly kline array ───────────────────────
+async function fetchDailyKlines(signal: AbortSignal): Promise<RawKline[]> {
+  const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=200";
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as RawKline[];
+}
+
+// ── Derive ATH from klines (all-time high across weekly highs) ────────────
 function deriveATH(klines: RawKline[]): number | null {
   if (!klines.length) return null;
   let max = -Infinity;
@@ -57,52 +99,33 @@ function deriveATH(klines: RawKline[]): number | null {
   return isFinite(max) ? max : null;
 }
 
-function derive200WMA(klines: RawKline[]): number | null {
+// ── Generic SMA of the last `period` closes ────────────────────────────────
+function deriveSMA(klines: RawKline[], period: number): number | null {
   const closes = klines.map((k) => parseFloat(k[4])).filter((v) => !isNaN(v));
-  if (closes.length < WMA_PERIOD) return null;
-  const last200 = closes.slice(-WMA_PERIOD);
-  return last200.reduce((s, v) => s + v, 0) / WMA_PERIOD;
+  if (closes.length < period) return null;
+  const last = closes.slice(-period);
+  return last.reduce((s, v) => s + v, 0) / period;
 }
 
-const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
-
-// Signal thresholds
-const FEAR_EXTREME_THRESHOLD = 20;
-const FEAR_ACTIVE_THRESHOLD  = 40;
-const DIFF_DROP_THRESHOLD    = -5;
-
-// Boost percentages per signal
-const BOOST_FEAR_EXTREME = 20;
-const BOOST_FEAR_ACTIVE  = 10;
-const BOOST_DIFF_DROP    = 10;
-const BOOST_HALVING      = 10;
-
-// Chart style tokens
-const CHART_FONT     = "Inter, sans-serif";
-const CHART_TRACK_BG = "#E5E5E7"; // light-mode track; matches gray-200
-
-function roundToNearest50(n: number): number {
-  return Math.round(n / 50) * 50;
-}
-
-// ── Signal indicator ───────────────────────────────────────────────────────
+// ── Signal indicator card ──────────────────────────────────────────────────
 interface SignalItemProps {
   active: boolean;
   label: string;
   sub: string;
+  boost: number;
 }
 
-function SignalItem({ active, label, sub }: SignalItemProps) {
+function SignalItem({ active, label, sub, boost }: SignalItemProps) {
   return (
-    <div className="flex flex-col items-center gap-0.5 py-3 px-1">
-      <div className="flex items-center gap-1.5">
+    <div className="flex flex-col items-center gap-0.5 py-2.5 px-0.5">
+      <div className="flex items-center gap-1">
         <span
-          className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-500 ${
+          className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500 ${
             active ? "bg-emerald-400" : "bg-gray-300 dark:bg-gray-600"
           }`}
         />
         <span
-          className={`text-xs font-semibold text-center leading-tight transition-colors duration-300 ${
+          className={`text-[10px] font-semibold text-center leading-tight transition-colors duration-300 ${
             active
               ? "text-gray-800 dark:text-white/90"
               : "text-gray-400 dark:text-gray-500"
@@ -112,7 +135,7 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
         </span>
       </div>
       <span
-        className={`text-xs transition-colors duration-300 ${
+        className={`text-[10px] tabular-nums transition-colors duration-300 ${
           active
             ? "text-emerald-500 dark:text-emerald-400"
             : "text-gray-400 dark:text-gray-500"
@@ -120,6 +143,58 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
       >
         {sub}
       </span>
+      <span
+        className={`text-[9px] font-semibold transition-colors duration-300 ${
+          active ? "text-emerald-400 dark:text-emerald-500" : "text-gray-300 dark:text-gray-700"
+        }`}
+      >
+        +{boost}%
+      </span>
+    </div>
+  );
+}
+
+// ── Price range progress bar ───────────────────────────────────────────────
+interface PriceRangeBarProps {
+  price: number | null;
+  low: number;
+  high: number;
+}
+
+function PriceRangeBar({ price, low, high }: PriceRangeBarProps) {
+  const range = high - low;
+  const pct =
+    price !== null && range > 0
+      ? Math.max(0, Math.min(100, ((price - low) / range) * 100))
+      : null;
+
+  return (
+    <div className="px-5 pb-4 sm:px-6">
+      <div className="relative h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-visible">
+        {/* Filled track */}
+        <div
+          className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500"
+          style={{
+            width: `${pct ?? 0}%`,
+            background: "linear-gradient(90deg, #10B981 0%, #FFD300 60%, #EF4444 100%)",
+          }}
+        />
+        {/* Thumb at current price position */}
+        {pct !== null && (
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white dark:bg-gray-900 border-2 border-gray-700 dark:border-gray-300 shadow transition-[left] duration-500"
+            style={{ left: `calc(${pct}% - 6px)` }}
+          />
+        )}
+      </div>
+      <div className="flex justify-between mt-1.5">
+        <span className="text-[10px] text-gray-400 dark:text-gray-500 leading-none">
+          200WMA {fmtK(low)}
+        </span>
+        <span className="text-[10px] text-gray-400 dark:text-gray-500 leading-none">
+          ATH {fmtK(high)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -129,6 +204,7 @@ export default function MonthlyTarget() {
   const [priceUSD,   setPriceUSD]   = useState<number | null>(null);
   const [fearGreed,  setFearGreed]  = useState<number | null>(null);
   const [diffChange, setDiffChange] = useState<number | null>(null);
+  const [dmaPrice,   setDmaPrice]   = useState<number | null>(null);
 
   // Dynamic price boundaries
   const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
@@ -138,7 +214,7 @@ export default function MonthlyTarget() {
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Fetch weekly klines once on mount to derive ATH + 200WMA ────────────
+  // ── Fetch weekly klines (ATH + 200WMA) ──────────────────────────────────
   useEffect(() => {
     const cachedATH = getCachedNumber(ATH_CACHE_KEY, ATH_CACHE_TTL);
     const cachedWMA = getCachedNumber(WMA_CACHE_KEY, WMA_CACHE_TTL);
@@ -157,7 +233,7 @@ export default function MonthlyTarget() {
           }
         }
         if (cachedWMA === null) {
-          const wma = derive200WMA(klines);
+          const wma = deriveSMA(klines, WMA_PERIOD);
           if (wma !== null && wma > 0) {
             setCachedNumber(WMA_CACHE_KEY, wma);
             setLowPriceUSD(wma);
@@ -168,7 +244,25 @@ export default function MonthlyTarget() {
     return () => ctrl.abort();
   }, []);
 
-  // Fear & Greed index
+  // ── Fetch daily klines for 200DMA (Mayer Multiple) ──────────────────────
+  useEffect(() => {
+    const cached = getCachedNumber(DMA_CACHE_KEY, DMA_CACHE_TTL);
+    if (cached !== null) { setDmaPrice(cached); return; }
+
+    const ctrl = new AbortController();
+    fetchDailyKlines(ctrl.signal)
+      .then((klines) => {
+        const dma = deriveSMA(klines, 200);
+        if (dma !== null && dma > 0) {
+          setCachedNumber(DMA_CACHE_KEY, dma);
+          setDmaPrice(dma);
+        }
+      })
+      .catch(() => { /* non-critical — signal simply won't render */ });
+    return () => ctrl.abort();
+  }, []);
+
+  // ── Fear & Greed index ───────────────────────────────────────────────────
   useEffect(() => {
     fetch("https://api.alternative.me/fng/?limit=1&format=json")
       .then((r) => r.json())
@@ -179,7 +273,7 @@ export default function MonthlyTarget() {
       .catch(() => {});
   }, []);
 
-  // Mining difficulty — last retarget % from mempool.space
+  // ── Mining difficulty — last retarget % from mempool.space ───────────────
   useEffect(() => {
     fetch("https://mempool.space/api/v1/difficulty-adjustment")
       .then((r) => r.json())
@@ -192,7 +286,7 @@ export default function MonthlyTarget() {
       .catch(() => {});
   }, []);
 
-  // Binance WebSocket — live BTC/USDT price
+  // ── Binance WebSocket — live BTC/USDT price ──────────────────────────────
   useEffect(() => {
     const ws = new WebSocket(
       "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker"
@@ -234,11 +328,17 @@ export default function MonthlyTarget() {
   const fearExtreme = fearGreed !== null && fearGreed <= FEAR_EXTREME_THRESHOLD;
   const fearActive  = fearGreed !== null && fearGreed <= FEAR_ACTIVE_THRESHOLD;
   const diffActive  = diffChange !== null && diffChange < DIFF_DROP_THRESHOLD;
+  const belowWMA    = priceUSD !== null && priceUSD < lowPriceUSD;
+
+  const mayerMultiple =
+    priceUSD !== null && dmaPrice !== null && dmaPrice > 0
+      ? priceUSD / dmaPrice
+      : null;
+  const mayerActive = mayerMultiple !== null && mayerMultiple < MAYER_BUY_THRESHOLD;
 
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
-  // Days until we enter the 365-day pre-halving buy window
   const daysToWindow  = Math.max(0, Math.ceil((msToHalving - 365 * 86_400_000) / 86_400_000));
 
   // ── Boost ──────────────────────────────────────────────────────────────
@@ -247,6 +347,8 @@ export default function MonthlyTarget() {
   else if (fearActive) totalBoost += BOOST_FEAR_ACTIVE;
   if (diffActive)      totalBoost += BOOST_DIFF_DROP;
   if (halvingActive)   totalBoost += BOOST_HALVING;
+  if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
+  if (mayerActive)     totalBoost += BOOST_MAYER_LOW;
 
   // ── DCA calculation ────────────────────────────────────────────────────
   let recommendedBuy: number | "PASS" | null = null;
@@ -268,6 +370,27 @@ export default function MonthlyTarget() {
     }
   }
 
+  // ── Signal strength label ──────────────────────────────────────────────
+  type StrengthLabel = "—" | "PASS" | "HOLD" | "BUY" | "STRONG BUY";
+  let strengthLabel: StrengthLabel = "—";
+  let gaugeColor = "#98a2b3";
+
+  if (priceUSD !== null) {
+    if (priceUSD > highPriceUSD) {
+      strengthLabel = "PASS";
+      gaugeColor    = "#EF4444";
+    } else if (belowWMA || (allocationPct >= 0.85 && totalBoost >= 20)) {
+      strengthLabel = "STRONG BUY";
+      gaugeColor    = "#10B981";
+    } else if (allocationPct >= 0.45 || totalBoost >= 10) {
+      strengthLabel = "BUY";
+      gaugeColor    = "#FFD300";
+    } else {
+      strengthLabel = "HOLD";
+      gaugeColor    = "#F59E0B";
+    }
+  }
+
   // Subtle scale animation when buy amount changes
   useEffect(() => {
     if (recommendedBuy !== null && recommendedBuy !== prevBuy.current) {
@@ -284,27 +407,23 @@ export default function MonthlyTarget() {
   }, [recommendedBuy]);
 
   // ── Display helpers ────────────────────────────────────────────────────
-  const fmt = (n: number) =>
-    n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
   const isPass    = recommendedBuy === "PASS";
   const isLoading = recommendedBuy === null;
 
-  const buyRatio    = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
-  const color       = isPass || isLoading ? "#98a2b3" : "#FFD300";
-  const chartValue  = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
+  const buyRatio   = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
+  const chartValue = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
   const centerLabel = isLoading
     ? "—"
     : isPass
     ? "PASS"
-    : `$${fmt(recommendedBuy as number)}`;
+    : `$${fmtAUD(recommendedBuy as number)}`;
 
   // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
     chart: {
       fontFamily: CHART_FONT,
       type: "radialBar",
-      height: 340,
+      height: 300,
       sparkline: { enabled: true },
     },
     plotOptions: {
@@ -323,23 +442,30 @@ export default function MonthlyTarget() {
         },
       },
     },
-    fill: { type: "solid", colors: [color] },
+    fill: { type: "solid", colors: [gaugeColor] },
     stroke: { lineCap: "round" },
     labels: ["Allocation"],
   };
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-6 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
+      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-2 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
 
-        {/* Header */}
-        <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            4
-          </span>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            DCA signal
-          </h3>
+        {/* Header — title + live price */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+              4
+            </span>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+              DCA signal
+            </h3>
+          </div>
+          {priceUSD !== null && (
+            <span className="text-sm font-medium tabular-nums text-gray-500 dark:text-gray-400">
+              ₿ ${fmtUSD(priceUSD)}
+            </span>
+          )}
         </div>
 
         {/* Radial bar — allocation % */}
@@ -354,26 +480,42 @@ export default function MonthlyTarget() {
             options={options}
             series={[chartValue]}
             type="radialBar"
-            height={340}
+            height={300}
           />
-          {/* Centre label rendered as HTML so colour always matches the bar.
-               bottom: ~18px sits the label closer to the gauge arc baseline;
-               font-size 56px makes the amount more prominent while chart height
-               stays at 340px so mobile layout is unaffected. */}
+
+          {/* Overlay labels centred inside the arc */}
           <div
             style={{
               position: "absolute",
-              bottom: "18px",
+              bottom: "24px",
               left: 0,
               right: 0,
               textAlign: "center",
               pointerEvents: "none",
             }}
           >
+            {/* Signal strength label */}
+            {!isLoading && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  fontFamily: CHART_FONT,
+                  letterSpacing: "0.08em",
+                  color: gaugeColor,
+                  marginBottom: "2px",
+                  transition: "color 0.3s ease",
+                }}
+              >
+                {strengthLabel}
+              </div>
+            )}
+
+            {/* Recommended buy amount */}
             <span
               style={{
-                color,
-                fontSize: "56px",
+                color: gaugeColor,
+                fontSize: "52px",
                 fontWeight: 600,
                 fontFamily: CHART_FONT,
                 lineHeight: 1,
@@ -382,26 +524,59 @@ export default function MonthlyTarget() {
             >
               {centerLabel}
             </span>
+
+            {/* Active boost indicator */}
+            {totalBoost > 0 && !isLoading && !isPass && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  fontFamily: CHART_FONT,
+                  color: "#10B981",
+                  marginTop: "3px",
+                }}
+              >
+                +{totalBoost}% boost active
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Price range bar — 200WMA → ATH */}
+        <PriceRangeBar price={priceUSD} low={lowPriceUSD} high={highPriceUSD} />
       </div>
 
-      {/* Signals footer */}
-      <div className="grid grid-cols-3 divide-x divide-gray-200 dark:divide-gray-800">
+      {/* Signals footer — 5 signals */}
+      <div className="grid grid-cols-5 divide-x divide-gray-200 dark:divide-gray-800">
         <SignalItem
           active={fearActive}
-          label={fearExtreme ? "Extreme Fear" : "Fear & Greed"}
+          label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
           sub={fearGreed !== null ? String(fearGreed) : "—"}
+          boost={fearExtreme ? BOOST_FEAR_EXTREME : BOOST_FEAR_ACTIVE}
         />
         <SignalItem
           active={diffActive}
           label="Diff Drop"
           sub={diffChange !== null ? `${diffChange.toFixed(1)}%` : "—"}
+          boost={BOOST_DIFF_DROP}
         />
         <SignalItem
           active={halvingActive}
-          label={halvingActive ? "Pre-Halving" : "Halving Window"}
-          sub={halvingActive ? `${daysToHalving}d to halving` : `in ${daysToWindow}d`}
+          label={halvingActive ? "Pre-Halving" : "Halving"}
+          sub={halvingActive ? `${daysToHalving}d` : `in ${daysToWindow}d`}
+          boost={BOOST_HALVING}
+        />
+        <SignalItem
+          active={belowWMA}
+          label="Below WMA"
+          sub={fmtK(lowPriceUSD)}
+          boost={BOOST_BELOW_WMA}
+        />
+        <SignalItem
+          active={mayerActive}
+          label="Mayer <1"
+          sub={mayerMultiple !== null ? mayerMultiple.toFixed(2) : "—"}
+          boost={BOOST_MAYER_LOW}
         />
       </div>
     </div>
