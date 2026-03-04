@@ -8,6 +8,10 @@ const FRED_BASE_URL  = "https://api.stlouisfed.org/fred/series/observations";
 // Balance sheet must grow by at least this percentage week-on-week to be "ON"
 const EXPAND_THRESHOLD_PCT = 0.1;
 
+// Number of weekly observations to fetch — 2 years of history is enough to
+// find the most recent expansion episode even during extended QT periods.
+const FRED_FETCH_LIMIT = 104;
+
 // ── Central bank definitions ────────────────────────────────────────────────
 interface Bank {
   id:      string;
@@ -36,6 +40,12 @@ type PrintStatus = "ON" | "OFF" | "loading" | "error";
 interface BankState {
   value:  number | null;  // Raw latest FRED value (for display)
   status: PrintStatus;
+  // Current week change (raw FRED units) — populated when status === "ON"
+  change: number | null;
+  // Date of the last expansion period (when status === "OFF")
+  lastPrintedDate:   string | null;
+  // Raw FRED change during last expansion period (when status === "OFF")
+  lastPrintedAmount: number | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,17 +56,41 @@ function fmtValue(raw: number, bank: Bank): string {
   return `${bank.symbol}${str}${bank.suffix}`;
 }
 
-// Fetch the two most recent observations for a FRED series.
-// Returns { latest, prev } as numbers (raw FRED units).
+// Format a raw FRED delta as a compact "+$X.XT" string.
+function fmtChange(rawDelta: number, bank: Bank): string {
+  const v = Math.abs(rawDelta) * bank.factor;
+  const str = v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  return `+${bank.symbol}${str}${bank.suffix}`;
+}
+
+// Format an ISO date string (YYYY-MM-DD) from FRED as "DD MMM YYYY".
+function fmtDate(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  });
+}
+
+// ── FRED fetch ────────────────────────────────────────────────────────────────
+interface FredResult {
+  latest:            number;   // Raw FRED value of the latest observation
+  status:            "ON" | "OFF";
+  change:            number | null;  // Latest - prev (raw) when ON
+  lastPrintedDate:   string | null;  // ISO date of last expansion when OFF
+  lastPrintedAmount: number | null;  // Raw delta of last expansion when OFF
+}
+
+// Fetch the last FRED_FETCH_LIMIT weekly observations for a series and derive
+// the current print status plus the "last printed" details for the OFF case.
 async function fetchFredSeries(
   series: string,
   signal: AbortSignal,
-): Promise<{ latest: number; prev: number }> {
+): Promise<FredResult> {
   const url =
     `${FRED_BASE_URL}` +
     `?series_id=${encodeURIComponent(series)}` +
     `&api_key=${FRED_API_KEY}` +
-    `&limit=2&sort_order=desc&file_type=json`;
+    `&limit=${FRED_FETCH_LIMIT}&sort_order=desc&file_type=json`;
 
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -72,11 +106,34 @@ async function fetchFredSeries(
   const prev   = parseFloat(obs[1].value);
 
   // FRED uses "." for missing values; treat as invalid.
-  // prev must be non-zero to compute a meaningful percentage change.
   if (isNaN(latest) || isNaN(prev) || prev === 0)
-    throw new Error("Invalid, missing, or zero previous value");
+    throw new Error("Invalid, missing, or zero observation values");
 
-  return { latest, prev };
+  const pctChange = ((latest - prev) / prev) * 100;
+  const isOn = pctChange >= EXPAND_THRESHOLD_PCT;
+
+  if (isOn) {
+    return { latest, status: "ON", change: latest - prev, lastPrintedDate: null, lastPrintedAmount: null };
+  }
+
+  // Printer is currently OFF — scan back to find the most recent expansion week.
+  let lastPrintedDate:   string | null = null;
+  let lastPrintedAmount: number | null = null;
+
+  for (let i = 1; i < obs.length - 1; i++) {
+    const v     = parseFloat(obs[i].value);
+    const vPrev = parseFloat(obs[i + 1].value);
+    if (!isNaN(v) && !isNaN(vPrev) && vPrev !== 0) {
+      const pct = ((v - vPrev) / vPrev) * 100;
+      if (pct >= EXPAND_THRESHOLD_PCT) {
+        lastPrintedDate   = obs[i].date;
+        lastPrintedAmount = v - vPrev;
+        break;
+      }
+    }
+  }
+
+  return { latest, status: "OFF", change: null, lastPrintedDate, lastPrintedAmount };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -84,7 +141,10 @@ export default function MoneyPrinter() {
   const [states, setStates] = useState<Record<string, BankState>>(
     () =>
       Object.fromEntries(
-        BANKS.map((b) => [b.id, { value: null, status: "loading" as PrintStatus }]),
+        BANKS.map((b) => [b.id, {
+          value: null, status: "loading" as PrintStatus,
+          change: null, lastPrintedDate: null, lastPrintedAmount: null,
+        }]),
       ),
   );
 
@@ -96,13 +156,16 @@ export default function MoneyPrinter() {
     // Fetch all banks in parallel; update each row independently as data arrives
     BANKS.forEach((bank) => {
       fetchFredSeries(bank.series, controller.signal)
-        .then(({ latest, prev }) => {
-          const pctChange = ((latest - prev) / prev) * 100;
-          const status: PrintStatus =
-            pctChange >= EXPAND_THRESHOLD_PCT ? "ON" : "OFF";
+        .then((result) => {
           setStates((s) => ({
             ...s,
-            [bank.id]: { value: latest, status },
+            [bank.id]: {
+              value:             result.latest,
+              status:            result.status,
+              change:            result.change,
+              lastPrintedDate:   result.lastPrintedDate,
+              lastPrintedAmount: result.lastPrintedAmount,
+            },
           }));
         })
         .catch((err: unknown) => {
@@ -110,7 +173,7 @@ export default function MoneyPrinter() {
           if (err instanceof DOMException && err.name === "AbortError") return;
           setStates((s) => ({
             ...s,
-            [bank.id]: { value: null, status: "error" },
+            [bank.id]: { value: null, status: "error", change: null, lastPrintedDate: null, lastPrintedAmount: null },
           }));
         });
     });
@@ -138,8 +201,16 @@ export default function MoneyPrinter() {
       {/* Central bank rows */}
       <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-800 flex-1 justify-around">
         {BANKS.map((bank) => {
-          const s   = states[bank.id];
+          const s    = states[bank.id];
           const isOn = s.status === "ON";
+
+          // Sub-label shown below the balance sheet total
+          let subLabel: string | null = null;
+          if (isOn && s.change !== null) {
+            subLabel = `${fmtChange(s.change, bank)} this week`;
+          } else if (s.status === "OFF" && s.lastPrintedDate !== null && s.lastPrintedAmount !== null) {
+            subLabel = `Last ${fmtChange(s.lastPrintedAmount, bank)} · ${fmtDate(s.lastPrintedDate)}`;
+          }
 
           return (
             <div
@@ -156,10 +227,21 @@ export default function MoneyPrinter() {
                 {bank.label}
               </span>
 
-              {/* Balance sheet value */}
-              <span className="flex-1 text-sm font-medium tabular-nums text-gray-500 dark:text-gray-400">
-                {s.value !== null ? fmtValue(s.value, bank) : "—"}
-              </span>
+              {/* Balance sheet value + sub-label */}
+              <div className="flex-1 flex flex-col">
+                <span className="text-sm font-medium tabular-nums text-gray-500 dark:text-gray-400">
+                  {s.value !== null ? fmtValue(s.value, bank) : "—"}
+                </span>
+                {subLabel !== null && (
+                  <span className={`text-xs tabular-nums mt-0.5 leading-tight ${
+                    isOn
+                      ? "text-emerald-500 dark:text-emerald-400"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}>
+                    {subLabel}
+                  </span>
+                )}
+              </div>
 
               {/* Status pill */}
               {s.status === "loading" ? (
