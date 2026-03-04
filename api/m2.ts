@@ -6,11 +6,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //
 // Sources (all via FRED, free tier – API key kept server-side):
 //   US  Fed  – M2SL             (Billions USD, monthly, SA)
-//   EU  ECB  – MABMM301EZM189S  (Billions EUR, monthly, SA)
-//   UK  BOE  – MABMM301GBM189S  (Billions GBP, monthly, SA)
-//   JP  BOJ  – MABMM301JPM189S  (Billions JPY, monthly, SA)
-//   CA  BOC  – MABMM301CAM189S  (Billions CAD, monthly, SA)
-//   CN  PBOC – MYAGM2CNM189N    (Billions CNY, monthly, NSA)
+//   EU  ECB  – MABMM301EZM189S  (Millions EUR, monthly, SA)  ← OECD series: millions NCU
+//   UK  BOE  – MABMM301GBM189S  (Millions GBP, monthly, SA)  ← OECD series: millions NCU
+//   JP  BOJ  – MABMM301JPM189S  (Millions JPY, monthly, SA)  ← OECD series: millions NCU
+//   CA  BOC  – MABMM301CAM189S  (Millions CAD, monthly, SA)  ← OECD series: millions NCU
+//   CN  PBOC – MYAGM2CNM189N    (Millions CNY, monthly, NSA) ← millions NCU
 //
 // FX conversion (FRED daily rates, most recent observation):
 //   DEXUSEU – USD per EUR  (direct)
@@ -33,22 +33,25 @@ const FX_LIMIT = 10;
 const PRINT_THRESHOLD_PCT = 0.1;
 
 interface CountryConfig {
-  id:         string;
-  name:       string;   // Short label (e.g. "Fed", "ECB")
-  flag:       string;   // Emoji flag
-  m2Series:   string;   // FRED series ID for M2
-  fxSeries:   string | null;  // FRED FX series (null → already USD)
-  fxInverted: boolean;  // true  → rate is LCU/USD (need 1/rate)
-                        // false → rate is USD/LCU (multiply directly)
+  id:             string;
+  name:           string;   // Short label (e.g. "Fed", "ECB")
+  flag:           string;   // Emoji flag
+  m2Series:       string;   // FRED series ID for M2
+  localToBillions: number;  // multiply raw FRED value → billions of local currency
+                            //   M2SL: 1 (already billions USD)
+                            //   MABMM301* / MYAGM2CNM189N: 0.001 (millions → billions)
+  fxSeries:       string | null;  // FRED FX series (null → already USD)
+  fxInverted:     boolean;  // true  → rate is LCU/USD (need 1/rate)
+                            // false → rate is USD/LCU (multiply directly)
 }
 
 const COUNTRIES: readonly CountryConfig[] = [
-  { id: "US", name: "Fed",  flag: "🇺🇸", m2Series: "M2SL",            fxSeries: null,      fxInverted: false },
-  { id: "EU", name: "ECB",  flag: "🇪🇺", m2Series: "MABMM301EZM189S", fxSeries: "DEXUSEU", fxInverted: false },
-  { id: "UK", name: "BOE",  flag: "🇬🇧", m2Series: "MABMM301GBM189S", fxSeries: "DEXUSUK", fxInverted: false },
-  { id: "JP", name: "BOJ",  flag: "🇯🇵", m2Series: "MABMM301JPM189S", fxSeries: "DEXJPUS", fxInverted: true  },
-  { id: "CA", name: "BOC",  flag: "🇨🇦", m2Series: "MABMM301CAM189S", fxSeries: "DEXCAUS", fxInverted: true  },
-  { id: "CN", name: "PBOC", flag: "🇨🇳", m2Series: "MYAGM2CNM189N",   fxSeries: "DEXCHUS", fxInverted: true  },
+  { id: "US", name: "Fed",  flag: "🇺🇸", m2Series: "M2SL",            localToBillions: 1,     fxSeries: null,      fxInverted: false },
+  { id: "EU", name: "ECB",  flag: "🇪🇺", m2Series: "MABMM301EZM189S", localToBillions: 0.001, fxSeries: "DEXUSEU", fxInverted: false },
+  { id: "UK", name: "BOE",  flag: "🇬🇧", m2Series: "MABMM301GBM189S", localToBillions: 0.001, fxSeries: "DEXUSUK", fxInverted: false },
+  { id: "JP", name: "BOJ",  flag: "🇯🇵", m2Series: "MABMM301JPM189S", localToBillions: 0.001, fxSeries: "DEXJPUS", fxInverted: true  },
+  { id: "CA", name: "BOC",  flag: "🇨🇦", m2Series: "MABMM301CAM189S", localToBillions: 0.001, fxSeries: "DEXCAUS", fxInverted: true  },
+  { id: "CN", name: "PBOC", flag: "🇨🇳", m2Series: "MYAGM2CNM189N",   localToBillions: 0.001, fxSeries: "DEXCHUS", fxInverted: true  },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
@@ -165,9 +168,11 @@ export default async function handler(
       }
 
       // Convert observations to USD billions (take up to 13, most-recent first)
+      // Step 1: raw FRED value × localToBillions → billions of local currency
+      // Step 2: × toUSD → billions USD
       const pts = validObs.slice(0, 13).map((o) => ({
         date:     o.date,
-        valueUSD: o.value * toUSD,
+        valueUSD: o.value * cfg.localToBillions * toUSD,
       }));
 
       const latestUSD  = pts[0].valueUSD;
