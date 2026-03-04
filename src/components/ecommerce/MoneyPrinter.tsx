@@ -22,8 +22,8 @@ const BANKS: readonly Bank[] = [
   { id: "US", flag: "🇺🇸", label: "Fed", series: "WALCL",      symbol: "$",  factor: 1e-6, suffix: "T" },
   // ECBASSETSW: ECB Eurosystem weekly total assets, millions EUR → display in T
   { id: "EU", flag: "🇪🇺", label: "ECB", series: "ECBASSETSW", symbol: "€",  factor: 1e-6, suffix: "T" },
-  // RNUASSET: Bank of Japan weekly total assets, billions JPY → display in T
-  { id: "JP", flag: "🇯🇵", label: "BOJ", series: "RNUASSET",   symbol: "¥",  factor: 1e-3, suffix: "T" },
+  // JPNASSETS: Bank of Japan total assets, trillions JPY → display in T
+  { id: "JP", flag: "🇯🇵", label: "BOJ", series: "JPNASSETS",  symbol: "¥",  factor: 1,    suffix: "T" },
 ];
 
 // ── State types ─────────────────────────────────────────────────────────────
@@ -49,9 +49,10 @@ function fmtValue(raw: number, bank: Bank): string {
 }
 
 // Format a raw FRED delta as a compact "+$X.XT" string.
+// Uses two decimal places for values under 1 to avoid "+$0.0T" for small changes.
 function fmtChange(rawDelta: number, bank: Bank): string {
   const v = Math.abs(rawDelta) * bank.factor;
-  const str = v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  const str = v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
   return `+${bank.symbol}${str}${bank.suffix}`;
 }
 

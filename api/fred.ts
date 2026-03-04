@@ -14,7 +14,7 @@ import { parse } from "node:url";
 const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
 
 // Only the series IDs used by MoneyPrinter are allowed through this proxy.
-const ALLOWED_SERIES = new Set(["WALCL", "ECBASSETSW", "RNUASSET"]);
+const ALLOWED_SERIES = new Set(["WALCL", "ECBASSETSW", "JPNASSETS"]);
 
 export default async function handler(
   req: IncomingMessage,
