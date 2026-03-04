@@ -126,14 +126,11 @@ export default function MoneyPrinter() {
       </span>
 
       {/* Header */}
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-4">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           Money Printer
         </h3>
       </div>
-      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-        M2 supply · balance sheet · credit stress · yield curve
-      </p>
 
       {/* ── US Printer Score ───────────────────────────────────────────── */}
       <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
