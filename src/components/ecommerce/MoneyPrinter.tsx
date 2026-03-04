@@ -1,16 +1,8 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/badge/Badge";
 
-// ── FRED API configuration ──────────────────────────────────────────────────
-const FRED_API_KEY   = "6890f3185ca5ad2a4620da6b9ae832cb";
-const FRED_BASE_URL  = "https://api.stlouisfed.org/fred/series/observations";
-
 // Balance sheet must grow by at least this percentage week-on-week to be "ON"
 const EXPAND_THRESHOLD_PCT = 0.1;
-
-// Number of weekly observations to fetch — 2 years of history is enough to
-// find the most recent expansion episode even during extended QT periods.
-const FRED_FETCH_LIMIT = 104;
 
 // ── Central bank definitions ────────────────────────────────────────────────
 interface Bank {
@@ -30,8 +22,8 @@ const BANKS: readonly Bank[] = [
   { id: "US", flag: "🇺🇸", label: "Fed", series: "WALCL",      symbol: "$",  factor: 1e-6, suffix: "T" },
   // ECBASSETSW: ECB Eurosystem weekly total assets, millions EUR → display in T
   { id: "EU", flag: "🇪🇺", label: "ECB", series: "ECBASSETSW", symbol: "€",  factor: 1e-6, suffix: "T" },
-  // RNUASSET: Bank of Japan weekly total assets, billions JPY → display in T
-  { id: "JP", flag: "🇯🇵", label: "BOJ", series: "RNUASSET",   symbol: "¥",  factor: 1e-3, suffix: "T" },
+  // JPNASSETS: Bank of Japan total assets, trillions JPY → display in T
+  { id: "JP", flag: "🇯🇵", label: "BOJ", series: "JPNASSETS",  symbol: "¥",  factor: 1,    suffix: "T" },
 ];
 
 // ── State types ─────────────────────────────────────────────────────────────
@@ -57,9 +49,10 @@ function fmtValue(raw: number, bank: Bank): string {
 }
 
 // Format a raw FRED delta as a compact "+$X.XT" string.
+// Uses two decimal places for values under 1 to avoid "+$0.0T" for small changes.
 function fmtChange(rawDelta: number, bank: Bank): string {
   const v = Math.abs(rawDelta) * bank.factor;
-  const str = v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  const str = v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
   return `+${bank.symbol}${str}${bank.suffix}`;
 }
 
@@ -80,17 +73,13 @@ interface FredResult {
   lastPrintedAmount: number | null;  // Raw delta of last expansion when OFF
 }
 
-// Fetch the last FRED_FETCH_LIMIT weekly observations for a series and derive
-// the current print status plus the "last printed" details for the OFF case.
+// Fetch the last 260 weekly observations for a series via the /api/fred proxy
+// (which keeps the API key server-side and adds CDN caching).
 async function fetchFredSeries(
   series: string,
   signal: AbortSignal,
 ): Promise<FredResult> {
-  const url =
-    `${FRED_BASE_URL}` +
-    `?series_id=${encodeURIComponent(series)}` +
-    `&api_key=${FRED_API_KEY}` +
-    `&limit=${FRED_FETCH_LIMIT}&sort_order=desc&file_type=json`;
+  const url = `/api/fred?series=${encodeURIComponent(series)}`;
 
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -102,12 +91,17 @@ async function fetchFredSeries(
   const obs = json.observations;
   if (!obs || obs.length < 2) throw new Error("Insufficient observations");
 
-  const latest = parseFloat(obs[0].value);
-  const prev   = parseFloat(obs[1].value);
+  // FRED uses "." for unreleased/provisional values — filter them out before processing.
+  // This prevents a leading "." on the most-recent entry from aborting the scan entirely.
+  const validObs = obs.filter((o) => {
+    const v = parseFloat(o.value);
+    return !isNaN(v) && v > 0;
+  });
 
-  // FRED uses "." for missing values; treat as invalid.
-  if (isNaN(latest) || isNaN(prev) || prev === 0)
-    throw new Error("Invalid, missing, or zero observation values");
+  if (validObs.length < 2) throw new Error("Insufficient valid observations");
+
+  const latest = parseFloat(validObs[0].value);
+  const prev   = parseFloat(validObs[1].value);
 
   const pctChange = ((latest - prev) / prev) * 100;
   const isOn = pctChange >= EXPAND_THRESHOLD_PCT;
@@ -120,16 +114,14 @@ async function fetchFredSeries(
   let lastPrintedDate:   string | null = null;
   let lastPrintedAmount: number | null = null;
 
-  for (let i = 1; i < obs.length - 1; i++) {
-    const v     = parseFloat(obs[i].value);
-    const vPrev = parseFloat(obs[i + 1].value);
-    if (!isNaN(v) && !isNaN(vPrev) && vPrev !== 0) {
-      const pct = ((v - vPrev) / vPrev) * 100;
-      if (pct >= EXPAND_THRESHOLD_PCT) {
-        lastPrintedDate   = obs[i].date;
-        lastPrintedAmount = v - vPrev;
-        break;
-      }
+  for (let i = 1; i < validObs.length - 1; i++) {
+    const v     = parseFloat(validObs[i].value);
+    const vPrev = parseFloat(validObs[i + 1].value);
+    const pct = ((v - vPrev) / vPrev) * 100;
+    if (pct >= EXPAND_THRESHOLD_PCT) {
+      lastPrintedDate   = validObs[i].date;
+      lastPrintedAmount = v - vPrev;
+      break;
     }
   }
 
