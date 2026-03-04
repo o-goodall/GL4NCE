@@ -103,12 +103,17 @@ async function fetchFredSeries(
   const obs = json.observations;
   if (!obs || obs.length < 2) throw new Error("Insufficient observations");
 
-  const latest = parseFloat(obs[0].value);
-  const prev   = parseFloat(obs[1].value);
+  // FRED uses "." for unreleased/provisional values — filter them out before processing.
+  // This prevents a leading "." on the most-recent entry from aborting the scan entirely.
+  const validObs = obs.filter((o) => {
+    const v = parseFloat(o.value);
+    return !isNaN(v) && v > 0;
+  });
 
-  // FRED uses "." for missing values; treat as invalid.
-  if (isNaN(latest) || isNaN(prev) || prev === 0)
-    throw new Error("Invalid, missing, or zero observation values");
+  if (validObs.length < 2) throw new Error("Insufficient valid observations");
+
+  const latest = parseFloat(validObs[0].value);
+  const prev   = parseFloat(validObs[1].value);
 
   const pctChange = ((latest - prev) / prev) * 100;
   const isOn = pctChange >= EXPAND_THRESHOLD_PCT;
@@ -121,16 +126,14 @@ async function fetchFredSeries(
   let lastPrintedDate:   string | null = null;
   let lastPrintedAmount: number | null = null;
 
-  for (let i = 1; i < obs.length - 1; i++) {
-    const v     = parseFloat(obs[i].value);
-    const vPrev = parseFloat(obs[i + 1].value);
-    if (!isNaN(v) && !isNaN(vPrev) && vPrev !== 0) {
-      const pct = ((v - vPrev) / vPrev) * 100;
-      if (pct >= EXPAND_THRESHOLD_PCT) {
-        lastPrintedDate   = obs[i].date;
-        lastPrintedAmount = v - vPrev;
-        break;
-      }
+  for (let i = 1; i < validObs.length - 1; i++) {
+    const v     = parseFloat(validObs[i].value);
+    const vPrev = parseFloat(validObs[i + 1].value);
+    const pct = ((v - vPrev) / vPrev) * 100;
+    if (pct >= EXPAND_THRESHOLD_PCT) {
+      lastPrintedDate   = validObs[i].date;
+      lastPrintedAmount = v - vPrev;
+      break;
     }
   }
 

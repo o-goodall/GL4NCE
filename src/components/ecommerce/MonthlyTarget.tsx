@@ -51,9 +51,12 @@ function getCachedNumber(key: string, ttl: number): number | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    const entry = JSON.parse(raw) as { price: number; fetchedAt: number };
+    const entry = JSON.parse(raw) as { data?: unknown; price?: unknown; fetchedAt: number };
     if (Date.now() - entry.fetchedAt > ttl) return null;
-    return entry.price;
+    // Accept both { data: ... } (BtcLiveChart's setCache format) and { price: ... } (legacy)
+    const val = entry.data ?? entry.price;
+    if (typeof val !== "number" || !isFinite(val)) return null;
+    return val;
   } catch { return null; }
 }
 
