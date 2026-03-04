@@ -2,32 +2,108 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useEffect, useRef, useState } from "react";
 
-// ── POC constants ──────────────────────────────────────────────────────────
-const LOW_PRICE_USD  = 55_000;
-const HIGH_PRICE_USD = 125_000;
-const MAX_DCA_AUD    = 1_000;
-const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
+// ── Fallback constants (used while async fetches are in-flight) ────────────
+const LOW_PRICE_USD_FALLBACK  = 55_000;
+const HIGH_PRICE_USD_FALLBACK = 126_200;
+const MAX_DCA_AUD             = 1_000;
 
-// Signal thresholds
+// ── Cache config ───────────────────────────────────────────────────────────
+const ATH_CACHE_KEY = "btc-ath";       // shared with BtcLiveChart
+const ATH_CACHE_TTL = 86_400_000;      // 24 h
+const WMA_CACHE_KEY = "btc-200wma";
+const WMA_CACHE_TTL = 7 * 86_400_000;  // 7 days
+const DMA_CACHE_KEY = "btc-200dma";
+const DMA_CACHE_TTL = 86_400_000;      // 24 h
+const WMA_PERIOD    = 200;
+
+// ── Signal thresholds ──────────────────────────────────────────────────────
 const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
+const MAYER_BUY_THRESHOLD    = 1.0; // Mayer Multiple below 1 = price < 200DMA
 
-// Boost percentages per signal
+// ── Boost percentages per signal ───────────────────────────────────────────
 const BOOST_FEAR_EXTREME = 20;
 const BOOST_FEAR_ACTIVE  = 10;
 const BOOST_DIFF_DROP    = 10;
 const BOOST_HALVING      = 10;
+const BOOST_BELOW_WMA    = 25; // price below 200WMA = historically rare extreme buy zone
+const BOOST_MAYER_LOW    = 15; // Mayer Multiple < 1 (price below 200DMA)
 
-// Chart style tokens
+// ── Next halving ───────────────────────────────────────────────────────────
+const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
+
+// ── Chart style ────────────────────────────────────────────────────────────
 const CHART_FONT     = "Inter, sans-serif";
-const CHART_TRACK_BG = "#E5E5E7"; // light-mode track; matches gray-200
+const CHART_TRACK_BG = "#E5E5E7";
 
+// ── Helpers ────────────────────────────────────────────────────────────────
 function roundToNearest50(n: number): number {
   return Math.round(n / 50) * 50;
 }
 
-// ── Signal indicator ───────────────────────────────────────────────────────
+function fmtAUD(n: number): string {
+  return n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtK(n: number): string {
+  return `$${Math.round(n / 1_000)}K`;
+}
+
+// ── Cache helpers ──────────────────────────────────────────────────────────
+function getCachedNumber(key: string, ttl: number): number | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as { price: number; fetchedAt: number };
+    if (Date.now() - entry.fetchedAt > ttl) return null;
+    return entry.price;
+  } catch { return null; }
+}
+
+function setCachedNumber(key: string, price: number): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ price, fetchedAt: Date.now() }));
+  } catch { /* ignore storage quota errors */ }
+}
+
+// ── Binance kline fetchers ─────────────────────────────────────────────────
+type RawKline = [number, string, string, string, string, ...unknown[]];
+
+async function fetchWeeklyKlines(signal: AbortSignal): Promise<RawKline[]> {
+  const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=250";
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as RawKline[];
+}
+
+async function fetchDailyKlines(signal: AbortSignal): Promise<RawKline[]> {
+  const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=200";
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as RawKline[];
+}
+
+// ── Derive ATH from klines (all-time high across weekly highs) ────────────
+function deriveATH(klines: RawKline[]): number | null {
+  if (!klines.length) return null;
+  let max = -Infinity;
+  for (const k of klines) {
+    const high = parseFloat(k[2]);
+    if (!isNaN(high) && high > max) max = high;
+  }
+  return isFinite(max) ? max : null;
+}
+
+// ── Generic SMA of the last `period` closes ────────────────────────────────
+function deriveSMA(klines: RawKline[], period: number): number | null {
+  const closes = klines.map((k) => parseFloat(k[4])).filter((v) => !isNaN(v));
+  if (closes.length < period) return null;
+  const last = closes.slice(-period);
+  return last.reduce((s, v) => s + v, 0) / period;
+}
+
+// ── Signal indicator card ──────────────────────────────────────────────────
 interface SignalItemProps {
   active: boolean;
   label: string;
@@ -36,15 +112,15 @@ interface SignalItemProps {
 
 function SignalItem({ active, label, sub }: SignalItemProps) {
   return (
-    <div className="flex flex-col items-center gap-0.5 py-3 px-1">
-      <div className="flex items-center gap-1.5">
+    <div className="flex flex-col items-center gap-0.5 py-2.5 px-0.5">
+      <div className="flex items-center gap-1">
         <span
-          className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-500 ${
+          className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500 ${
             active ? "bg-emerald-400" : "bg-gray-300 dark:bg-gray-600"
           }`}
         />
         <span
-          className={`text-xs font-semibold text-center leading-tight transition-colors duration-300 ${
+          className={`text-[10px] font-semibold text-center leading-tight transition-colors duration-300 ${
             active
               ? "text-gray-800 dark:text-white/90"
               : "text-gray-400 dark:text-gray-500"
@@ -54,7 +130,7 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
         </span>
       </div>
       <span
-        className={`text-xs transition-colors duration-300 ${
+        className={`text-[10px] tabular-nums transition-colors duration-300 ${
           active
             ? "text-emerald-500 dark:text-emerald-400"
             : "text-gray-400 dark:text-gray-500"
@@ -71,12 +147,65 @@ export default function MonthlyTarget() {
   const [priceUSD,   setPriceUSD]   = useState<number | null>(null);
   const [fearGreed,  setFearGreed]  = useState<number | null>(null);
   const [diffChange, setDiffChange] = useState<number | null>(null);
+  const [dmaPrice,   setDmaPrice]   = useState<number | null>(null);
+
+  // Dynamic price boundaries
+  const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
+  const [highPriceUSD, setHighPriceUSD] = useState<number>(HIGH_PRICE_USD_FALLBACK);
 
   const prevBuy   = useRef<number | "PASS" | null>(null);
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fear & Greed index
+  // ── Fetch weekly klines (ATH + 200WMA) ──────────────────────────────────
+  useEffect(() => {
+    const cachedATH = getCachedNumber(ATH_CACHE_KEY, ATH_CACHE_TTL);
+    const cachedWMA = getCachedNumber(WMA_CACHE_KEY, WMA_CACHE_TTL);
+    if (cachedATH !== null) setHighPriceUSD(cachedATH);
+    if (cachedWMA !== null) setLowPriceUSD(cachedWMA);
+    if (cachedATH !== null && cachedWMA !== null) return;
+
+    const ctrl = new AbortController();
+    fetchWeeklyKlines(ctrl.signal)
+      .then((klines) => {
+        if (cachedATH === null) {
+          const ath = deriveATH(klines);
+          if (ath !== null && ath > 0) {
+            setCachedNumber(ATH_CACHE_KEY, ath);
+            setHighPriceUSD(ath);
+          }
+        }
+        if (cachedWMA === null) {
+          const wma = deriveSMA(klines, WMA_PERIOD);
+          if (wma !== null && wma > 0) {
+            setCachedNumber(WMA_CACHE_KEY, wma);
+            setLowPriceUSD(wma);
+          }
+        }
+      })
+      .catch(() => { /* keep fallback values */ });
+    return () => ctrl.abort();
+  }, []);
+
+  // ── Fetch daily klines for 200DMA (Mayer Multiple) ──────────────────────
+  useEffect(() => {
+    const cached = getCachedNumber(DMA_CACHE_KEY, DMA_CACHE_TTL);
+    if (cached !== null) { setDmaPrice(cached); return; }
+
+    const ctrl = new AbortController();
+    fetchDailyKlines(ctrl.signal)
+      .then((klines) => {
+        const dma = deriveSMA(klines, 200);
+        if (dma !== null && dma > 0) {
+          setCachedNumber(DMA_CACHE_KEY, dma);
+          setDmaPrice(dma);
+        }
+      })
+      .catch(() => { /* non-critical — signal simply won't render */ });
+    return () => ctrl.abort();
+  }, []);
+
+  // ── Fear & Greed index ───────────────────────────────────────────────────
   useEffect(() => {
     fetch("https://api.alternative.me/fng/?limit=1&format=json")
       .then((r) => r.json())
@@ -87,7 +216,7 @@ export default function MonthlyTarget() {
       .catch(() => {});
   }, []);
 
-  // Mining difficulty — last retarget % from mempool.space
+  // ── Mining difficulty — last retarget % from mempool.space ───────────────
   useEffect(() => {
     fetch("https://mempool.space/api/v1/difficulty-adjustment")
       .then((r) => r.json())
@@ -100,7 +229,7 @@ export default function MonthlyTarget() {
       .catch(() => {});
   }, []);
 
-  // Binance WebSocket — live BTC/USDT price
+  // ── Binance WebSocket — live BTC/USDT price ──────────────────────────────
   useEffect(() => {
     const ws = new WebSocket(
       "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker"
@@ -113,7 +242,17 @@ export default function MonthlyTarget() {
         const raw = msg?.data?.["c"];
         if (raw !== undefined) {
           const price = parseFloat(raw);
-          if (!isNaN(price)) setPriceUSD(price);
+          if (!isNaN(price)) {
+            setPriceUSD(price);
+            // Update ATH if live price exceeds stored value
+            setHighPriceUSD((prev) => {
+              if (price > prev) {
+                setCachedNumber(ATH_CACHE_KEY, price);
+                return price;
+              }
+              return prev;
+            });
+          }
         }
       } catch { /* ignore malformed frames */ }
     };
@@ -132,11 +271,17 @@ export default function MonthlyTarget() {
   const fearExtreme = fearGreed !== null && fearGreed <= FEAR_EXTREME_THRESHOLD;
   const fearActive  = fearGreed !== null && fearGreed <= FEAR_ACTIVE_THRESHOLD;
   const diffActive  = diffChange !== null && diffChange < DIFF_DROP_THRESHOLD;
+  const belowWMA    = priceUSD !== null && priceUSD < lowPriceUSD;
+
+  const mayerMultiple =
+    priceUSD !== null && dmaPrice !== null && dmaPrice > 0
+      ? priceUSD / dmaPrice
+      : null;
+  const mayerActive = mayerMultiple !== null && mayerMultiple < MAYER_BUY_THRESHOLD;
 
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
-  // Days until we enter the 365-day pre-halving buy window
   const daysToWindow  = Math.max(0, Math.ceil((msToHalving - 365 * 86_400_000) / 86_400_000));
 
   // ── Boost ──────────────────────────────────────────────────────────────
@@ -145,24 +290,41 @@ export default function MonthlyTarget() {
   else if (fearActive) totalBoost += BOOST_FEAR_ACTIVE;
   if (diffActive)      totalBoost += BOOST_DIFF_DROP;
   if (halvingActive)   totalBoost += BOOST_HALVING;
+  if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
+  if (mayerActive)     totalBoost += BOOST_MAYER_LOW;
 
   // ── DCA calculation ────────────────────────────────────────────────────
   let recommendedBuy: number | "PASS" | null = null;
   let allocationPct = 0;
 
   if (priceUSD !== null) {
-    if (priceUSD > HIGH_PRICE_USD) {
+    if (priceUSD > highPriceUSD) {
       recommendedBuy = "PASS";
     } else {
       allocationPct = Math.max(
         0,
         Math.min(
           1,
-          1 - (priceUSD - LOW_PRICE_USD) / (HIGH_PRICE_USD - LOW_PRICE_USD)
+          1 - (priceUSD - lowPriceUSD) / (highPriceUSD - lowPriceUSD)
         )
       );
       const rawBuy = MAX_DCA_AUD * allocationPct * (1 + totalBoost / 100);
       recommendedBuy = roundToNearest50(Math.min(rawBuy, MAX_DCA_AUD));
+    }
+  }
+
+  // ── Gauge colour ──────────────────────────────────────────────────────
+  let gaugeColor = "#98a2b3";
+
+  if (priceUSD !== null) {
+    if (priceUSD > highPriceUSD) {
+      gaugeColor    = "#EF4444";
+    } else if (belowWMA || (allocationPct >= 0.85 && totalBoost >= 20)) {
+      gaugeColor    = "#10B981";
+    } else if (allocationPct >= 0.45 || totalBoost >= 10) {
+      gaugeColor    = "#FFD300";
+    } else {
+      gaugeColor    = "#F59E0B";
     }
   }
 
@@ -182,27 +344,23 @@ export default function MonthlyTarget() {
   }, [recommendedBuy]);
 
   // ── Display helpers ────────────────────────────────────────────────────
-  const fmt = (n: number) =>
-    n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
   const isPass    = recommendedBuy === "PASS";
   const isLoading = recommendedBuy === null;
 
-  const buyRatio    = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
-  const color       = isPass || isLoading ? "#98a2b3" : "#FFD300";
-  const chartValue  = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
+  const buyRatio   = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
+  const chartValue = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
   const centerLabel = isLoading
     ? "—"
     : isPass
     ? "PASS"
-    : `$${fmt(recommendedBuy as number)}`;
+    : `$${fmtAUD(recommendedBuy as number)}`;
 
   // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
     chart: {
       fontFamily: CHART_FONT,
       type: "radialBar",
-      height: 340,
+      height: 280,
       sparkline: { enabled: true },
     },
     plotOptions: {
@@ -221,16 +379,16 @@ export default function MonthlyTarget() {
         },
       },
     },
-    fill: { type: "solid", colors: [color] },
+    fill: { type: "solid", colors: [gaugeColor] },
     stroke: { lineCap: "round" },
     labels: ["Allocation"],
   };
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-6 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
+      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-2 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1 flex flex-col">
 
-        {/* Header */}
+        {/* Header — title */}
         <div className="flex items-center gap-2">
           <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
             4
@@ -240,55 +398,62 @@ export default function MonthlyTarget() {
           </h3>
         </div>
 
-        {/* Radial bar — allocation % */}
-        <div
-          style={{
-            transform: animate ? "scale(1.02)" : "scale(1)",
-            transition: "transform 0.3s ease",
-            position: "relative",
-          }}
-        >
-          <Chart
-            options={options}
-            series={[chartValue]}
-            type="radialBar"
-            height={340}
-          />
-          {/* Centre label rendered as HTML so colour always matches the bar.
-               bottom: ~18px sits the label closer to the gauge arc baseline;
-               font-size 56px makes the amount more prominent while chart height
-               stays at 340px so mobile layout is unaffected. */}
+        {/* Chart + label section — fills remaining card height, centres content */}
+        <div className="flex-1 flex flex-col justify-center">
+          {/* Radial bar — allocation % */}
           <div
             style={{
-              position: "absolute",
-              bottom: "18px",
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              pointerEvents: "none",
+              position: "relative",
+              transform: animate ? "scale(1.02)" : "scale(1)",
+              transition: "transform 0.3s ease",
             }}
           >
-            <span
+            <Chart
+              options={options}
+              series={[chartValue]}
+              type="radialBar"
+              height={280}
+            />
+
+            {/* Recommended buy amount — bottom edge aligned with the arc endpoints.
+                The label's containing block is the position:relative wrapper
+                (height ~135px). ApexCharts renders the 280px-chart SVG at 300px,
+                overflowing the wrapper by ~56px upward. The arc endpoints sit
+                ~129px below the wrapper's top, leaving ~6px to the wrapper's
+                bottom. Setting bottom:"6px" aligns the text's bottom edge flush
+                with the arc tips (the lowest visible points of the curved bar). */}
+            <div
               style={{
-                color,
-                fontSize: "56px",
-                fontWeight: 600,
-                fontFamily: CHART_FONT,
-                lineHeight: 1,
-                transition: "color 0.3s ease",
+                position: "absolute",
+                bottom: "6px",
+                left: 0,
+                right: 0,
+                textAlign: "center",
+                pointerEvents: "none",
               }}
             >
-              {centerLabel}
-            </span>
+              <span
+                style={{
+                  color: gaugeColor,
+                  fontSize: "clamp(36px, 9vw, 52px)",
+                  fontWeight: 600,
+                  fontFamily: CHART_FONT,
+                  lineHeight: 1,
+                  transition: "color 0.3s ease",
+                }}
+              >
+                {centerLabel}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Signals footer */}
-      <div className="grid grid-cols-3 divide-x divide-gray-200 dark:divide-gray-800">
+      {/* Signals footer — 5 signals */}
+      <div className="grid grid-cols-5 divide-x divide-gray-200 dark:divide-gray-800">
         <SignalItem
           active={fearActive}
-          label={fearExtreme ? "Extreme Fear" : "Fear & Greed"}
+          label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
           sub={fearGreed !== null ? String(fearGreed) : "—"}
         />
         <SignalItem
@@ -298,8 +463,18 @@ export default function MonthlyTarget() {
         />
         <SignalItem
           active={halvingActive}
-          label={halvingActive ? "Pre-Halving" : "Halving Window"}
-          sub={halvingActive ? `${daysToHalving}d to halving` : `in ${daysToWindow}d`}
+          label={halvingActive ? "Pre-Halving" : "Halving"}
+          sub={halvingActive ? `${daysToHalving}d` : `in ${daysToWindow}d`}
+        />
+        <SignalItem
+          active={belowWMA}
+          label="Below WMA"
+          sub={fmtK(lowPriceUSD)}
+        />
+        <SignalItem
+          active={mayerActive}
+          label="Mayer <1"
+          sub={mayerMultiple !== null ? mayerMultiple.toFixed(2) : "—"}
         />
       </div>
     </div>
