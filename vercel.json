@@ -5,6 +5,9 @@
     },
     "api/polymarket.ts": {
       "maxDuration": 15
+    },
+    "api/m2.ts": {
+      "maxDuration": 20
     }
   }
 }

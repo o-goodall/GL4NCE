@@ -14,7 +14,17 @@ import { parse } from "node:url";
 const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
 
 // Only the series IDs used by MoneyPrinter are allowed through this proxy.
-const ALLOWED_SERIES = new Set(["WALCL", "ECBASSETSW", "JPNASSETS"]);
+// Balance-sheet series (legacy)
+// M2 money-supply series + FX conversion rates (used by /api/m2)
+const ALLOWED_SERIES = new Set([
+  // Balance sheet (legacy)
+  "WALCL", "ECBASSETSW", "JPNASSETS",
+  // M2 money supply
+  "M2SL", "MABMM301EZM189S", "MABMM301GBM189S",
+  "MABMM301JPM189S", "MABMM301CAM189S", "MYAGM2CNM189N",
+  // FX rates (daily, for USD conversion)
+  "DEXUSEU", "DEXUSUK", "DEXJPUS", "DEXCAUS", "DEXCHUS",
+]);
 
 export default async function handler(
   req: IncomingMessage,
