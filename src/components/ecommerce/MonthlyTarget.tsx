@@ -154,51 +154,6 @@ function SignalItem({ active, label, sub, boost }: SignalItemProps) {
   );
 }
 
-// ── Price range progress bar ───────────────────────────────────────────────
-interface PriceRangeBarProps {
-  price: number | null;
-  low: number;
-  high: number;
-}
-
-function PriceRangeBar({ price, low, high }: PriceRangeBarProps) {
-  const range = high - low;
-  const pct =
-    price !== null && range > 0
-      ? Math.max(0, Math.min(100, ((price - low) / range) * 100))
-      : null;
-
-  return (
-    <div className="px-5 pb-4 sm:px-6">
-      <div className="relative h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-visible">
-        {/* Filled track */}
-        <div
-          className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500"
-          style={{
-            width: `${pct ?? 0}%`,
-            background: "linear-gradient(90deg, #10B981 0%, #FFD300 60%, #EF4444 100%)",
-          }}
-        />
-        {/* Thumb at current price position */}
-        {pct !== null && (
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white dark:bg-gray-900 border-2 border-gray-700 dark:border-gray-300 shadow transition-[left] duration-500"
-            style={{ left: `calc(${pct}% - 6px)` }}
-          />
-        )}
-      </div>
-      <div className="flex justify-between mt-1.5">
-        <span className="text-[10px] text-gray-400 dark:text-gray-500 leading-none">
-          200WMA {fmtK(low)}
-        </span>
-        <span className="text-[10px] text-gray-400 dark:text-gray-500 leading-none">
-          ATH {fmtK(high)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 // ── Main component ─────────────────────────────────────────────────────────
 export default function MonthlyTarget() {
   const [priceUSD,   setPriceUSD]   = useState<number | null>(null);
@@ -541,9 +496,6 @@ export default function MonthlyTarget() {
             )}
           </div>
         </div>
-
-        {/* Price range bar — 200WMA → ATH */}
-        <PriceRangeBar price={priceUSD} low={lowPriceUSD} high={highPriceUSD} />
       </div>
 
       {/* Signals footer — 5 signals */}
