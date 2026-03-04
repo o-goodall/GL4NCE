@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/badge/Badge";
 
-// ── FRED API configuration ──────────────────────────────────────────────────
-const FRED_API_KEY   = "6890f3185ca5ad2a4620da6b9ae832cb";
-const FRED_BASE_URL  = "https://api.stlouisfed.org/fred/series/observations";
-
 // Balance sheet must grow by at least this percentage week-on-week to be "ON"
 const EXPAND_THRESHOLD_PCT = 0.1;
-
-// Number of weekly observations to fetch — 5 years of history ensures we
-// can find the most recent expansion episode even during extended QT periods
-// (e.g. the Fed's 2022–2026 contraction).
-const FRED_FETCH_LIMIT = 260;
 
 // ── Central bank definitions ────────────────────────────────────────────────
 interface Bank {
@@ -81,17 +72,13 @@ interface FredResult {
   lastPrintedAmount: number | null;  // Raw delta of last expansion when OFF
 }
 
-// Fetch the last FRED_FETCH_LIMIT weekly observations for a series and derive
-// the current print status plus the "last printed" details for the OFF case.
+// Fetch the last 260 weekly observations for a series via the /api/fred proxy
+// (which keeps the API key server-side and adds CDN caching).
 async function fetchFredSeries(
   series: string,
   signal: AbortSignal,
 ): Promise<FredResult> {
-  const url =
-    `${FRED_BASE_URL}` +
-    `?series_id=${encodeURIComponent(series)}` +
-    `&api_key=${FRED_API_KEY}` +
-    `&limit=${FRED_FETCH_LIMIT}&sort_order=desc&file_type=json`;
+  const url = `/api/fred?series=${encodeURIComponent(series)}`;
 
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
