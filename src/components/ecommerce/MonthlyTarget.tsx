@@ -46,10 +46,6 @@ function fmtAUD(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-function fmtUSD(n: number): string {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
 function fmtK(n: number): string {
   return `$${Math.round(n / 1_000)}K`;
 }
@@ -364,7 +360,7 @@ export default function MonthlyTarget() {
     chart: {
       fontFamily: CHART_FONT,
       type: "radialBar",
-      height: 300,
+      height: 220,
       sparkline: { enabled: true },
     },
     plotOptions: {
@@ -392,21 +388,14 @@ export default function MonthlyTarget() {
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
       <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-2 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
 
-        {/* Header — title + live price */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-              4
-            </span>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-              DCA signal
-            </h3>
-          </div>
-          {priceUSD !== null && (
-            <span className="text-sm font-medium tabular-nums text-gray-500 dark:text-gray-400">
-              ₿ ${fmtUSD(priceUSD)}
-            </span>
-          )}
+        {/* Header — title */}
+        <div className="flex items-center gap-2">
+          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+            4
+          </span>
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+            DCA signal
+          </h3>
         </div>
 
         {/* Radial bar — allocation % */}
@@ -421,14 +410,14 @@ export default function MonthlyTarget() {
             options={options}
             series={[chartValue]}
             type="radialBar"
-            height={300}
+            height={220}
           />
 
           {/* Overlay — $ amount centred inside the arc */}
           <div
             style={{
               position: "absolute",
-              bottom: "24px",
+              bottom: "16px",
               left: 0,
               right: 0,
               textAlign: "center",
