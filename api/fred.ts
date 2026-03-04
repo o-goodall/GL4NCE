@@ -16,14 +16,18 @@ const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
 // Only the series IDs used by MoneyPrinter are allowed through this proxy.
 // Balance-sheet series (legacy)
 // M2 money-supply series + FX conversion rates (used by /api/m2)
+// Printer-score indicators (used by /api/printer)
 const ALLOWED_SERIES = new Set([
-  // Balance sheet (legacy)
+  // Balance sheet
   "WALCL", "ECBASSETSW", "JPNASSETS",
   // M2 money supply
   "M2SL", "MABMM301EZM189S", "MABMM301GBM189S",
   "MABMM301JPM189S", "MABMM301CAM189S", "MYAGM2CNM189N",
   // FX rates (daily, for USD conversion)
   "DEXUSEU", "DEXUSUK", "DEXJPUS", "DEXCAUS", "DEXCHUS",
+  // Printer-score indicators
+  "BAMLH0A0HYM2",  // ICE BofA US HY OAS (credit stress)
+  "T10Y2Y",        // 10Y-2Y yield spread (yield curve)
 ]);
 
 export default async function handler(

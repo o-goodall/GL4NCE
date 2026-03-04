@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/badge/Badge";
 
-// ── Types (mirror /api/m2 response) ──────────────────────────────────────────
+// ── Types (mirror API responses) ──────────────────────────────────────────
+
 interface CountryData {
   id:               string;
   name:             string;
@@ -19,7 +20,37 @@ interface M2Response {
   countries: CountryData[];
 }
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
+interface PrinterIndicator {
+  label:    string;
+  value:    number;
+  score:    number;
+  weight:   number;
+  elevated: boolean;
+}
+
+interface PrinterScore {
+  score:      number;
+  regime:     string;
+  indicators: PrinterIndicator[];
+}
+
+// ── Regime config ─────────────────────────────────────────────────────────
+
+interface RegimeConfig {
+  color:  string;
+  bg:     string;
+}
+
+function regimeCfg(regime: string): RegimeConfig {
+  switch (regime) {
+    case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
+    case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
+    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
+  }
+}
+
+// ── Formatting helpers ────────────────────────────────────────────────────
 
 function fmtUSD(billions: number): string {
   const t = billions / 1_000;
@@ -27,9 +58,6 @@ function fmtUSD(billions: number): string {
   return `$${str}T`;
 }
 
-// Format a delta in billions USD as a compact "+$X.XT" string.
-// M2 deltas displayed here are always positive growth; Math.abs guards
-// against floating-point edge cases near zero.
 function fmtDelta(billions: number): string {
   const abs = Math.abs(billions);
   const t   = abs / 1_000;
@@ -37,7 +65,6 @@ function fmtDelta(billions: number): string {
   return `+$${str}T`;
 }
 
-// Format an ISO date string (YYYY-MM-DD) as "MMM YYYY".
 function fmtMonthYear(isoDate: string): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   return d.toLocaleDateString("en-GB", {
@@ -45,21 +72,24 @@ function fmtMonthYear(isoDate: string): string {
   });
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────
 export default function MoneyPrinter() {
   const [countries, setCountries] = useState<CountryData[]>([]);
+  const [printer,   setPrinter]   = useState<PrinterScore | null>(null);
   const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch("/api/m2", { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<M2Response>;
-      })
-      .then((json) => {
-        setCountries(json.countries);
+    Promise.all([
+      fetch("/api/m2",      { signal: controller.signal })
+        .then((r) => { if (!r.ok) throw new Error(`m2 ${r.status}`);      return r.json() as Promise<M2Response>; }),
+      fetch("/api/printer", { signal: controller.signal })
+        .then((r) => { if (!r.ok) throw new Error(`printer ${r.status}`); return r.json() as Promise<PrinterScore>; }),
+    ])
+      .then(([m2Json, printerJson]) => {
+        setCountries(m2Json.countries);
+        setPrinter(printerJson);
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -70,12 +100,14 @@ export default function MoneyPrinter() {
     return () => controller.abort();
   }, []);
 
-  // ── Skeleton rows ─────────────────────────────────────────────────────────
+  const score = printer?.score  ?? null;
+  const rg    = printer?.regime ?? "Normal";
+  const cfg   = regimeCfg(rg);
+  const pct   = score !== null ? Math.min(100, Math.max(0, score)) : 0;
+
+  // ── Skeleton rows ──────────────────────────────────────────────────────
   const skeletonRows = Array.from({ length: 6 }, (_, i) => (
-    <div
-      key={i}
-      className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
-    >
+    <div key={i} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
       <div className="w-6 h-5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse shrink-0" />
       <div className="w-9 h-3.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse shrink-0" />
       <div className="flex-1 flex flex-col gap-1">
@@ -99,18 +131,71 @@ export default function MoneyPrinter() {
           Money Printer
         </h3>
       </div>
-      <p className="text-xs text-gray-400 dark:text-gray-500 mb-5">
-        M2 money supply · major economies · USD
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+        M2 supply · balance sheet · credit stress · yield curve
       </p>
 
-      {/* Country rows */}
+      {/* ── US Printer Score ───────────────────────────────────────────── */}
+      <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
+        {/* Score row */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            US Printer Score
+          </span>
+          {loading ? (
+            <div className="w-12 h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+          ) : (
+            <span className={`text-sm font-bold tabular-nums ${score !== null ? cfg.color : "text-gray-400"}`}>
+              {score !== null ? `${score}/100` : "—"}
+            </span>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mb-2">
+          {loading ? (
+            <div className="h-full w-1/3 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
+          ) : score !== null ? (
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${cfg.bg}`}
+              style={{ width: `${pct}%` }}
+            />
+          ) : null}
+        </div>
+
+        {/* Regime label + indicator pills */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {loading ? (
+            <div className="w-20 h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+          ) : (
+            <span className={`text-xs font-semibold ${score !== null ? cfg.color : "text-gray-400"}`}>
+              {score !== null ? rg : "—"}
+            </span>
+          )}
+
+          {!loading && printer?.indicators?.map((ind) => (
+            <span
+              key={ind.label}
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
+                ind.elevated
+                  ? "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400"
+                  : "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400"
+              }`}
+            >
+              <span className={`w-1 h-1 rounded-full shrink-0 ${ind.elevated ? "bg-orange-400" : "bg-gray-300 dark:bg-gray-600"}`} />
+              {ind.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ── M2 per-country rows ────────────────────────────────────────── */}
       <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-800 flex-1 justify-around">
         {loading
           ? skeletonRows
           : countries.map((c: CountryData) => {
               const isOn = !c.error && c.printing === true;
 
-              // Sub-label: amount printed this month (ON) or last printed info (OFF)
               let subLabel: string | null = null;
               if (isOn && c.printedUSD != null) {
                 subLabel = `${fmtDelta(c.printedUSD)} this month`;
@@ -121,19 +206,14 @@ export default function MoneyPrinter() {
               return (
                 <div
                   key={c.id}
-                  className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                  className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
                 >
-                  {/* Flag */}
-                  <span className="text-lg leading-none select-none shrink-0">
-                    {c.flag}
-                  </span>
+                  <span className="text-lg leading-none select-none shrink-0">{c.flag}</span>
 
-                  {/* Institution short name */}
                   <span className="text-xs font-semibold text-gray-700 dark:text-white/80 w-9 shrink-0">
                     {c.name}
                   </span>
 
-                  {/* M2 total + sub-label */}
                   <div className="flex-1 flex flex-col min-w-0">
                     <span className="text-sm font-medium tabular-nums text-gray-700 dark:text-gray-200 truncate">
                       {!c.error && c.latestUSD != null ? fmtUSD(c.latestUSD) : "—"}
@@ -151,14 +231,9 @@ export default function MoneyPrinter() {
                     )}
                   </div>
 
-                  {/* ON / OFF badge */}
                   {c.error ? (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                       —
-                    </span>
-                  ) : loading ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                      …
                     </span>
                   ) : (
                     <Badge color={isOn ? "success" : "light"} size="sm">
@@ -179,4 +254,3 @@ export default function MoneyPrinter() {
     </div>
   );
 }
-

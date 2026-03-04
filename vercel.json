@@ -8,6 +8,9 @@
     },
     "api/m2.ts": {
       "maxDuration": 20
+    },
+    "api/printer.ts": {
+      "maxDuration": 15
     }
   }
 }
