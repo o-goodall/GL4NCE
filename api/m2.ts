@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   UK  BOE  – MABMM301GBM189S  (Millions GBP, monthly, SA)  ← OECD series: millions NCU
 //   JP  BOJ  – MABMM301JPM189S  (Millions JPY, monthly, SA)  ← OECD series: millions NCU
 //   CA  BOC  – MABMM301CAM189S  (Millions CAD, monthly, SA)  ← OECD series: millions NCU
-//   CN  PBOC – MYAGM2CNM189N    (Millions CNY, monthly, NSA) ← millions NCU
+//   CN  PBOC – MYAGM2CNM189N    (Yuan, monthly, NSA)         ← individual yuan units (not millions)
 //
 // FX conversion (FRED daily rates, most recent observation):
 //   DEXUSEU – USD per EUR  (direct)
@@ -39,7 +39,8 @@ interface CountryConfig {
   m2Series:       string;   // FRED series ID for M2
   localToBillions: number;  // multiply raw FRED value → billions of local currency
                             //   M2SL: 1 (already billions USD)
-                            //   MABMM301* / MYAGM2CNM189N: 0.001 (millions → billions)
+                            //   MABMM301* (OECD MEI): 0.001 (millions NCU → billions)
+                            //   MYAGM2CNM189N (China): 1e-9 (individual yuan → billions)
   fxSeries:       string | null;  // FRED FX series (null → already USD)
   fxInverted:     boolean;  // true  → rate is LCU/USD (need 1/rate)
                             // false → rate is USD/LCU (multiply directly)
@@ -51,7 +52,7 @@ const COUNTRIES: readonly CountryConfig[] = [
   { id: "UK", name: "BOE",  flag: "🇬🇧", m2Series: "MABMM301GBM189S", localToBillions: 0.001, fxSeries: "DEXUSUK", fxInverted: false },
   { id: "JP", name: "BOJ",  flag: "🇯🇵", m2Series: "MABMM301JPM189S", localToBillions: 0.001, fxSeries: "DEXJPUS", fxInverted: true  },
   { id: "CA", name: "BOC",  flag: "🇨🇦", m2Series: "MABMM301CAM189S", localToBillions: 0.001, fxSeries: "DEXCAUS", fxInverted: true  },
-  { id: "CN", name: "PBOC", flag: "🇨🇳", m2Series: "MYAGM2CNM189N",   localToBillions: 0.001, fxSeries: "DEXCHUS", fxInverted: true  },
+  { id: "CN", name: "PBOC", flag: "🇨🇳", m2Series: "MYAGM2CNM189N",   localToBillions: 1e-9,  fxSeries: "DEXCHUS", fxInverted: true  },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
