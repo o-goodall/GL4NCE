@@ -360,7 +360,7 @@ export default function MonthlyTarget() {
     chart: {
       fontFamily: CHART_FONT,
       type: "radialBar",
-      height: 220,
+      height: 280,
       sparkline: { enabled: true },
     },
     plotOptions: {
@@ -415,13 +415,17 @@ export default function MonthlyTarget() {
               height={280}
             />
 
-            {/* Recommended buy amount — centred inside the arc hollow.
-                28px from bottom places the label just inside the arc's
-                lower opening on a 280px chart (opening sits at ~85% ≈ 238px). */}
+            {/* Recommended buy amount — bottom edge aligned with the arc endpoints.
+                Arc geometry: startAngle=-85°/endAngle=85° on a 280px chart
+                (ApexCharts renders the SVG at ~300px with the react wrapper at
+                ~315px). The arc tips (lowest points of the bar) sit ~130px above
+                the bottom of the wrapper. Setting bottom:"130px" aligns the
+                text's bottom edge with those tips so the label rests flush at
+                the base of the arc. */}
             <div
               style={{
                 position: "absolute",
-                bottom: "28px",
+                bottom: "130px",
                 left: 0,
                 right: 0,
                 textAlign: "center",
