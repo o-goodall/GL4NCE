@@ -416,16 +416,16 @@ export default function MonthlyTarget() {
             />
 
             {/* Recommended buy amount — bottom edge aligned with the arc endpoints.
-                Arc geometry: startAngle=-85°/endAngle=85° on a 280px chart
-                (ApexCharts renders the SVG at ~300px with the react wrapper at
-                ~315px). The arc tips (lowest points of the bar) sit ~130px above
-                the bottom of the wrapper. Setting bottom:"130px" aligns the
-                text's bottom edge with those tips so the label rests flush at
-                the base of the arc. */}
+                The label's containing block is the position:relative wrapper
+                (height ~135px). ApexCharts renders the 280px-chart SVG at 300px,
+                overflowing the wrapper by ~56px upward. The arc endpoints sit
+                ~129px below the wrapper's top, leaving ~6px to the wrapper's
+                bottom. Setting bottom:"6px" aligns the text's bottom edge flush
+                with the arc tips (the lowest visible points of the curved bar). */}
             <div
               style={{
                 position: "absolute",
-                bottom: "130px",
+                bottom: "6px",
                 left: 0,
                 right: 0,
                 textAlign: "center",
