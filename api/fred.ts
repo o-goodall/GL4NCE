@@ -11,7 +11,6 @@ import { parse } from "node:url";
 // The FRED_API_KEY environment variable must be set in Vercel.
 // A free key is available at https://research.stlouisfed.org/docs/api/api_key.html
 
-const FRED_API_KEY  = process.env.FRED_API_KEY ?? "";
 const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
 
 // Only the series IDs used by MoneyPrinter are allowed through this proxy.
@@ -21,6 +20,10 @@ export default async function handler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  // Read per-request so that changes to the Vercel environment variable and
+  // local .env.local values are picked up without requiring a cold-start.
+  const apiKey = process.env.FRED_API_KEY ?? "";
+
   const { query } = parse(req.url ?? "", true);
   const series = typeof query.series === "string" ? query.series : "";
 
@@ -31,7 +34,7 @@ export default async function handler(
     return;
   }
 
-  if (!FRED_API_KEY) {
+  if (!apiKey) {
     res.setHeader("Content-Type", "application/json");
     res.statusCode = 503;
     res.end(JSON.stringify({ error: "FRED_API_KEY environment variable is not configured" }));
@@ -42,7 +45,7 @@ export default async function handler(
     const url =
       `${FRED_BASE_URL}` +
       `?series_id=${encodeURIComponent(series)}` +
-      `&api_key=${FRED_API_KEY}` +
+      `&api_key=${apiKey}` +
       `&limit=260&sort_order=desc&file_type=json`;
 
     const upstream = await fetch(url);
