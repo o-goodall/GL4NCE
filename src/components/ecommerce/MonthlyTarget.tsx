@@ -34,12 +34,8 @@ const BOOST_MAYER_LOW    = 15; // Mayer Multiple < 1 (price below 200DMA)
 const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
 
 // ── Chart style ────────────────────────────────────────────────────────────
-const CHART_FONT        = "Inter, sans-serif";
-const CHART_TRACK_BG    = "#E5E5E7";
-// ApexCharts positions the semicircle arc center ~77% down the bounding box,
-// so the chord (open bottom) is at ~87% of the chart height. Pulling the label
-// up by this many pixels closes the gap without overlapping the arc.
-const ARC_BOTTOM_OFFSET = 28;
+const CHART_FONT     = "Inter, sans-serif";
+const CHART_TRACK_BG = "#E5E5E7";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function roundToNearest50(n: number): number {
@@ -402,35 +398,50 @@ export default function MonthlyTarget() {
           </h3>
         </div>
 
-        {/* Radial bar — allocation % */}
-        <div
-          style={{
-            transform: animate ? "scale(1.02)" : "scale(1)",
-            transition: "transform 0.3s ease",
-          }}
-        >
-          <Chart
-            options={options}
-            series={[chartValue]}
-            type="radialBar"
-            height={220}
-          />
-        </div>
-
-        {/* Recommended buy amount — pulled up flush with the arc opening */}
-        <div className="flex justify-center pb-4" style={{ marginTop: `-${ARC_BOTTOM_OFFSET}px` }}>
-          <span
+        {/* Chart + label section — fills remaining card height, centres content */}
+        <div className="flex-1 flex flex-col justify-center">
+          {/* Radial bar — allocation % */}
+          <div
             style={{
-              color: gaugeColor,
-              fontSize: "clamp(36px, 9vw, 52px)",
-              fontWeight: 600,
-              fontFamily: CHART_FONT,
-              lineHeight: 1,
-              transition: "color 0.3s ease",
+              position: "relative",
+              transform: animate ? "scale(1.02)" : "scale(1)",
+              transition: "transform 0.3s ease",
             }}
           >
-            {centerLabel}
-          </span>
+            <Chart
+              options={options}
+              series={[chartValue]}
+              type="radialBar"
+              height={280}
+            />
+
+            {/* Recommended buy amount — centred inside the arc hollow.
+                28px from bottom places the label just inside the arc's
+                lower opening on a 280px chart (opening sits at ~85% ≈ 238px). */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: "28px",
+                left: 0,
+                right: 0,
+                textAlign: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <span
+                style={{
+                  color: gaugeColor,
+                  fontSize: "clamp(36px, 9vw, 52px)",
+                  fontWeight: 600,
+                  fontFamily: CHART_FONT,
+                  lineHeight: 1,
+                  transition: "color 0.3s ease",
+                }}
+              >
+                {centerLabel}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
