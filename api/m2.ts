@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 // ── M2 Money Supply API ────────────────────────────────────────────────────
 // Fetches M2 money supply for 6 major economies from FRED, converts to USD,
-// and returns 13 months of history for trend visualization.
+// and returns ON/OFF printing status with amounts for each country.
 //
 // Sources (all via FRED, free tier – API key kept server-side):
 //   US  Fed  – M2SL             (Billions USD, monthly, SA)
@@ -28,9 +28,9 @@ const M2_LIMIT = 15;
 // Number of daily FX observations to retrieve (take the most recent valid one)
 const FX_LIMIT = 10;
 
-// Alert thresholds
-const MOM_ALERT_PCT = 1.0;   // Month-on-month growth > 1 %  → alert
-const YOY_ALERT_PCT = 8.0;   // Year-on-year  growth > 8 %  → alert
+// A country is considered "printing" when its most-recent monthly M2 growth
+// exceeds this threshold (percentage, month-on-month).
+const PRINT_THRESHOLD_PCT = 0.1;
 
 interface CountryConfig {
   id:         string;
@@ -81,15 +81,18 @@ function parseObs(obs: FredObs[]): { date: string; value: number }[] {
 // ── Response types ────────────────────────────────────────────────────────────
 
 export interface M2CountryResult {
-  id:         string;
-  name:       string;
-  flag:       string;
-  error:      boolean;
-  latestUSD?: number;                               // billions USD
-  momPct?:    number | null;                        // month-on-month %
-  yoyPct?:    number | null;                        // year-on-year %
-  alert?:     boolean;                              // significant increase flag
-  history?:   { date: string; valueUSD: number }[]; // oldest→newest, ≤13 pts
+  id:                string;
+  name:              string;
+  flag:              string;
+  error:             boolean;
+  latestUSD?:        number;        // billions USD (most recent month)
+  printing?:         boolean;       // true = M2 grew ≥ PRINT_THRESHOLD_PCT last month
+  // When printing === true:
+  printedUSD?:       number | null; // absolute increase in billions USD this month
+  printedDate?:      string | null; // ISO date (YYYY-MM-DD) of latest observation
+  // When printing === false:
+  lastPrintedDate?:  string | null; // ISO date of the most recent positive-growth month
+  lastPrintedUSD?:   number | null; // absolute increase in billions USD of that month
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -161,32 +164,53 @@ export default async function handler(
         toUSD = cfg.fxInverted ? 1 / rate : rate;
       }
 
-      // Convert M2 observations to USD (billions → keep as billions USD)
-      // Sort: take up to 13 valid obs (most recent first), then reverse for chart
+      // Convert observations to USD billions (take up to 13, most-recent first)
       const pts = validObs.slice(0, 13).map((o) => ({
         date:     o.date,
         valueUSD: o.value * toUSD,
       }));
 
-      const latest   = pts[0].valueUSD;
-      const prevMon  = pts[1]?.valueUSD ?? null;
-      const prevYear = pts[12]?.valueUSD ?? null;
+      const latestUSD  = pts[0].valueUSD;
+      const prevMonUSD = pts[1]?.valueUSD ?? null;
 
-      const momPct = prevMon  !== null ? ((latest - prevMon)  / prevMon)  * 100 : null;
-      const yoyPct = prevYear !== null ? ((latest - prevYear) / prevYear) * 100 : null;
+      const momPct = prevMonUSD !== null
+        ? ((latestUSD - prevMonUSD) / prevMonUSD) * 100
+        : null;
 
-      const alert =
-        (momPct !== null && momPct > MOM_ALERT_PCT) ||
-        (yoyPct !== null && yoyPct > YOY_ALERT_PCT);
+      const printing = momPct !== null && momPct >= PRINT_THRESHOLD_PCT;
+
+      let printedUSD:      number | null = null;
+      let printedDate:     string | null = null;
+      let lastPrintedDate: string | null = null;
+      let lastPrintedUSD:  number | null = null;
+
+      if (printing && prevMonUSD !== null) {
+        // Printer is ON — report the current month's increase
+        printedUSD  = latestUSD - prevMonUSD;
+        printedDate = pts[0].date;
+      } else {
+        // Printer is OFF — scan back to find the most recent printing month
+        for (let j = 1; j < pts.length - 1; j++) {
+          const v     = pts[j].valueUSD;
+          const vPrev = pts[j + 1].valueUSD;
+          const pct   = ((v - vPrev) / vPrev) * 100;
+          if (pct >= PRINT_THRESHOLD_PCT) {
+            lastPrintedDate = pts[j].date;
+            lastPrintedUSD  = v - vPrev;
+            break;
+          }
+        }
+      }
 
       return {
         ...base,
-        error:     false,
-        latestUSD: latest,
-        momPct,
-        yoyPct,
-        alert,
-        history:   [...pts].reverse(), // oldest first for sparkline
+        error: false,
+        latestUSD,
+        printing,
+        printedUSD,
+        printedDate,
+        lastPrintedDate,
+        lastPrintedUSD,
       };
     });
 
@@ -200,3 +224,4 @@ export default async function handler(
     res.end(JSON.stringify({ error: (err as Error).message }));
   }
 }
+
