@@ -319,9 +319,10 @@ const WB_GDP_CODES: Record<string, string> = {
 };
 
 interface WbGdpEntry {
-  country: { id: string; value: string };
-  date:    string;
-  value:   number | null;
+  country:         { id: string; value: string };
+  countryiso3code: string;   // ISO alpha-3 or aggregate code (e.g. "EMU"); matches query code for aggregates
+  date:            string;
+  value:           number | null;
 }
 
 // Returns a map of our country IDs to the most recent annual nominal GDP
@@ -346,8 +347,10 @@ async function fetchWorldBankNominalGdp(): Promise<Record<string, number | null>
   const result: Record<string, number | null> = {};
   for (const [countryId, wbCode] of Object.entries(WB_GDP_CODES)) {
     // Filter to this country's rows, sort newest-first, take first non-null value.
+    // Check both country.id (used for standard ISO-2 countries) and countryiso3code
+    // (used for aggregates like "EMU" where country.id may differ from the query code).
     const countryRows = rows
-      .filter(r => r.country?.id === wbCode)
+      .filter(r => r.country?.id === wbCode || r.countryiso3code === wbCode)
       .sort((a, b) => parseInt(b.date) - parseInt(a.date));
 
     let gdp: number | null = null;
@@ -362,7 +365,50 @@ async function fetchWorldBankNominalGdp(): Promise<Record<string, number | null>
   return result;
 }
 
-// ── Response types ────────────────────────────────────────────────────────────
+// ── Eurostat REST API helpers (for Euro Area government debt as % of GDP) ─────
+//
+// Eurostat gov_10dd_edpt1 (Excessive Deficit Procedure – Government Debt) is
+// the official source for Euro Area general government consolidated gross debt
+// as a percentage of GDP (Maastricht criterion).  It is used as a fallback for
+// the EU/ECB row when the FRED series GGGDTAEZA188N is unavailable.
+//
+// Eurostat API reference:
+//   https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/
+//   gov_10dd_edpt1?format=JSON&geo=EA&unit=PC_GDP&sector=S13&na_item=GD
+//
+// Response format: JSON-stat (value dictionary keyed by string index, plus
+//   dimension objects keyed by dimension name with category.index mappings).
+
+interface EurostatJsonStat {
+  value:     Record<string, number | null>;
+  dimension: {
+    time?: { category: { index: Record<string, number> } };
+    // other dimensions not needed
+  };
+}
+
+// Returns the most recent Euro Area general government gross debt, % of GDP.
+// Throws on network / HTTP errors so callers can .catch().
+async function fetchEurostatEuroAreaDebt(): Promise<number | null> {
+  const url =
+    "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/gov_10dd_edpt1" +
+    "?format=JSON&geo=EA&unit=PC_GDP&sector=S13&na_item=GD&lang=en";
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Eurostat HTTP ${res.status}`);
+
+  const body = (await res.json()) as EurostatJsonStat;
+  const timeIndex = body.dimension?.time?.category?.index;
+  if (!timeIndex || !body.value) return null;
+
+  // Sort years descending; pick the first non-null positive value.
+  const years = Object.keys(timeIndex).sort().reverse();
+  for (const yr of years) {
+    const val = body.value[String(timeIndex[yr])];
+    if (typeof val === "number" && isFinite(val) && val > 0) return val;
+  }
+  return null;
+}
 
 export interface M2CountryResult {
   id:               string;
@@ -424,12 +470,13 @@ export default async function handler(
       .filter((code): code is string => code !== null);
 
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
-    // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6), and
-    // nominal GDP from World Bank (all 6) – all in parallel.
+    // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6),
+    // nominal GDP from World Bank (all 6), and Euro Area debt from Eurostat –
+    // all in parallel.
     // grossDebtUSD is derived server-side: (debtToGDP / 100) * gdpUSD.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpMap] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpMap, euroAreaDebt] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -454,6 +501,11 @@ export default async function handler(
       // Failure is non-fatal; grossDebtUSD shows "—" if the API is unreachable.
       fetchWorldBankNominalGdp()
         .catch((): Record<string, number | null> => ({})),
+      // Eurostat gov_10dd_edpt1: Euro Area general govt gross debt, % of GDP.
+      // Used as fallback for EU/ECB when FRED GGGDTAEZA188N is unavailable
+      // (that series was discontinued in 2010).  Failure is non-fatal.
+      fetchEurostatEuroAreaDebt()
+        .catch(() => null),
     ]);
 
     // Build FX lookup: series_id → latest USD conversion rate
@@ -583,11 +635,18 @@ export default async function handler(
       }
 
       // ── Debt-to-GDP (FRED GGGDTA*188N – IMF WEO annual, % of GDP) ───────
-      // Failure is non-fatal: column shows "—" if FRED is unreachable.
+      // For the EU/ECB row, FRED series GGGDTAEZA188N was discontinued in 2010.
+      // Eurostat gov_10dd_edpt1 is used as a fallback when FRED returns null.
+      // Failure is non-fatal: column shows "—" if all sources are unreachable.
       const debtResult = debtSettled[i];
-      const debtToGDP  = debtResult.status === "fulfilled"
+      const fredDebt   = debtResult.status === "fulfilled"
         ? (parseObs(debtResult.value)[0]?.value ?? null)
         : null;
+      // Prefer FRED; fall back to Eurostat for EU when FRED is unavailable.
+      const debtToGDP  =
+        fredDebt !== null              ? fredDebt          :
+        cfg.id === "EU"               ? euroAreaDebt      :
+                                        null;
 
       // ── Gross National Debt in current USD ────────────────────────────────
       // Source: World Bank NY.GDP.MKTP.CD (nominal GDP, actual USD → /1e9 = billions) × debtToGDP%.
