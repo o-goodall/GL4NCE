@@ -67,24 +67,44 @@ function setCache<T>(key: string, data: T): void {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BLOCKS_KEY       = "btc-blocks-v1";
-const MEMPOOL_KEY      = "btc-mempool-v1";
-const DIFF_KEY         = "btc-diff-adj-v1";
-const FEES_KEY         = "btc-fees-v1";
+const BLOCKS_KEY        = "btc-blocks-v1";
+const MEMPOOL_KEY       = "btc-mempool-v1";
+const DIFF_KEY          = "btc-diff-adj-v1";
+const FEES_KEY          = "btc-fees-v1";
 
-const BLOCKS_TTL       = 60_000;
-const MEMPOOL_TTL      = 30_000;
-const DIFF_TTL         = 5 * 60_000;
-const FEES_TTL         = 60_000;
+const BLOCKS_TTL        = 60_000;
+const MEMPOOL_TTL       = 30_000;
+const DIFF_TTL          = 5 * 60_000;
+const FEES_TTL          = 60_000;
 
 const POLL_MS           = 60_000;
 const MAX_BLOCKS        = 6;
 const HALVING_INTERVAL  = 210_000;
 const SATS_PER_BTC      = 1e8;
 const FEE_SEPARATOR     = " · ";
-// Block card dimensions — keep in sync with the skeleton placeholder
-const BLOCK_CARD_W      = "w-[90px]";
-const BLOCK_CARD_H      = "h-[76px]";
+/** Max block weight in weight-units (4 WU per vbyte × 1,000,000 vbytes) */
+const MAX_BLOCK_WEIGHT  = 4_000_000;
+/** Approximate max block vsize in vbytes — used for pending-block fill */
+const MAX_BLOCK_VSIZE   = 1_000_000;
+// Block card dimensions — keep in sync with skeleton placeholders
+const BLOCK_CARD_W          = "w-[96px]";
+const PENDING_BLOCK_W       = "w-[110px]";
+const BLOCK_CARD_SKELETON_H = "h-[118px]";
+/** How long the btc-block-enter CSS animation plays (ms) */
+const BLOCK_ENTER_MS        = 500;
+/** Extra buffer after animation before clearing the animating-id state */
+const ANIMATION_CLEANUP_BUFFER_MS = 150;
+/** Duration string for the block-enter animation class (must match BLOCK_ENTER_MS) */
+const BLOCK_ENTER_DURATION  = "0.5s";
+/** Duration string for the pending-block fill pulse animation */
+const FILL_PULSE_DURATION   = "3s";
+/** Duration string for the tx-rise particle animation */
+const TX_RISE_DURATION      = "2.6s";
+/** Particle horizontal positions (%) and stagger delay (s) */
+const PARTICLE_POSITIONS    = [16, 46, 76] as const;
+const PARTICLE_STAGGER_S    = 0.9;
+/** Bottom offset for particles — anchored to the fill level, capped at 50 to stay visible when fill is 0 */
+const PARTICLE_BOTTOM_FALLBACK = 50;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,13 +144,13 @@ function pctColor(n: number | null): string {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface ProgressRowProps {
-  label:          string;
-  pct:            number | null;
+  label:           string;
+  pct:             number | null;
   percentageLabel: string | null;
-  right:          string | null;
+  right:           string | null;
   /** Tailwind bg-* class for the filled portion, e.g. "bg-amber-400" */
-  color:          string;
-  loading:        boolean;
+  color:           string;
+  loading:         boolean;
 }
 
 function ProgressRow({ label, pct, percentageLabel, right, color, loading }: ProgressRowProps) {
@@ -193,29 +213,123 @@ function MiniStat({ label, value, sub, color = "text-gray-800 dark:text-white/90
   );
 }
 
-function BlockCard({ block, isLatest }: { block: Block; isLatest: boolean }) {
-  const reward = block.extras?.reward;
-  const pool   = block.extras?.pool?.name;
+// ── Pending Block ──────────────────────────────────────────────────────────────
+
+interface PendingBlockProps {
+  nextHeight:    number | null;
+  mempoolCount:  number | null;
+  mempoolVsize:  number | null;
+  avgFeeRate:    number | null;
+  loading:       boolean;
+}
+
+function PendingBlock({ nextHeight, mempoolCount, mempoolVsize, avgFeeRate, loading }: PendingBlockProps) {
+  /** 0-100: how full the next block is based on mempool vsize vs 1 MB cap */
+  const fillPct = mempoolVsize !== null
+    ? Math.min(100, Math.round((mempoolVsize / MAX_BLOCK_VSIZE) * 100))
+    : null;
+
+  if (loading) {
+    return (
+      <div className={`flex-none ${PENDING_BLOCK_W} ${BLOCK_CARD_SKELETON_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
+    );
+  }
 
   return (
     <div
-      className={`flex-none w-[90px] rounded-xl border p-2 transition-colors ${
+      className={`flex-none ${PENDING_BLOCK_W} relative overflow-hidden rounded-xl border-2 border-dashed border-amber-400/70 dark:border-amber-500/40 bg-white dark:bg-white/[0.02]`}
+      style={{ minHeight: "118px" }}
+    >
+      {/* Animated fill background */}
+      {fillPct !== null && (
+        <div
+          className={`absolute bottom-0 left-0 right-0 bg-amber-100/90 dark:bg-amber-500/15 animate-[btc-fill-pulse_${FILL_PULSE_DURATION}_ease-in-out_infinite] transition-all duration-1000`}
+          style={{ height: `${fillPct}%` }}
+        />
+      )}
+
+      {/* Floating tx particles */}
+      {PARTICLE_POSITIONS.map((leftPct, i) => (
+        <div
+          key={i}
+          className={`absolute w-1 h-1 rounded-full bg-amber-400 dark:bg-amber-500 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
+          style={{
+            left:           `${leftPct}%`,
+            bottom:         `${fillPct ?? PARTICLE_BOTTOM_FALLBACK}%`,
+            animationDelay: `${i * PARTICLE_STAGGER_S}s`,
+          }}
+        />
+      ))}
+
+      {/* Content */}
+      <div className="relative z-10 p-2">
+        <div className="flex items-center gap-1 mb-1">
+          <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide leading-none">
+            Next
+          </span>
+          <span className="w-1 h-1 rounded-full bg-amber-400 dark:bg-amber-500 animate-pulse shrink-0" />
+        </div>
+
+        <div className="text-[11px] font-bold tabular-nums text-gray-700 dark:text-gray-200 leading-tight mb-1.5">
+          {nextHeight !== null ? `#${fmtNum(nextHeight)}` : "—"}
+        </div>
+
+        <div className="space-y-0.5">
+          <div className="text-[9px] tabular-nums text-gray-600 dark:text-gray-300">
+            {mempoolCount !== null ? fmtNum(mempoolCount) : "—"} pending
+          </div>
+          {avgFeeRate !== null && (
+            <div className="text-[9px] tabular-nums text-gray-500 dark:text-gray-400">
+              {avgFeeRate} sat/vB
+            </div>
+          )}
+          {fillPct !== null && (
+            <div className="text-[9px] tabular-nums font-semibold text-amber-600 dark:text-amber-400">
+              {fillPct >= 100 ? "Full" : `${fillPct}% full`}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Confirmed Block Card ───────────────────────────────────────────────────────
+
+interface BlockCardProps {
+  block:    Block;
+  isLatest: boolean;
+  isNew:    boolean;
+}
+
+function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
+  const reward   = block.extras?.reward;
+  const pool     = block.extras?.pool?.name;
+  /** Block fullness 0-100 based on weight vs 4 MW max */
+  const fullness = Math.min(100, Math.round((block.weight / MAX_BLOCK_WEIGHT) * 100));
+
+  return (
+    <div
+      className={`flex-none ${BLOCK_CARD_W} rounded-xl border p-2 transition-colors ${
+        isNew ? `animate-[btc-block-enter_${BLOCK_ENTER_DURATION}_ease-out_both]` : ""
+      } ${
         isLatest
           ? "bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30"
           : "bg-gray-50 border-gray-100 dark:bg-white/[0.02] dark:border-gray-800"
       }`}
     >
-      <div
-        className={`text-[11px] font-bold tabular-nums leading-tight ${
-          isLatest ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
-        }`}
-      >
+      {/* Height */}
+      <div className={`text-[11px] font-bold tabular-nums leading-tight ${
+        isLatest ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
+      }`}>
         #{fmtNum(block.height)}
       </div>
-      <div className="text-[9px] text-gray-400 dark:text-gray-500 mb-1">
+      {/* Time */}
+      <div className="text-[9px] text-gray-400 dark:text-gray-500 mb-1.5">
         {timeAgo(block.timestamp)} ago
       </div>
-      <div className="space-y-0.5">
+      {/* Details */}
+      <div className="space-y-0.5 mb-2">
         <div className="text-[9px] tabular-nums text-gray-600 dark:text-gray-300">
           {fmtNum(block.tx_count)} txs
         </div>
@@ -233,6 +347,30 @@ function BlockCard({ block, isLatest }: { block: Block; isLatest: boolean }) {
           </div>
         )}
       </div>
+      {/* Fullness bar */}
+      <div className="h-1 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${
+            isLatest ? "bg-orange-400" : "bg-gray-300 dark:bg-gray-600"
+          }`}
+          style={{ width: `${fullness}%` }}
+        />
+      </div>
+      <div className="text-[8px] tabular-nums text-gray-400 dark:text-gray-500 mt-0.5 text-right">
+        {fullness}%
+      </div>
+    </div>
+  );
+}
+
+/** Small directional arrow connector between blocks */
+function ChainArrow({ faint = false }: { faint?: boolean }) {
+  const lineColor  = faint ? "bg-gray-200 dark:bg-gray-700"   : "bg-gray-300 dark:bg-gray-600";
+  const arrowColor = faint ? "border-l-gray-200 dark:border-l-gray-700" : "border-l-gray-300 dark:border-l-gray-600";
+  return (
+    <div className="flex items-center mx-1 shrink-0">
+      <div className={`w-3 h-px ${lineColor}`} />
+      <div className={`w-0 h-0 border-t-[3px] border-b-[3px] border-l-[5px] border-t-transparent border-b-transparent ${arrowColor}`} />
     </div>
   );
 }
@@ -245,6 +383,11 @@ export default function BlockchainVisualizer() {
   const [difficulty, setDifficulty] = useState<DifficultyAdjustment | null>(null);
   const [fees,       setFees]       = useState<RecommendedFees | null>(null);
   const [loading,    setLoading]    = useState(true);
+
+  /** Track latest block height to detect when a new block arrives */
+  const prevHeightRef    = useRef<number | null>(null);
+  const [animatingBlockId, setAnimatingBlockId] = useState<string | null>(null);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -305,6 +448,20 @@ export default function BlockchainVisualizer() {
     };
   }, []);
 
+  // ── Detect new block → trigger slide-in animation ─────────────────────────
+  useEffect(() => {
+    if (loading || blocks.length === 0) return;
+    const latestHeight = blocks[0].height;
+    const latestId     = blocks[0].id;
+    if (prevHeightRef.current !== null && latestHeight !== prevHeightRef.current) {
+      setAnimatingBlockId(latestId);
+      const t = setTimeout(() => setAnimatingBlockId(null), BLOCK_ENTER_MS + ANIMATION_CLEANUP_BUFFER_MS);
+      prevHeightRef.current = latestHeight;
+      return () => clearTimeout(t);
+    }
+    prevHeightRef.current = latestHeight;
+  }, [blocks, loading]);
+
   // ── Derived values ────────────────────────────────────────────────────────
   const blockHeight = blocks[0]?.height ?? null;
 
@@ -334,10 +491,10 @@ export default function BlockchainVisualizer() {
   const feeSub = fees ? `fast${FEE_SEPARATOR}mid${FEE_SEPARATOR}slow` : undefined;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] flex flex-col">
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
 
       {/* ── Header: title + block height + live dot ── */}
-      <div className="flex items-start justify-between px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
+      <div className="flex items-start justify-between px-4 pt-4 pb-3 sm:px-5 sm:pt-5 shrink-0">
         <div className="flex items-start gap-2">
           <span className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400 mt-0.5">
             3
@@ -362,7 +519,7 @@ export default function BlockchainVisualizer() {
       </div>
 
       {/* ── Progress bars: Halving + Epoch ── */}
-      <div className="px-4 pb-3 sm:px-5 space-y-2.5">
+      <div className="px-4 pb-3 sm:px-5 space-y-2.5 shrink-0">
         <ProgressRow
           label="Halving"
           pct={halvingPct}
@@ -382,7 +539,7 @@ export default function BlockchainVisualizer() {
       </div>
 
       {/* ── Condensed stats row ── */}
-      <div className="px-4 sm:px-5 py-3 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-3">
+      <div className="px-4 sm:px-5 py-3 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-3 shrink-0">
         <MiniStat
           label="Est. Diff Adj"
           value={estDiffChange !== null ? fmtPct(estDiffChange) : "—"}
@@ -409,27 +566,43 @@ export default function BlockchainVisualizer() {
         />
       </div>
 
-      {/* ── Recent Blocks — horizontal chain scroll ── */}
-      <div className="px-4 pb-4 pt-3 sm:px-5 border-t border-gray-100 dark:border-gray-800">
-        <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2 block">
-          Recent Blocks
+      {/* ── Live Block Chain — fills remaining height ── */}
+      <div className="flex-1 min-h-0 flex flex-col px-4 pb-4 pt-3 sm:px-5 border-t border-gray-100 dark:border-gray-800">
+        <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2.5 shrink-0 block">
+          Live Chain
         </span>
-        <div className="flex items-center overflow-x-auto pb-0.5">
+
+        {/* Scrollable chain row */}
+        <div className="flex items-start overflow-x-auto pb-1">
+
+          {/* Pending (next) block */}
+          <div className="flex items-center shrink-0">
+            <PendingBlock
+              nextHeight={blockHeight !== null ? blockHeight + 1 : null}
+              mempoolCount={mempoolCount}
+              mempoolVsize={mempoolVsize}
+              avgFeeRate={avgFeeRate}
+              loading={loading}
+            />
+            <ChainArrow />
+          </div>
+
+          {/* Confirmed blocks */}
           {loading
             ? Array.from({ length: MAX_BLOCKS }).map((_, i) => (
                 <div key={i} className="flex items-center shrink-0">
-                  <div className={`${BLOCK_CARD_W} ${BLOCK_CARD_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
-                  {i < MAX_BLOCKS - 1 && (
-                    <div className="w-3 h-px bg-gray-200 dark:bg-gray-700 mx-0.5 shrink-0" />
-                  )}
+                  <div className={`${BLOCK_CARD_W} ${BLOCK_CARD_SKELETON_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
+                  {i < MAX_BLOCKS - 1 && <ChainArrow faint />}
                 </div>
               ))
             : blocks.map((block, i) => (
                 <div key={block.id} className="flex items-center shrink-0">
-                  <BlockCard block={block} isLatest={i === 0} />
-                  {i < blocks.length - 1 && (
-                    <div className="w-3 h-px bg-gray-200 dark:bg-gray-700 mx-0.5 shrink-0" />
-                  )}
+                  <BlockCard
+                    block={block}
+                    isLatest={i === 0}
+                    isNew={block.id === animatingBlockId}
+                  />
+                  {i < blocks.length - 1 && <ChainArrow faint />}
                 </div>
               ))}
         </div>
