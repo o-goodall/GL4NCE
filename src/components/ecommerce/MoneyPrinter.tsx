@@ -54,30 +54,31 @@ function regimeCfg(regime: string): RegimeConfig {
   switch (regime) {
     case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
     case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Caution": return { color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-500"    };
-    case "Watch":   return { color: "text-blue-500 dark:text-blue-400",     bg: "bg-blue-400"      };
+    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
     default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
   }
 }
 
-// ── Per-bank DEFCON badge styles (green → yellow → orange → red) ─────────────
+// ── Per-bank score badge styles (green → yellow → orange → red) ──────────────
 
 const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
   Crisis: {
     badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
     dot:   "bg-red-500 dark:bg-red-400",
   },
-  "Printer Warming": {
+  // "Brrrr" is the US printer.ts label for the top-of-tile score; map it to
+  // the same Crisis style so the Fed row badge is consistent when overlaid.
+  Brrrr: {
+    badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
+    dot:   "bg-red-500 dark:bg-red-400",
+  },
+  Alert: {
     badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
     dot:   "bg-orange-500 dark:bg-orange-400",
   },
-  Caution: {
+  Warming: {
     badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
     dot:   "bg-yellow-500 dark:bg-yellow-400",
-  },
-  Watch: {
-    badge: "bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-400",
-    dot:   "bg-blue-400 dark:bg-blue-400",
   },
   Normal: {
     badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
@@ -225,7 +226,7 @@ export default function MoneyPrinter() {
               <th className="text-right pb-2 pr-2">M1 Δ</th>
               <th className="text-right pb-2 pr-2">M2</th>
               <th className="text-right pb-2 pr-2">M2 Δ</th>
-              <th className="text-right pb-2">DEFCON</th>
+              <th className="text-right pb-2">Score</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -277,22 +278,29 @@ export default function MoneyPrinter() {
                         {c.error ? "—" : fmtDelta(m2Change)}
                       </td>
 
-                      {/* Status */}
+                      {/* Score */}
                       <td className="py-2 text-right">
                         {c.error ? (
                           <span className="text-xs text-gray-400">—</span>
                         ) : (() => {
-                          const regime = c.scoreRegime ?? "Normal";
-                          const styles = REGIME_BADGE[regime] ?? REGIME_BADGE.Normal;
-                          const score  = c.printerScore ?? 0;
+                          // The Fed (US) row uses the comprehensive printer score
+                          // (4-indicator model from /api/printer) so it matches
+                          // the "US Printer Score" shown in the panel above.
+                          const rowScore  = c.id === "US" && printer !== null
+                            ? printer.score
+                            : c.printerScore ?? 0;
+                          const rowRegime = c.id === "US" && printer !== null
+                            ? printer.regime
+                            : c.scoreRegime ?? "Normal";
+                          const styles = REGIME_BADGE[rowRegime] ?? REGIME_BADGE.Normal;
                           return (
                             <div className="inline-flex flex-col items-end gap-0.5">
                               <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${styles.badge}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
-                                {regime}
+                                {rowRegime}
                               </span>
                               <span className="text-[9px] tabular-nums text-gray-400 dark:text-gray-500">
-                                {score}/100
+                                {rowScore}/100
                               </span>
                             </div>
                           );
