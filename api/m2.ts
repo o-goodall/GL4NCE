@@ -54,11 +54,12 @@ const FX_LIMIT = 10;
 //                  [M1 ≈ 42.9 %, M2 ≈ 57.1 % — original intent M1:M2 = 30:40]
 //   M1 unavailable: score = round(m2Sub)                         [M2 at 100 %]
 //
-// Score → regime / Status:
-//   0–39   → "Normal"  / OFF
-//   40–59  → "Warming" / ON
-//   60–79  → "High"    / ON
-//   80–100 → "Crisis"  / ON
+// Score → regime / Status (DEFCON guide):
+//   0–29   → "Normal"   (DEFCON 5) – no systemic stress
+//   30–44  → "Watch"    (DEFCON 4) – early signs of liquidity tightening
+//   45–59  → "Caution"  (DEFCON 3) – liquidity stress building
+//   60–74  → "Warming"  (DEFCON 2) – high probability of aggressive intervention
+//   75–100 → "Crisis"   (DEFCON 1) – full-on emergency monetary expansion
 const MONEY_GROWTH_SCALE = 143;
 
 // Minimum M2 MoM growth rate (%) to record a historical "printed" episode in
@@ -91,9 +92,10 @@ function computeBankPrinterScore(
 }
 
 function bankScoreRegime(score: number): string {
-  if (score >= 80) return "Crisis";
-  if (score >= 60) return "High";
-  if (score >= 40) return "Warming";
+  if (score >= 75) return "Crisis";
+  if (score >= 60) return "Warming";
+  if (score >= 45) return "Caution";
+  if (score >= 30) return "Watch";
   return "Normal";
 }
 
