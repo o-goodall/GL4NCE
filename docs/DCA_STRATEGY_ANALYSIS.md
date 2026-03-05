@@ -29,8 +29,8 @@ approach could improve our signal.
 |--------|--------|
 | **Core idea** | Calculate a *per-period buy amount* (AUD 0 – 1 000) based on current price relative to the 200-week Moving Average (floor) and All-Time High (ceiling), boosted by macro/on-chain signals. |
 | **Allocation model** | Inversely proportional to price position in the ATH↔200WMA range, multiplied by signal boosts. |
-| **Cycle awareness** | Pre-halving window only (≤ 365 days before the next halving → +10 % boost). |
-| **Signals (4)** | Fear & Greed Index, Mining Difficulty Drop, Pre-Halving Window, Price Below 200WMA. |
+| **Cycle awareness** | Full: pre-halving window, post-halving accumulation, cycle peak dampening, cycle trough boosting. |
+| **Signals (5)** | Fear & Greed Index, Mining Difficulty Drop, Halving Cycle Phase, Cycle Peak/Trough Proximity, Price Below 200WMA. |
 
 ---
 
@@ -40,20 +40,33 @@ approach could improve our signal.
 |-----------|-----|--------|---------|
 | **What it answers** | *"How long should I DCA?"* | *"How much should I buy this period?"* | Complementary; GL4NCE is more actionable for recurring buyers. |
 | **Price sensitivity** | None — equal buys every day. | High — buys more when price is low relative to range. | GL4NCE is better: buying more at lower prices improves cost basis. |
-| **Cycle coverage** | Full 4-year cycle. | Partial — only the pre-halving window (25 % of the cycle). | **BSP is stronger here.** GL4NCE misses the post-halving accumulation phase, which historically offers the best risk/reward. |
-| **Signal diversity** | Single dimension (time). | Four independent signals (sentiment, mining, halving, price vs 200WMA). | GL4NCE is richer and more responsive to real-time conditions. |
+| **Cycle coverage** | Full 4-year cycle. | Full — halving phases + peak/trough proximity cover the entire cycle. | Both have strong cycle awareness. GL4NCE is now on par. |
+| **Signal diversity** | Single dimension (time). | Five independent signals (sentiment, mining, halving, peak/trough, price vs 200WMA). | GL4NCE is richer and more responsive to real-time conditions. |
 | **Adaptability** | Static equal amounts. | Dynamic amounts that respond to changing conditions. | GL4NCE is superior for active DCA strategies. |
 | **Simplicity** | Very simple — one number (days). | More complex — requires multiple API feeds. | BSP is easier to understand; GL4NCE provides better guidance. |
 
 ---
 
-## 3. Key Insight from BSP That Improves GL4NCE
+## 3. Bitcoin Market Cycle Data
 
-> **The post-halving accumulation phase (0 – 18 months after a halving) is
-> historically one of the best windows to accumulate Bitcoin, yet the current
-> GL4NCE signal has no coverage for this period.**
+### Key Dates
 
-The 4-year halving cycle can be split roughly into four phases:
+| Event | Date | Type |
+|-------|------|------|
+| Halving | 28 Nov 2012 | Supply reduction |
+| **Peak** | **04 Dec 2013** | Cycle high |
+| **Trough** | **14 Jan 2015** | Cycle low |
+| Halving | 09 Jul 2016 | Supply reduction |
+| **Peak** | **16 Dec 2017** | Cycle high |
+| **Trough** | **15 Dec 2018** | Cycle low |
+| Halving | 11 May 2020 | Supply reduction |
+| **Peak** | **18 Nov 2021** | Cycle high |
+| **Trough** | **21 Nov 2022** | Cycle low |
+| Halving | 20 Apr 2024 | Supply reduction |
+| **Peak** | **06 Dec 2025** *(projected)* | Cycle high |
+| **Trough** | **15 Dec 2028** *(projected)* | Cycle low |
+
+### Cycle Pattern (approx. timing from halving)
 
 ```
 Phase            │ Approx. timing          │ Market behaviour
@@ -62,73 +75,97 @@ Post-Halving     │ 0 – 18 months after     │ Supply shock building;
 Accumulation     │ halving                 │ prices consolidate then
                  │                         │ begin trending up.
 ─────────────────┼─────────────────────────┼──────────────────────────────
-Mid-Cycle        │ 18 – 36 months after    │ Price discovery / markup;
-Markup           │ halving                 │ volatility increases.
+Cycle Peak       │ ~18 months after        │ Euphoria / blow-off top.
+                 │ halving                 │ Historically ±90 days of
+                 │                         │ the projected peak date.
 ─────────────────┼─────────────────────────┼──────────────────────────────
-Late-Cycle       │ 36 – 48 months after    │ Distribution / euphoria;
-Distribution     │ halving                 │ risk of cycle top.
+Post-Peak        │ 18 – 36 months after    │ Correction / bear market;
+Markdown         │ halving                 │ prices decline.
 ─────────────────┼─────────────────────────┼──────────────────────────────
-Pre-Halving      │ ≤ 12 months before      │ Correction / accumulation;
-Window           │ next halving            │ anticipation builds.
+Cycle Trough     │ ~30 months after        │ Capitulation / bottom.
+                 │ halving                 │ Historically ±90 days of
+                 │                         │ the projected trough date.
+─────────────────┼─────────────────────────┼──────────────────────────────
+Pre-Halving      │ ≤ 12 months before      │ Recovery / anticipation;
+Window           │ next halving            │ market starts repricing.
 ```
-
-The current GL4NCE signal only activates the halving boost during the
-**Pre-Halving Window** — the last 12 months of the cycle. This means the
-first ~18 months after a halving (often the most favourable accumulation
-period) receive **no cycle-based boost**.
-
-BSP's cycle-position model inherently accounts for the post-halving
-accumulation phase by recommending aggressive DCA during this period.
 
 ---
 
-## 4. Recommendation
+## 4. Key Insights That Improve GL4NCE
 
-### What to adopt from BSP
+### Insight 1: Post-halving accumulation (implemented)
 
-**Add a Post-Halving Accumulation signal** to the GL4NCE DCA widget.
+> **The post-halving accumulation phase (0 – 18 months after a halving) is
+> historically one of the best windows to accumulate Bitcoin.**
 
-- **Trigger:** Activate when the current date is within 547 days (≈ 18 months)
-  of the most recent halving.
-- **Boost:** +10 % (same weight as the existing pre-halving boost).
-- **Display:** Show as "Post-Halv" in the signal footer with days since
-  halving.
-- **Rationale:** Historically, this phase coincides with a supply shock and
-  an emerging uptrend — an ideal accumulation window that the current signal
-  ignores.
+This was the first enhancement: a +10 % boost during the 547-day window
+after a halving.
 
-This converts the existing single-event "Halving" signal into a **full
-cycle-phase indicator** covering both ends of the halving:
+### Insight 2: Cycle peak dampening (NEW)
 
-| Period | Signal label | Status |
-|--------|-------------|--------|
-| 0 – 547 d after halving | **Post-Halv** (NEW) | 🟢 Active |
-| 547 d after halving → 365 d before next | **Cycle** | ⚪ Inactive |
-| ≤ 365 d before next halving | **Pre-Halving** (existing) | 🟢 Active |
+> **Near projected cycle peaks, the DCA strategy should reduce allocation
+> to avoid over-buying at inflated prices.**
 
-This extends cycle-aware boost coverage from **25 %** to roughly **63 %** of
-the full halving cycle.
+While the existing "PASS" signal (price > ATH) covers the extreme case, the
+cycle peak zone catches the broader distribution phase. A −10 % dampen
+within ±90 days of a projected peak reduces exposure during the most
+dangerous part of the cycle.
+
+### Insight 3: Cycle trough boosting (NEW)
+
+> **Near projected cycle troughs, the DCA strategy should increase allocation
+> to capture historically discounted prices.**
+
+A +15 % boost within ±90 days of a projected trough complements the
+200WMA signal by adding time-based context. Troughs are the single best
+accumulation windows in Bitcoin's history.
+
+---
+
+## 5. Signal Architecture
+
+### Signals (5 total)
+
+| # | Signal | Threshold | Boost | Purpose |
+|---|--------|-----------|-------|---------|
+| 1 | **Fear / Greed** | ≤ 40 (active), ≤ 20 (extreme) | +10 % / +20 % | Sentiment-based accumulation |
+| 2 | **Diff Drop** | < −5 % | +10 % | Mining difficulty drop → miner capitulation |
+| 3 | **Halving Phase** | Post-halving (≤ 547 d) / Pre-halving (≤ 365 d) | +10 % | Supply-shock cycle timing |
+| 4 | **Peak / Trough** | ±90 d of projected date | −10 % (peak) / +15 % (trough) | Cycle peak/trough proximity |
+| 5 | **Below 200WMA** | Price < 200-week MA | +25 % | Historically rare extreme buy zone |
+
+### Boost Ranges
+
+| Scenario | Total Boost |
+|----------|-------------|
+| Best case (trough + fear extreme + below WMA + post-halving + diff drop) | +80 % |
+| Neutral (no signals active) | 0 % |
+| Worst case (near peak only) | −10 % |
+
+---
+
+## 6. Implementation
+
+Changes in `src/components/ecommerce/MonthlyTarget.tsx`:
+
+1. Added historical + projected cycle **peak dates** (Dec 2013, Dec 2017,
+   Nov 2021, Dec 2025) and **trough dates** (Jan 2015, Dec 2018, Nov 2022,
+   Dec 2028) as `CYCLE_PEAKS_MS` and `CYCLE_TROUGHS_MS`.
+2. Added `getCyclePhase()` helper that finds the nearest peak/trough and
+   returns `"near-peak"`, `"near-trough"`, or `"mid-cycle"` with days away.
+3. Added `BOOST_NEAR_TROUGH = 15` and `DAMPEN_NEAR_PEAK = -10` constants.
+4. Integrated cycle phase into the boost calculation.
+5. Added 5th signal to footer: shows "Near Peak" / "Near Trough" /
+   "Mid-Cycle" with days to/from nearest event.
+6. Expanded signal grid from `grid-cols-4` to `grid-cols-5`.
 
 ### What NOT to adopt from BSP
 
 - **Equal daily purchases:** GL4NCE's price-weighted allocation is superior
   because buying more when price is low mechanically improves cost basis.
 - **Single-dimension model:** GL4NCE's multi-signal approach (fear, difficulty,
-  WMA) captures real-time conditions that a pure time-based model cannot.
+  WMA, halving, peak/trough) captures real-time conditions that a pure
+  time-based model cannot.
 - **Fixed DCA duration:** A "427-day window" is useful for lump-sum deployment
   but not relevant for GL4NCE's recurring-buy model.
-
----
-
-## 5. Implementation
-
-The post-halving accumulation signal has been implemented in
-`src/components/ecommerce/MonthlyTarget.tsx`. Changes:
-
-1. Added `PREV_HALVING_MS` (20 Apr 2024) and `POST_HALVING_WINDOW` (547 days)
-   constants.
-2. Added `BOOST_POST_HALVING = 10` boost constant.
-3. Derived `postHalvingActive` signal state and `daysSinceHalving` counter.
-4. Integrated the boost into the existing allocation calculation.
-5. Updated the Halving signal item to display "Post-Halv" / "Pre-Halving" /
-   "Cycle" depending on the current phase.

@@ -26,11 +26,30 @@ const BOOST_DIFF_DROP    = 10;
 const BOOST_HALVING      = 10;
 const BOOST_POST_HALVING = 10; // post-halving accumulation phase (BSP cycle insight)
 const BOOST_BELOW_WMA    = 25; // price below 200WMA = historically rare extreme buy zone
+const BOOST_NEAR_TROUGH  = 15; // near projected cycle trough = historically best accumulation
+const DAMPEN_NEAR_PEAK   = -10; // near projected cycle peak = reduce exposure
 
 // ── Halving cycle ──────────────────────────────────────────────────────────
 const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
 const NEXT_HALVING_MS     = new Date("2028-04-19T00:00:00Z").getTime();
 const POST_HALVING_WINDOW = 547 * 86_400_000; // ≈ 18 months after halving
+
+// ── Historical + projected market cycle dates ──────────────────────────────
+// Peaks (market highs) — projected dates based on ~4-year halving cycle rhythm
+const CYCLE_PEAKS_MS: number[] = [
+  new Date("2013-12-04T00:00:00Z").getTime(),
+  new Date("2017-12-16T00:00:00Z").getTime(),
+  new Date("2021-11-18T00:00:00Z").getTime(),
+  new Date("2025-12-06T00:00:00Z").getTime(), // projected
+];
+// Troughs (market lows) — projected dates based on historical cycle patterns
+const CYCLE_TROUGHS_MS: number[] = [
+  new Date("2015-01-14T00:00:00Z").getTime(),
+  new Date("2018-12-15T00:00:00Z").getTime(),
+  new Date("2022-11-21T00:00:00Z").getTime(),
+  new Date("2028-12-15T00:00:00Z").getTime(), // projected
+];
+const CYCLE_ZONE_RADIUS = 90 * 86_400_000; // 90 days either side of peak/trough
 
 // ── Chart style ────────────────────────────────────────────────────────────
 const CHART_FONT     = "Inter, sans-serif";
@@ -96,6 +115,37 @@ function deriveSMA(klines: RawKline[], period: number): number | null {
   if (closes.length < period) return null;
   const last = closes.slice(-period);
   return last.reduce((s, v) => s + v, 0) / period;
+}
+
+// ── Cycle phase detection (peak / trough proximity) ────────────────────────
+type CyclePhase = "near-peak" | "near-trough" | "mid-cycle";
+type NearestEvent = "peak" | "trough";
+
+function getCyclePhase(now: number): { phase: CyclePhase; daysAway: number; nearest: NearestEvent } {
+  let nearestPeakDist = Infinity;
+  for (const p of CYCLE_PEAKS_MS) {
+    const d = Math.abs(now - p);
+    if (d < nearestPeakDist) nearestPeakDist = d;
+  }
+  let nearestTroughDist = Infinity;
+  for (const t of CYCLE_TROUGHS_MS) {
+    const d = Math.abs(now - t);
+    if (d < nearestTroughDist) nearestTroughDist = d;
+  }
+
+  if (nearestPeakDist <= CYCLE_ZONE_RADIUS) {
+    return { phase: "near-peak", daysAway: Math.round(nearestPeakDist / 86_400_000), nearest: "peak" };
+  }
+  if (nearestTroughDist <= CYCLE_ZONE_RADIUS) {
+    return { phase: "near-trough", daysAway: Math.round(nearestTroughDist / 86_400_000), nearest: "trough" };
+  }
+  // Mid-cycle: report distance to the closer upcoming event
+  const peakCloser = nearestPeakDist < nearestTroughDist;
+  return {
+    phase: "mid-cycle",
+    daysAway: Math.round((peakCloser ? nearestPeakDist : nearestTroughDist) / 86_400_000),
+    nearest: peakCloser ? "peak" : "trough",
+  };
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
@@ -259,6 +309,11 @@ export default function MonthlyTarget() {
   const daysSinceHalving  = Math.max(0, Math.floor(msSinceHalving / 86_400_000));
   const postHalvingActive = msSinceHalving > 0 && msSinceHalving <= POST_HALVING_WINDOW;
 
+  // Cycle peak/trough proximity (historical + projected cycle dates)
+  const { phase: cyclePhase, daysAway: cycleDaysAway, nearest: cycleNearest } = getCyclePhase(Date.now());
+  const nearPeak   = cyclePhase === "near-peak";
+  const nearTrough = cyclePhase === "near-trough";
+
   // ── Boost ──────────────────────────────────────────────────────────────
   let totalBoost = 0;
   if (fearExtreme)     totalBoost += BOOST_FEAR_EXTREME;
@@ -269,6 +324,9 @@ export default function MonthlyTarget() {
   if (halvingActive)   totalBoost += BOOST_HALVING;
   else if (postHalvingActive) totalBoost += BOOST_POST_HALVING;
   if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
+  // Cycle peak/trough: dampen near peaks, boost near troughs
+  if (nearPeak)        totalBoost += DAMPEN_NEAR_PEAK;
+  else if (nearTrough) totalBoost += BOOST_NEAR_TROUGH;
 
   // ── DCA calculation ────────────────────────────────────────────────────
   let recommendedBuy: number | "PASS" | null = null;
@@ -423,8 +481,8 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* Signals footer — 4 signals */}
-      <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
+      {/* Signals footer — 5 signals */}
+      <div className="grid grid-cols-5 divide-x divide-gray-200 dark:divide-gray-800">
         <SignalItem
           active={fearActive}
           label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
@@ -440,12 +498,25 @@ export default function MonthlyTarget() {
           label={
             postHalvingActive  ? "Post-Halv"
             : halvingActive    ? "Pre-Halving"
-            :                    "Cycle"
+            :                    "Halving"
           }
           sub={
             postHalvingActive  ? `${daysSinceHalving}d ago`
             : halvingActive    ? `${daysToHalving}d`
             :                    `in ${daysToWindow}d`
+          }
+        />
+        <SignalItem
+          active={nearPeak || nearTrough}
+          label={
+            nearPeak    ? "Near Peak"
+            : nearTrough ? "Near Trough"
+            :              "Mid-Cycle"
+          }
+          sub={
+            nearPeak || nearTrough
+              ? `${cycleDaysAway}d`
+              : `${cycleNearest} ${cycleDaysAway}d`
           }
         />
         <SignalItem
