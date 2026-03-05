@@ -6,10 +6,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //
 // M1 sources (primary = FRED, fallback = OECD SDMX for EU/UK/JP/CA):
 //   US  Fed  – FRED M1SL                (billions USD, monthly, SA)
-//   EU  ECB  – FRED MABMM101EZM189S     (individual EUR, monthly, SA) ← 1e-9
-//   UK  BOE  – FRED MABMM101GBM189S     (individual GBP, monthly, SA) ← 1e-9
-//   JP  BOJ  – FRED MABMM101JPM189S     (individual JPY, monthly, SA) ← 1e-9
-//   CA  BOC  – FRED MABMM101CAM189S     (individual CAD, monthly, SA) ← 1e-9
+//   EU  ECB  – FRED MANMM101EZM189S     (individual EUR, monthly, SA) ← 1e-9
+//   UK  BOE  – FRED MANMM101GBM189S     (individual GBP, monthly, SA) ← 1e-9
+//   JP  BOJ  – FRED MANMM101JPM189S     (individual JPY, monthly, SA) ← 1e-9
+//   CA  BOC  – FRED MANMM101CAM189S     (individual CAD, monthly, SA) ← 1e-9
 //   CN  PBOC – FRED MYAGM1CNM189N       (individual CNY, monthly, NSA) ← 1e-9
 //   OECD fallback for EU/UK/JP/CA if FRED returns no data:
 //     MABMM101 series via sdmx.oecd.org; free, no API key.
@@ -129,28 +129,28 @@ const COUNTRIES: readonly CountryConfig[] = [
     m1Series: "M1SL",              m1OecdCode: null,  m1LocalToBillions: 1,
     m2Series: "M2SL",              localToBillions: 1,
     fxSeries: null,                fxInverted: false },
-  // EU: M1 from FRED (MABMM101EZM189S, individual EUR) with OECD fallback;
+  // EU: M1 from FRED (MANMM101EZM189S, individual EUR) with OECD fallback;
   //     M2 from FRED (MABMM301EZM189S, individual EUR)
   { id: "EU", name: "ECB",  flag: "🇪🇺",
-    m1Series: "MABMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
+    m1Series: "MANMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
     m2Series: "MABMM301EZM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSEU",           fxInverted: false },
-  // UK: M1 from FRED (MABMM101GBM189S, individual GBP) with OECD fallback;
+  // UK: M1 from FRED (MANMM101GBM189S, individual GBP) with OECD fallback;
   //     M2 from FRED (MABMM301GBM189S, individual GBP)
   { id: "UK", name: "BOE",  flag: "🇬🇧",
-    m1Series: "MABMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
+    m1Series: "MANMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301GBM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSUK",           fxInverted: false },
-  // JP: M1 from FRED (MABMM101JPM189S, individual JPY) with OECD fallback;
+  // JP: M1 from FRED (MANMM101JPM189S, individual JPY) with OECD fallback;
   //     M2 from FRED (MABMM301JPM189S, individual JPY)
   { id: "JP", name: "BOJ",  flag: "🇯🇵",
-    m1Series: "MABMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
+    m1Series: "MANMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301JPM189S",   localToBillions: 1e-9,
     fxSeries: "DEXJPUS",           fxInverted: true  },
-  // CA: M1 from FRED (MABMM101CAM189S, individual CAD) with OECD fallback;
+  // CA: M1 from FRED (MANMM101CAM189S, individual CAD) with OECD fallback;
   //     M2 from FRED (MABMM301CAM189S, individual CAD)
   { id: "CA", name: "BOC",  flag: "🇨🇦",
-    m1Series: "MABMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
+    m1Series: "MANMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301CAM189S",   localToBillions: 1e-9,
     fxSeries: "DEXCAUS",           fxInverted: true  },
   // CN: M1 and M2 both from FRED (individual CNY)
@@ -187,15 +187,14 @@ function parseObs(obs: FredObs[]): { date: string; value: number }[] {
     .filter((o) => !isNaN(o.value) && o.value > 0);
 }
 
-// ── OECD SDMX helpers (for M1 narrow money) ───────────────────────────────────
+// ── OECD SDMX helpers (for M1 narrow money fallback) ─────────────────────────
 //
 // The OECD SDMX REST API (sdmx.oecd.org) is free and requires no API key.
-// We use it to obtain narrow-money (M1) data for EU, UK, Japan and Canada
-// because the equivalent FRED series (MABMM101*) are not available in FRED's
-// catalog — FRED only carries OECD's broad-money (M3) series MABMM301*.
+// It is used as a fallback source for EU/UK/JP/CA M1 if the primary FRED
+// MANMM101* series return no valid observations.
 //
 // OECD MEI_FIN monetary data is published in MILLIONS of national currency,
-// so the scale factor for M1 is 0.001 (millions NCU → billions NCU).
+// so the fallback scale factor is OECD_M1_MILLIONS_TO_BILLIONS = 0.001.
 //
 // OECD country codes used: EA (Euro area), GBR (UK), JPN (Japan), CAN (Canada).
 
