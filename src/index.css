@@ -216,6 +216,35 @@ layer(base);
   p {
     line-height: 1.65;
   }
+  /* Keyboard focus-visible ring — meets WCAG 2.1 SC 2.4.7 */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+  /* Skip-to-content link for screen-reader / keyboard users */
+  .skip-to-content {
+    position: absolute;
+    top: -9999px;
+    left: 0;
+    z-index: 99999;
+    padding: 0.5rem 1rem;
+    background: var(--color-brand-500);
+    color: var(--color-gray-900);
+    font-weight: 600;
+    border-radius: 0 0 0.5rem 0;
+  }
+  .skip-to-content:focus-visible {
+    top: 0;
+  }
+  /* Reduced-motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @utility menu-item {

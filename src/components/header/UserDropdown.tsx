@@ -18,6 +18,9 @@ export default function UserDropdown() {
       <button
         onClick={toggleDropdown}
         className="flex items-center text-gray-700 dropdown-toggle dark:text-gray-400"
+        aria-label="User menu"
+        aria-expanded={isOpen}
+        aria-haspopup="true"
       >
         <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
           <img src="/images/user/default-avatar.svg" alt="User" />

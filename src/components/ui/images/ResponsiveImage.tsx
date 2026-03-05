@@ -5,6 +5,8 @@ export default function ResponsiveImage() {
         <img
           src="/images/grid-image/image-01.png"
           alt="Cover"
+          loading="lazy"
+          decoding="async"
           className="w-full border border-gray-200 rounded-xl dark:border-gray-800"
         />
       </div>

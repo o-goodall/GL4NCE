@@ -4,7 +4,9 @@ export default function TwoColumnImageGrid() {
       <div>
         <img
           src="/images/grid-image/image-02.png"
-          alt=" grid"
+          alt="Grid image 1"
+          loading="lazy"
+          decoding="async"
           className="border border-gray-200 rounded-xl dark:border-gray-800"
         />
       </div>
@@ -12,7 +14,9 @@ export default function TwoColumnImageGrid() {
       <div>
         <img
           src="/images/grid-image/image-03.png"
-          alt=" grid"
+          alt="Grid image 2"
+          loading="lazy"
+          decoding="async"
           className="border border-gray-200 rounded-xl dark:border-gray-800"
         />
       </div>

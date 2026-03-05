@@ -4,7 +4,9 @@ export default function ThreeColumnImageGrid() {
       <div>
         <img
           src="/images/grid-image/image-04.png"
-          alt=" grid"
+          alt="Grid image 1"
+          loading="lazy"
+          decoding="async"
           className="border border-gray-200 rounded-xl dark:border-gray-800"
         />
       </div>
@@ -12,7 +14,9 @@ export default function ThreeColumnImageGrid() {
       <div>
         <img
           src="/images/grid-image/image-05.png"
-          alt=" grid"
+          alt="Grid image 2"
+          loading="lazy"
+          decoding="async"
           className="border border-gray-200 rounded-xl dark:border-gray-800"
         />
       </div>
@@ -20,7 +24,9 @@ export default function ThreeColumnImageGrid() {
       <div>
         <img
           src="/images/grid-image/image-06.png"
-          alt=" grid"
+          alt="Grid image 3"
+          loading="lazy"
+          decoding="async"
           className="border border-gray-200 rounded-xl dark:border-gray-800"
         />
       </div>
