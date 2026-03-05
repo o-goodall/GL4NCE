@@ -264,6 +264,8 @@ export default function MonthlyTarget() {
   if (fearExtreme)     totalBoost += BOOST_FEAR_EXTREME;
   else if (fearActive) totalBoost += BOOST_FEAR_ACTIVE;
   if (diffActive)      totalBoost += BOOST_DIFF_DROP;
+  // Post-halving and pre-halving are mutually exclusive phases of the same
+  // 4-year cycle, so only one boost can apply at a time.
   if (halvingActive)   totalBoost += BOOST_HALVING;
   else if (postHalvingActive) totalBoost += BOOST_POST_HALVING;
   if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
@@ -435,8 +437,16 @@ export default function MonthlyTarget() {
         />
         <SignalItem
           active={halvingActive || postHalvingActive}
-          label={postHalvingActive ? "Post-Halv" : halvingActive ? "Pre-Halving" : "Cycle"}
-          sub={postHalvingActive ? `${daysSinceHalving}d ago` : halvingActive ? `${daysToHalving}d` : `in ${daysToWindow}d`}
+          label={
+            postHalvingActive  ? "Post-Halv"
+            : halvingActive    ? "Pre-Halving"
+            :                    "Cycle"
+          }
+          sub={
+            postHalvingActive  ? `${daysSinceHalving}d ago`
+            : halvingActive    ? `${daysToHalving}d`
+            :                    `in ${daysToWindow}d`
+          }
         />
         <SignalItem
           active={belowWMA}
