@@ -54,11 +54,12 @@ const FX_LIMIT = 10;
 //                  [M1 ≈ 42.9 %, M2 ≈ 57.1 % — original intent M1:M2 = 30:40]
 //   M1 unavailable: score = round(m2Sub)                         [M2 at 100 %]
 //
-// Score → regime / Status:
-//   0–39   → "Normal"  / OFF
-//   40–59  → "Warming" / ON
-//   60–79  → "High"    / ON
-//   80–100 → "Crisis"  / ON
+// Score → regime / Status (DEFCON scale):
+//   0–30   → "Normal"          (DEFCON 5) / OFF
+//   30–45  → "Watch"           (DEFCON 4) / OFF
+//   45–60  → "Caution"         (DEFCON 3) / OFF
+//   60–75  → "Printer Warming" (DEFCON 2) / ON
+//   75–100 → "Printer Brrrr"   (DEFCON 1) / ON
 const MONEY_GROWTH_SCALE = 143;
 
 // Minimum M2 MoM growth rate (%) to record a historical "printed" episode in
@@ -91,9 +92,10 @@ function computeBankPrinterScore(
 }
 
 function bankScoreRegime(score: number): string {
-  if (score >= 80) return "Crisis";
-  if (score >= 60) return "High";
-  if (score >= 40) return "Warming";
+  if (score >= 75) return "Printer Brrrr";
+  if (score >= 60) return "Printer Warming";
+  if (score >= 45) return "Caution";
+  if (score >= 30) return "Watch";
   return "Normal";
 }
 
@@ -288,8 +290,8 @@ export interface M2CountryResult {
   m2Date?:          string | null;   // ISO date of latest M2 observation
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
-  scoreRegime?:     string;          // "Normal" | "Warming" | "High" | "Crisis"
-  printing?:        boolean;         // true when printerScore ≥ 40 (Warming+)
+  scoreRegime?:     string;          // "Normal" | "Watch" | "Caution" | "Printer Warming" | "Printer Brrrr"
+  printing?:        boolean;         // true when printerScore ≥ 60 (Printer Warming+)
   // legacy fields kept for backward compatibility
   latestUSD?:       number;
   printedUSD?:      number | null;
@@ -437,8 +439,8 @@ export default async function handler(
       const printerScore = computeBankPrinterScore(m1MomPct, momPct);
       const scoreRegime  = bankScoreRegime(printerScore);
 
-      // printing = true when score ≥ 40 (Warming / High / Crisis)
-      const printing = printerScore >= 40;
+      // printing = true when score ≥ 60 (Printer Warming+, DEFCON 2 or 1)
+      const printing = printerScore >= 60;
 
       const m2USD       = latestUSD;
       const m2ChangeUSD = latestUSD - prevMonUSD;

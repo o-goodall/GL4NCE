@@ -51,27 +51,32 @@ interface RegimeConfig {
 
 function regimeCfg(regime: string): RegimeConfig {
   switch (regime) {
-    case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
-    case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
-    default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
+    case "Printer Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
+    case "Printer Warming": return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
+    case "Caution":         return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    case "Watch":           return { color: "text-blue-500 dark:text-blue-400",     bg: "bg-blue-500"      };
+    default:                return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
   }
 }
 
-// ── Per-bank regime badge styles (green → yellow → orange → red) ─────────────
+// ── Per-bank regime badge styles (green → blue → yellow → orange → red) ─────
 
 const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
-  Crisis:  {
+  "Printer Brrrr": {
     badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
     dot:   "bg-red-500 dark:bg-red-400",
   },
-  High: {
+  "Printer Warming": {
     badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
     dot:   "bg-orange-500 dark:bg-orange-400",
   },
-  Warming: {
+  Caution: {
     badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
     dot:   "bg-yellow-500 dark:bg-yellow-400",
+  },
+  Watch: {
+    badge: "bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-400",
+    dot:   "bg-blue-500 dark:bg-blue-400",
   },
   Normal: {
     badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
@@ -295,6 +300,37 @@ export default function MoneyPrinter() {
                 })}
           </tbody>
         </table>
+      </div>
+
+      {/* ── DEFCON Key ─────────────────────────────────────────────────── */}
+      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+          DEFCON Key
+        </p>
+        <div className="space-y-1">
+          {([
+            { level: 5, name: "Normal",          range: "0–30",   color: "bg-emerald-500", desc: "Economy in normal cycle; no systemic stress"                              },
+            { level: 4, name: "Watch",            range: "30–45",  color: "bg-blue-500",    desc: "Early signs of liquidity tightening or minor market stress"               },
+            { level: 3, name: "Caution",          range: "45–60",  color: "bg-yellow-500",  desc: "Liquidity stress building; markets front-running potential cuts"           },
+            { level: 2, name: "Printer Warming",  range: "60–75",  color: "bg-orange-500",  desc: "High probability of aggressive intervention; balance sheet growth accelerates" },
+            { level: 1, name: "Printer Brrrr",    range: "75–100", color: "bg-red-500",     desc: "Full-on emergency monetary expansion; QE unleashed"                       },
+          ] as const).map(({ level, name, range, color, desc }) => (
+            <div key={level} className="flex items-start gap-2">
+              <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${color}`} />
+              <div className="min-w-0">
+                <span className="text-[10px] font-semibold text-gray-600 dark:text-gray-300">
+                  DEFCON {level} · {name}
+                </span>
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1">
+                  ({range})
+                </span>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-tight">
+                  {desc}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
