@@ -11,9 +11,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   Yield curve          (10%) – T10Y2Y           10Y minus 2Y spread, percentage, daily
 //
 // Regime thresholds:
-//   0–30   Normal
-//   30–60  Printer Warming
-//   60–80  Alert
+//    0–29  Normal
+//   30–59  Warming
+//   60–79  Alert
 //   80–100 Brrrr
 
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
