@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { VectorMap } from "@react-jvectormap/core";
 import type { IMapObject, ISVGElementStyleAttributes, IVectorMapProps } from "@react-jvectormap/core/dist/types";
 import { worldMill as rawWorldMill } from "@react-jvectormap/world";
-import type { CountryNewsData, EventCategory, AlertLevel, ConflictStatus } from "./types";
+import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
 import LiveEventFeed from "./LiveEventFeed";
+import { CONFLICT_STATUS_DOT, CONFLICT_STATUS_LABEL, DEFAULT_FLASHPOINT_SOURCES } from "./conflictUtils";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
 // The worldMill dataset encodes French Guiana (South America) as a subpath of
@@ -93,24 +94,6 @@ const FILTER_LABELS: Record<CategoryFilter, string> = {
   piracy:         "Piracy",
   protest:        "Protest",
   minor:          "Minor",
-};
-
-/** Dot colour for each conflict status — shown in trending pills */
-const CONFLICT_STATUS_DOT: Record<ConflictStatus, string> = {
-  active:         "bg-error-500",
-  escalating:     "bg-error-400 animate-pulse motion-reduce:animate-none",
-  ceasefire:      "bg-success-500",
-  frozen:         "bg-gray-400",
-  "low-intensity":"bg-warning-400",
-};
-
-/** Short human-readable label for each conflict status */
-const CONFLICT_STATUS_LABEL: Record<ConflictStatus, string> = {
-  active:         "Active",
-  escalating:     "Escalating",
-  ceasefire:      "Ceasefire",
-  frozen:         "Frozen",
-  "low-intensity":"Low-intensity",
 };
 
 /**
@@ -793,7 +776,7 @@ export default function NewsMapWidget() {
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 shrink-0">
             Data:
           </span>
-          {(data.dataSources ?? ["ACLED", "CFR Global Conflict Tracker", "UCDP", "UN OCHA", "DoD", "Live News Feeds"]).map((src, i, arr) => (
+          {(data.dataSources ?? DEFAULT_FLASHPOINT_SOURCES).map((src, i, arr) => (
             <span key={src} className="text-[10px] text-gray-400 dark:text-gray-500">
               {src}{i < arr.length - 1 && <span className="ml-1.5 opacity-40" aria-hidden="true">·</span>}
             </span>

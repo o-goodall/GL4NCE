@@ -1,6 +1,7 @@
 import { useMemo, memo, useState, useEffect, useCallback } from "react";
-import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel, ConflictStatus } from "./types";
+import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
+import { CONFLICT_STATUS_DOT, CONFLICT_STATUS_LABEL } from "./conflictUtils";
 
 interface FeedEntry {
   event: NewsEvent;
@@ -72,24 +73,6 @@ const ALERT_LEVEL_LABEL: Record<AlertLevel, string> = {
   high:     "High",
   medium:   "Medium",
   watch:    "Watch",
-};
-
-/** Dot colour keyed by conflict status — shown in the country detail header */
-const CONFLICT_STATUS_DOT: Record<ConflictStatus, string> = {
-  active:         "bg-error-500",
-  escalating:     "bg-error-400 animate-pulse motion-reduce:animate-none",
-  ceasefire:      "bg-success-500",
-  frozen:         "bg-gray-400",
-  "low-intensity":"bg-warning-400",
-};
-
-/** Human-readable label for each conflict status */
-const CONFLICT_STATUS_LABEL: Record<ConflictStatus, string> = {
-  active:         "Active conflict",
-  escalating:     "Escalating",
-  ceasefire:      "Ceasefire",
-  frozen:         "Frozen conflict",
-  "low-intensity":"Low-intensity",
 };
 
 /** Severity sort order for the detail view events list */
