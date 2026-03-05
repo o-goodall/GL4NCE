@@ -301,15 +301,10 @@ export default function BtcGoldRatio() {
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
       {/* Header row: title + stats + timeframe tabs */}
       <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:items-start sm:justify-between">
-        {/* Left: tile badge + title + live ratio */}
+        {/* Left: title + live ratio */}
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-              3
-            </span>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">BTC / Gold</h3>
-          </div>
-          <div className="flex flex-wrap items-baseline gap-2 mt-1 ml-8">
+          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">BTC / Gold</h3>
+          <div className="flex flex-wrap items-baseline gap-2 mt-1">
             <span className="text-2xl font-bold tabular-nums text-gray-800 dark:text-white/90">
               {ratio !== null ? fmt(ratio, 1) : "—"}
             </span>
@@ -318,7 +313,7 @@ export default function BtcGoldRatio() {
               ATH {ath.ratio} oz
             </span>
           </div>
-          <div className="flex flex-wrap gap-3 text-xs text-gray-400 dark:text-gray-500 mt-1 ml-8">
+          <div className="flex flex-wrap gap-3 text-xs text-gray-400 dark:text-gray-500 mt-1">
             <span>
               BTC{" "}
               <span className="text-gray-600 dark:text-gray-300">
@@ -369,7 +364,7 @@ export default function BtcGoldRatio() {
         <Chart options={options} series={series} type="line" height={300} />
       </div>
 
-      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
+      <p className="mt-1 text-center text-[10px] text-gray-400 select-none">
         Drag to zoom · Scroll / pinch to zoom
       </p>
     </div>

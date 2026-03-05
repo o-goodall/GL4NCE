@@ -139,10 +139,10 @@ function fmtReward(sats: number): string {
 
 function pctColor(n: number | null): string {
   if (n === null) return "text-gray-400 dark:text-gray-500";
-  if (n > 5)  return "text-emerald-500 dark:text-emerald-400";
-  if (n > 0)  return "text-blue-500 dark:text-blue-400";
-  if (n > -5) return "text-yellow-500 dark:text-yellow-400";
-  return "text-red-500 dark:text-red-400";
+  if (n > 0)  return "text-emerald-500 dark:text-emerald-400";
+  if (n < 0)  return "text-red-500 dark:text-red-400";
+  // n === 0: no change — treat as neutral
+  return "text-gray-400 dark:text-gray-500";
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -160,13 +160,13 @@ interface ProgressRowProps {
 function ProgressRow({ label, pct, percentageLabel, right, gradient, loading }: ProgressRowProps) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
             {label}
           </span>
           {!loading && percentageLabel && (
-            <span className="text-[10px] tabular-nums font-medium text-gray-500 dark:text-gray-400">
+            <span className="text-[10px] tabular-nums font-semibold text-gray-500 dark:text-gray-400">
               {percentageLabel}
             </span>
           )}
@@ -177,7 +177,7 @@ function ProgressRow({ label, pct, percentageLabel, right, gradient, loading }: 
           <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500">{right}</span>
         ) : null}
       </div>
-      <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+      <div className="h-2.5 w-full rounded-full bg-gray-100 dark:bg-gray-800/80 overflow-hidden">
         {loading ? (
           <div className="h-full w-2/5 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
         ) : pct !== null ? (
@@ -194,31 +194,7 @@ function ProgressRow({ label, pct, percentageLabel, right, gradient, loading }: 
   );
 }
 
-interface MiniStatProps {
-  label:   string;
-  value:   string;
-  sub?:    string;
-  color?:  string;
-  loading: boolean;
-}
 
-function MiniStat({ label, value, sub, color = "text-gray-800 dark:text-white/90", loading }: MiniStatProps) {
-  return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[9px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide leading-none">
-        {label}
-      </span>
-      {loading ? (
-        <div className="h-4 w-12 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-      ) : (
-        <span className={`text-xs font-bold tabular-nums leading-tight ${color}`}>{value}</span>
-      )}
-      {sub && !loading && (
-        <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">{sub}</span>
-      )}
-    </div>
-  );
-}
 
 // ── Pending Block ─────────────────────────────────────────────────────────────
 
@@ -604,29 +580,38 @@ export default function BlockchainVisualizer() {
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
 
       {/* ── Header ── */}
-      <div className="px-5 pt-5 pb-3 shrink-0">
-        <div>
-          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
-            Blockchain
-          </h3>
-          {loading ? (
-            <div className="h-5 w-28 mt-0.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-          ) : blockHeight !== null ? (
-            <span className="text-xl font-bold tabular-nums text-gray-800 dark:text-white/90 leading-tight">
-              #{fmtNum(blockHeight)}
-            </span>
-          ) : null}
+      <div className="px-5 pt-5 pb-4 shrink-0">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 shrink-0">
+              <span className="text-gray-500 dark:text-gray-400 text-base font-bold leading-none select-none">₿</span>
+            </div>
+            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
+              Blockchain
+            </h3>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 animate-pulse shrink-0" />
+            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Live</span>
+          </div>
         </div>
+        {loading ? (
+          <div className="h-7 w-36 mt-1 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        ) : blockHeight !== null ? (
+          <span className="text-2xl font-black tabular-nums text-gray-800 dark:text-white/90 leading-tight">
+            #{fmtNum(blockHeight)}
+          </span>
+        ) : null}
       </div>
 
       {/* ── Progress bars: Halving + Epoch ── */}
-      <div className="px-5 pb-3.5 space-y-3 shrink-0">
+      <div className="px-5 pb-4 space-y-3.5 shrink-0">
         <ProgressRow
           label="Halving"
           pct={halvingPct}
           percentageLabel={halvingPct !== null ? `${halvingPct.toFixed(1)}%` : null}
           right={blocksToHalving !== null ? `${fmtNum(blocksToHalving)} blocks left` : null}
-          gradient="linear-gradient(to right, rgba(245,158,11,0.8), rgba(251,191,36,0.95))"
+          gradient="linear-gradient(to right, rgba(245,158,11,0.85), rgba(251,191,36,0.98))"
           loading={loading}
         />
         <ProgressRow
@@ -634,55 +619,78 @@ export default function BlockchainVisualizer() {
           pct={epochProgress}
           percentageLabel={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : null}
           right={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : null}
-          gradient="linear-gradient(to right, rgba(251,146,60,0.8), rgba(239,68,68,0.7))"
+          gradient="linear-gradient(to right, rgba(245,158,11,0.65), rgba(251,191,36,0.80))"
           loading={loading}
         />
       </div>
 
-      {/* ── Stats row ── */}
-      <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-800 shrink-0">
-        <div className="grid grid-cols-4 gap-0 divide-x divide-gray-100 dark:divide-gray-800">
-          <div className="pr-3">
-            <MiniStat
-              label="Est Diff"
-              value={estDiffChange !== null ? fmtPct(estDiffChange) : "—"}
-              color={pctColor(estDiffChange)}
-              loading={loading}
-            />
+      {/* ── Stats grid ── */}
+      <div className="px-4 pb-4 shrink-0">
+        <div className="grid grid-cols-2 gap-2">
+          {/* Est Diff */}
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Est Diff</p>
+            {loading ? (
+              <div className="h-5 w-14 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+            ) : (
+              <p className={`text-base font-black tabular-nums ${pctColor(estDiffChange)}`}>
+                {estDiffChange !== null ? fmtPct(estDiffChange) : "—"}
+              </p>
+            )}
           </div>
-          <div className="px-3">
-            <MiniStat
-              label="Last Diff"
-              value={lastDiffChange !== null ? fmtPct(lastDiffChange) : "—"}
-              color={pctColor(lastDiffChange)}
-              loading={loading}
-            />
+
+          {/* Last Diff */}
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Last Diff</p>
+            {loading ? (
+              <div className="h-5 w-14 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+            ) : (
+              <p className={`text-base font-black tabular-nums ${pctColor(lastDiffChange)}`}>
+                {lastDiffChange !== null ? fmtPct(lastDiffChange) : "—"}
+              </p>
+            )}
           </div>
-          <div className="px-3">
-            <MiniStat
-              label="Mempool"
-              value={mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
-              sub={avgFeeRate !== null ? `${avgFeeRate} sat/vB` : undefined}
-              loading={loading}
-            />
+
+          {/* Mempool */}
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Mempool</p>
+            {loading ? (
+              <div className="h-5 w-14 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+            ) : (
+              <>
+                <p className="text-base font-black tabular-nums text-gray-800 dark:text-white/90">
+                  {mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
+                </p>
+                {avgFeeRate !== null && (
+                  <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">{avgFeeRate} sat/vB</p>
+                )}
+              </>
+            )}
           </div>
-          <div className="pl-3">
-            <MiniStat
-              label="Fees sat/vB"
-              value={feeStr}
-              sub={feeSub}
-              loading={loading}
-            />
+
+          {/* Fees */}
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Fees sat/vB</p>
+            {loading ? (
+              <div className="h-5 w-14 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+            ) : (
+              <>
+                <p className="text-sm font-bold tabular-nums text-gray-800 dark:text-white/90">{feeStr}</p>
+                {feeSub && <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">{feeSub}</p>}
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Live Chain — fills remaining height, cards float at natural height ── */}
-      <div className="flex-1 min-h-0 flex flex-col px-5 pb-5 pt-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-white/[0.008]">
+      <div className="flex-1 min-h-0 flex flex-col px-5 pb-5 pt-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-white/[0.01]">
         <div className="flex items-center justify-between mb-3 shrink-0">
-          <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-            Live Chain
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Live Chain
+            </span>
+          </div>
           <span className="text-[9px] text-gray-400 dark:text-gray-500">older →</span>
         </div>
 

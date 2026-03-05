@@ -624,7 +624,7 @@ export default function BtcLiveChart() {
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
       {/* Header row: title + price + controls */}
       <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:items-start sm:justify-between">
-        {/* Left: tile badge + title + live price */}
+        {/* Left: title + live price */}
         <div>
           <div className="flex items-center gap-2">
             <span
@@ -633,7 +633,7 @@ export default function BtcLiveChart() {
             >
               ₿
             </span>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Bitcoin</h3>
+            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">Bitcoin</h3>
           </div>
           {/* Price columns: BTC USD | BTC/Gold oz (side-by-side when gold active) */}
           <div className="mt-1 ml-8 flex items-start gap-4">
@@ -768,7 +768,7 @@ export default function BtcLiveChart() {
         />
       </div>
 
-      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
+      <p className="mt-1 text-center text-[10px] text-gray-400 select-none">
         Drag to zoom · Scroll / pinch to zoom
       </p>
     </div>
