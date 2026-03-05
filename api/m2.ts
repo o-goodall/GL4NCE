@@ -30,9 +30,18 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   DEXJPUS – JPY per USD  (inverted: toUSD = 1/rate)
 //   DEXCAUS – CAD per USD  (inverted)
 //   DEXCHUS – CNY per USD  (inverted)
+//
+// Gross debt / GDP data:
+//   Debt-to-GDP  – FRED GGGDTA*188N (IMF WEO annual, % of GDP)
+//   Nominal GDP  – IMF DataMapper API NGDPD (free, no key, USD billions)
+//   Gross debt   – derived: (debtToGDP / 100) × gdpUSD
 
 const FRED_BASE  = "https://api.stlouisfed.org/fred/series/observations";
 const OECD_BASE  = "https://sdmx.oecd.org/public/rest/data";
+// IMF DataMapper API (free, no key required) for nominal GDP in current USD.
+// Used to derive gross national debt: grossDebtUSD = (debtToGDP / 100) * gdpUSD.
+// Reference: https://www.imf.org/external/datamapper/api/v1/
+const IMF_BASE   = "https://www.imf.org/external/datamapper/api/v1";
 
 // Number of monthly observations to retrieve (15 gives the 13 valid points
 // needed for the latest value + 12 prior months, with a 2-observation buffer
@@ -125,11 +134,6 @@ interface CountryConfig {
   // Annual, % of GDP.  Uses the confirmed-working FRED API key (same as M1/M2).
   // Series IDs follow the pattern GGGDTA{country}A188N.
   debtSeries:       string;         // FRED series ID for general govt gross debt
-  // ── Nominal GDP in current USD (FRED NGDPD*A188N, sourced from IMF WEO) ──
-  // Annual, billions USD.  Combined with debtSeries to derive absolute gross
-  // national debt:  grossDebtUSD = (debtToGDP / 100) * gdpUSD.
-  // Series IDs follow the same pattern: NGDPD{country}A188N.
-  gdpSeries:        string;         // FRED series ID for nominal GDP in current USD
 }
 
 const COUNTRIES: readonly CountryConfig[] = [
@@ -138,41 +142,41 @@ const COUNTRIES: readonly CountryConfig[] = [
     m1Series: "M1SL",              m1OecdCode: null,  m1LocalToBillions: 1,
     m2Series: "M2SL",              localToBillions: 1,
     fxSeries: null,                fxInverted: false,
-    debtSeries: "GGGDTAUSA188N",   gdpSeries: "NGDPDUSA188N" },
+    debtSeries: "GGGDTAUSA188N" },
   // EU: M1 from FRED (MANMM101EZM189S, individual EUR) with OECD fallback;
   //     M2 from FRED (MABMM301EZM189S, individual EUR)
   { id: "EU", name: "ECB",  flag: "🇪🇺",
     m1Series: "MANMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
     m2Series: "MABMM301EZM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSEU",           fxInverted: false,
-    debtSeries: "GGGDTAEZA188N",   gdpSeries: "NGDPDEZA188N" },
+    debtSeries: "GGGDTAEZA188N" },
   // UK: M1 from FRED (MANMM101GBM189S, individual GBP) with OECD fallback;
   //     M2 from FRED (MABMM301GBM189S, individual GBP)
   { id: "UK", name: "BOE",  flag: "🇬🇧",
     m1Series: "MANMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301GBM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSUK",           fxInverted: false,
-    debtSeries: "GGGDTAGBA188N",   gdpSeries: "NGDPDGBA188N" },
+    debtSeries: "GGGDTAGBA188N" },
   // JP: M1 from FRED (MANMM101JPM189S, individual JPY) with OECD fallback;
   //     M2 from FRED (MABMM301JPM189S, individual JPY)
   { id: "JP", name: "BOJ",  flag: "🇯🇵",
     m1Series: "MANMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301JPM189S",   localToBillions: 1e-9,
     fxSeries: "DEXJPUS",           fxInverted: true,
-    debtSeries: "GGGDTAJPA188N",   gdpSeries: "NGDPDJPA188N" },
+    debtSeries: "GGGDTAJPA188N" },
   // CA: M1 from FRED (MANMM101CAM189S, individual CAD) with OECD fallback;
   //     M2 from FRED (MABMM301CAM189S, individual CAD)
   { id: "CA", name: "BOC",  flag: "🇨🇦",
     m1Series: "MANMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301CAM189S",   localToBillions: 1e-9,
     fxSeries: "DEXCAUS",           fxInverted: true,
-    debtSeries: "GGGDTACAA188N",   gdpSeries: "NGDPDCAA188N" },
+    debtSeries: "GGGDTACAA188N" },
   // CN: M1 and M2 both from FRED (individual CNY)
   { id: "CN", name: "PBOC", flag: "🇨🇳",
     m1Series: "MYAGM1CNM189N",     m1OecdCode: null,  m1LocalToBillions: 1e-9,
     m2Series: "MYAGM2CNM189N",     localToBillions: 1e-9,
     fxSeries: "DEXCHUS",           fxInverted: true,
-    debtSeries: "GGGDTACNA188N",   gdpSeries: "NGDPDCNA188N" },
+    debtSeries: "GGGDTACNA188N" },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
@@ -292,6 +296,61 @@ async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
   return parseOecdSdmx((await res.json()) as OecdSdmxBody);
 }
 
+// ── IMF DataMapper helpers (for nominal GDP in current USD) ──────────────────
+//
+// The IMF DataMapper API (imf.org/external/datamapper) is free, requires no
+// API key, and is the authoritative source for IMF WEO nominal GDP in current
+// prices (USD billions).  It is used to derive gross national debt:
+//   grossDebtUSD = (debtToGDP / 100) * gdpUSD
+// where debtToGDP comes from FRED GGGDTA*188N (same IMF WEO vintage).
+//
+// IMF WEO country / region codes used:
+//   USA = United States · EA = Euro Area · GBR = United Kingdom
+//   JPN = Japan · CAN = Canada · CHN = China
+
+// Map from our country IDs to IMF WEO codes
+const IMF_GDP_CODES: Record<string, string> = {
+  US: "USA",
+  EU: "EA",   // Euro Area aggregate in IMF WEO
+  UK: "GBR",
+  JP: "JPN",
+  CA: "CAN",
+  CN: "CHN",
+};
+
+interface ImfDataMapperBody {
+  values?: {
+    NGDPD?: Record<string, Record<string, number | null>>;
+  };
+}
+
+// Returns a map of our country IDs to the most recent annual nominal GDP
+// (USD billions).  Throws on network / HTTP errors so callers can .catch().
+async function fetchImfNominalGdp(): Promise<Record<string, number | null>> {
+  const imfCodes = Object.values(IMF_GDP_CODES).join(",");
+  const url = `${IMF_BASE}/NGDPD/${imfCodes}`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`IMF DataMapper HTTP ${res.status}`);
+
+  const body = (await res.json()) as ImfDataMapperBody;
+  const ngdpd = body.values?.NGDPD;
+
+  const result: Record<string, number | null> = {};
+  for (const [countryId, imfCode] of Object.entries(IMF_GDP_CODES)) {
+    if (!ngdpd || !ngdpd[imfCode]) { result[countryId] = null; continue; }
+    // Observations keyed by year string; pick the most recent non-null value.
+    const years = Object.keys(ngdpd[imfCode]).sort().reverse();
+    let val: number | null = null;
+    for (const yr of years) {
+      const v = ngdpd[imfCode][yr];
+      if (typeof v === "number" && isFinite(v) && v > 0) { val = v; break; }
+    }
+    result[countryId] = val;
+  }
+  return result;
+}
+
 // ── Response types ────────────────────────────────────────────────────────────
 
 export interface M2CountryResult {
@@ -310,7 +369,7 @@ export interface M2CountryResult {
   // Debt-to-GDP (FRED GGGDTA*188N series from IMF WEO – annual)
   debtToGDP?:       number | null;   // General government gross debt, % of GDP
   // Gross National Debt in current USD (annual, derived: debtToGDP% × nominal GDP)
-  // Source: FRED NGDPD*A188N (IMF WEO nominal GDP in current USD, billions)
+  // Source: IMF DataMapper NGDPD (nominal GDP, USD billions) via fetchImfNominalGdp()
   grossDebtUSD?:    number | null;   // billions USD
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
@@ -355,13 +414,11 @@ export default async function handler(
 
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
     // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6), and
-    // nominal GDP in current USD from FRED (all 6) – all in parallel.
-    // GGGDTA*188N and NGDPD*188N are annual IMF-WEO-sourced series served by
-    // FRED; they use the same confirmed-working API key and fetchFredObs path.
+    // nominal GDP from IMF DataMapper (all 6) – all in parallel.
     // grossDebtUSD is derived server-side: (debtToGDP / 100) * gdpUSD.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpSettled] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, imfGdpMap] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -381,12 +438,11 @@ export default async function handler(
       Promise.allSettled(
         COUNTRIES.map((c) => fetchFredObs(c.debtSeries, apiKey, OBS_LIMIT)),
       ),
-      // NGDPD*A188N: nominal GDP in current USD (billions) from IMF WEO.
+      // IMF DataMapper: nominal GDP in current USD (billions) for all 6 economies.
       // Used to derive gross national debt: (debtToGDP / 100) × gdpUSD.
-      // Failure is non-fatal; grossDebtUSD will be null if unavailable.
-      Promise.allSettled(
-        COUNTRIES.map((c) => fetchFredObs(c.gdpSeries, apiKey, OBS_LIMIT)),
-      ),
+      // Failure is non-fatal; grossDebtUSD shows "—" if the API is unreachable.
+      fetchImfNominalGdp()
+        .catch((): Record<string, number | null> => ({})),
     ]);
 
     // Build FX lookup: series_id → latest USD conversion rate
@@ -523,13 +579,10 @@ export default async function handler(
         : null;
 
       // ── Gross National Debt in current USD ────────────────────────────────
-      // Source: FRED NGDPD*A188N (IMF WEO nominal GDP, billions USD) × debtToGDP%
-      // Both series are annual from IMF WEO so they share the same reference year.
-      // Failure is non-fatal: grossDebtUSD is null if either series is unavailable.
-      const gdpResult  = gdpSettled[i];
-      const gdpUSD     = gdpResult.status === "fulfilled"
-        ? (parseObs(gdpResult.value)[0]?.value ?? null)
-        : null;
+      // Source: IMF DataMapper NGDPD (nominal GDP, USD billions) × debtToGDP%.
+      // Both series are from IMF WEO so they share the same reference year.
+      // Failure is non-fatal: grossDebtUSD is null if either value is unavailable.
+      const gdpUSD       = imfGdpMap[cfg.id] ?? null;
       const grossDebtUSD = debtToGDP !== null && gdpUSD !== null
         ? (debtToGDP / 100) * gdpUSD
         : null;
