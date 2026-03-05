@@ -6,6 +6,7 @@ import type { CountryNewsData, EventCategory, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
 import { useNewsMap } from "./useNewsMap";
 import LiveEventFeed from "./LiveEventFeed";
+import { CONFLICT_STATUS_DOT, CONFLICT_STATUS_LABEL, DEFAULT_FLASHPOINT_SOURCES } from "./conflictUtils";
 
 // ── Map patch — remove French Guiana from France's SVG path ──────────────────
 // The worldMill dataset encodes French Guiana (South America) as a subpath of
@@ -700,6 +701,7 @@ export default function NewsMapWidget() {
                 <button
                   key={c.code}
                   onClick={() => handlePillClick(c)}
+                  title={c.conflictName ? `${c.conflictName}${c.conflictStatus ? ` · ${CONFLICT_STATUS_LABEL[c.conflictStatus]}` : ""}` : undefined}
                   className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-error-500/30 bg-error-500/10 px-2 py-0.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-500/20 dark:bg-error-500/20 dark:text-error-400 dark:hover:bg-error-500/30"
                 >
                   {c.trendingRank !== undefined && (
@@ -709,6 +711,12 @@ export default function NewsMapWidget() {
                     >
                       #{c.trendingRank}
                     </span>
+                  )}
+                  {c.conflictStatus && (
+                    <span
+                      className={`shrink-0 h-1.5 w-1.5 rounded-full ${CONFLICT_STATUS_DOT[c.conflictStatus]}`}
+                      aria-label={CONFLICT_STATUS_LABEL[c.conflictStatus]}
+                    />
                   )}
                   <span aria-label={c.name}>{countryFlag(c.code)}</span>
                   {c.name}
@@ -728,12 +736,21 @@ export default function NewsMapWidget() {
                   .map((code) => countryByCodeRef.current.get(code))
                   .filter((c): c is CountryNewsData => c !== undefined);
                 if (members.length < 2) return null;
+                // Use the conflict name from any member that has one
+                const conflictName = members.find((m) => m.conflictName)?.conflictName;
+                const conflictStatus = members.find((m) => m.conflictStatus)?.conflictStatus;
                 return (
                   <span
                     key={group.join("-")}
                     className="inline-flex items-center gap-0.5 rounded-full border border-warning-500/30 bg-warning-500/10 px-2 py-0.5 text-xs font-medium text-warning-800 dark:bg-warning-500/20 dark:text-warning-300"
-                    title={`Active conflict: ${members.map((m) => m.name).join(" vs ")}`}
+                    title={conflictName ?? `Active conflict: ${members.map((m) => m.name).join(" vs ")}`}
                   >
+                    {conflictStatus && (
+                      <span
+                        className={`shrink-0 h-1.5 w-1.5 rounded-full mr-0.5 ${CONFLICT_STATUS_DOT[conflictStatus]}`}
+                        aria-label={CONFLICT_STATUS_LABEL[conflictStatus]}
+                      />
+                    )}
                     {members.map((m, i) => (
                       <span key={m.code}>
                         {i > 0 && <span className="text-warning-500/60 mx-0.5">vs</span>}
@@ -750,6 +767,20 @@ export default function NewsMapWidget() {
               })}
             </>
           )}
+        </div>
+      )}
+
+      {/* Data sources attribution */}
+      {data && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-gray-100 dark:border-gray-800 pt-2.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 shrink-0">
+            Data:
+          </span>
+          {(data.dataSources ?? DEFAULT_FLASHPOINT_SOURCES).map((src, i, arr) => (
+            <span key={src} className="text-[10px] text-gray-400 dark:text-gray-500">
+              {src}{i < arr.length - 1 && <span className="ml-1.5 opacity-40" aria-hidden="true">·</span>}
+            </span>
+          ))}
         </div>
       )}
 

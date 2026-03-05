@@ -1,6 +1,7 @@
 import { useMemo, memo, useState, useEffect, useCallback } from "react";
 import type { CountryNewsData, NewsEvent, EventCategory, EventSeverity, AlertLevel } from "./types";
 import { countryFlag } from "./mapUtils";
+import { CONFLICT_STATUS_DOT, CONFLICT_STATUS_LABEL } from "./conflictUtils";
 
 interface FeedEntry {
   event: NewsEvent;
@@ -172,11 +173,44 @@ const CountryDetail = memo(function CountryDetail({
         </span>
       </div>
 
+      {/* Conflict metadata — shown when a known conflict is associated with this country */}
+      {country.conflictName && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex-shrink-0">
+          {country.conflictStatus && (
+            <span
+              className={`shrink-0 h-1.5 w-1.5 rounded-full ${CONFLICT_STATUS_DOT[country.conflictStatus]}`}
+              aria-hidden="true"
+            />
+          )}
+          <span className="flex-1 truncate text-[10px] font-medium text-gray-600 dark:text-gray-400">
+            {country.conflictName}
+          </span>
+          {country.conflictStatus && (
+            <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
+              {CONFLICT_STATUS_LABEL[country.conflictStatus]}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Events list */}
       <div className="flex-1 overflow-y-auto px-3 py-1">
-        {sortedEvents.map((ev, i) => (
-          <EventDetailRow key={`${ev.title}-${ev.time}-${i}`} event={ev} />
-        ))}
+        {sortedEvents.length > 0 ? (
+          sortedEvents.map((ev, i) => (
+            <EventDetailRow key={`${ev.title}-${ev.time}-${i}`} event={ev} />
+          ))
+        ) : (
+          <div className="py-6 text-center">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              No live events in the current window.
+            </p>
+            {country.conflictName && (
+              <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                Conflict zone monitored via ACLED · UCDP · CFR · UN OCHA
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
