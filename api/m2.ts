@@ -33,15 +33,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //
 // Gross debt / GDP data:
 //   Debt-to-GDP  – FRED GGGDTA*188N (IMF WEO annual, % of GDP)
-//   Nominal GDP  – IMF DataMapper API NGDPD (free, no key, USD billions)
+//   Nominal GDP  – World Bank API NY.GDP.MKTP.CD (free, no key, actual USD → /1e9 = billions)
 //   Gross debt   – derived: (debtToGDP / 100) × gdpUSD
 
-const FRED_BASE  = "https://api.stlouisfed.org/fred/series/observations";
-const OECD_BASE  = "https://sdmx.oecd.org/public/rest/data";
-// IMF DataMapper API (free, no key required) for nominal GDP in current USD.
+const FRED_BASE       = "https://api.stlouisfed.org/fred/series/observations";
+const OECD_BASE       = "https://sdmx.oecd.org/public/rest/data";
+// World Bank Indicators API (free, no key required) for nominal GDP in current USD.
 // Used to derive gross national debt: grossDebtUSD = (debtToGDP / 100) * gdpUSD.
-// Reference: https://www.imf.org/external/datamapper/api/v1/
-const IMF_BASE   = "https://www.imf.org/external/datamapper/api/v1";
+// Reference: https://datahelpdesk.worldbank.org/knowledgebase/articles/889392
+const WORLDBANK_BASE  = "https://api.worldbank.org/v2";
 
 // Number of monthly observations to retrieve (15 gives the 13 valid points
 // needed for the latest value + 12 prior months, with a 2-observation buffer
@@ -296,57 +296,68 @@ async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
   return parseOecdSdmx((await res.json()) as OecdSdmxBody);
 }
 
-// ── IMF DataMapper helpers (for nominal GDP in current USD) ──────────────────
+// ── World Bank Indicators helpers (for nominal GDP in current USD) ────────────
 //
-// The IMF DataMapper API (imf.org/external/datamapper) is free, requires no
-// API key, and is the authoritative source for IMF WEO nominal GDP in current
-// prices (USD billions).  It is used to derive gross national debt:
-//   grossDebtUSD = (debtToGDP / 100) * gdpUSD
-// where debtToGDP comes from FRED GGGDTA*188N (same IMF WEO vintage).
+// The World Bank Indicators API (api.worldbank.org/v2) is free, requires no
+// API key, and provides GDP at current market prices in actual US$.  Values
+// must be divided by 1e9 to obtain billions of USD used in the gross debt
+// derivation: grossDebtUSD = (debtToGDP / 100) * gdpUSD.
 //
-// IMF WEO country / region codes used:
-//   USA = United States · EA = Euro Area · GBR = United Kingdom
-//   JPN = Japan · CAN = Canada · CHN = China
+// World Bank country / region codes used:
+//   US  = United States · EMU = Economic and Monetary Union (Euro area)
+//   GB  = United Kingdom · JP  = Japan · CA = Canada · CN = China
+// Indicator: NY.GDP.MKTP.CD (GDP at current market prices, current US$)
 
-// Map from our country IDs to IMF WEO codes
-const IMF_GDP_CODES: Record<string, string> = {
-  US: "USA",
-  EU: "EA",   // Euro Area aggregate in IMF WEO
-  UK: "GBR",
-  JP: "JPN",
-  CA: "CAN",
-  CN: "CHN",
+// Map from our country IDs to World Bank API country codes
+const WB_GDP_CODES: Record<string, string> = {
+  US: "US",
+  EU: "EMU",   // Economic and Monetary Union aggregate (Euro area)
+  UK: "GB",
+  JP: "JP",
+  CA: "CA",
+  CN: "CN",
 };
 
-interface ImfDataMapperBody {
-  values?: {
-    NGDPD?: Record<string, Record<string, number | null>>;
-  };
+interface WbGdpEntry {
+  country: { id: string; value: string };
+  date:    string;
+  value:   number | null;
 }
 
 // Returns a map of our country IDs to the most recent annual nominal GDP
 // (USD billions).  Throws on network / HTTP errors so callers can .catch().
-async function fetchImfNominalGdp(): Promise<Record<string, number | null>> {
-  const imfCodes = Object.values(IMF_GDP_CODES).join(",");
-  const url = `${IMF_BASE}/NGDPD/${imfCodes}`;
+async function fetchWorldBankNominalGdp(): Promise<Record<string, number | null>> {
+  // Semicolon-separated multi-country World Bank path; mrv=3 fetches the 3 most
+  // recent annual observations per country so a one-year lag in the data doesn't
+  // result in a null GDP.  per_page covers all expected rows plus a buffer.
+  const codes = Object.values(WB_GDP_CODES).join(";");
+  const perPage = Object.keys(WB_GDP_CODES).length * 3 + 2;
+  const url =
+    `${WORLDBANK_BASE}/country/${codes}/indicator/NY.GDP.MKTP.CD` +
+    `?format=json&mrv=3&per_page=${perPage}`;
 
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`IMF DataMapper HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`World Bank HTTP ${res.status}`);
 
-  const body = (await res.json()) as ImfDataMapperBody;
-  const ngdpd = body.values?.NGDPD;
+  const body = (await res.json()) as [unknown, WbGdpEntry[] | null];
+  const rows = body[1];
+  if (!Array.isArray(rows)) throw new Error("World Bank response missing data array");
 
   const result: Record<string, number | null> = {};
-  for (const [countryId, imfCode] of Object.entries(IMF_GDP_CODES)) {
-    if (!ngdpd || !ngdpd[imfCode]) { result[countryId] = null; continue; }
-    // Observations keyed by year string; pick the most recent non-null value.
-    const years = Object.keys(ngdpd[imfCode]).sort().reverse();
-    let val: number | null = null;
-    for (const yr of years) {
-      const v = ngdpd[imfCode][yr];
-      if (typeof v === "number" && isFinite(v) && v > 0) { val = v; break; }
+  for (const [countryId, wbCode] of Object.entries(WB_GDP_CODES)) {
+    // Filter to this country's rows, sort newest-first, take first non-null value.
+    const countryRows = rows
+      .filter(r => r.country?.id === wbCode)
+      .sort((a, b) => parseInt(b.date) - parseInt(a.date));
+
+    let gdp: number | null = null;
+    for (const row of countryRows) {
+      if (typeof row.value === "number" && isFinite(row.value) && row.value > 0) {
+        gdp = row.value / 1e9; // World Bank returns actual USD; convert to billions
+        break;
+      }
     }
-    result[countryId] = val;
+    result[countryId] = gdp;
   }
   return result;
 }
@@ -369,7 +380,7 @@ export interface M2CountryResult {
   // Debt-to-GDP (FRED GGGDTA*188N series from IMF WEO – annual)
   debtToGDP?:       number | null;   // General government gross debt, % of GDP
   // Gross National Debt in current USD (annual, derived: debtToGDP% × nominal GDP)
-  // Source: IMF DataMapper NGDPD (nominal GDP, USD billions) via fetchImfNominalGdp()
+  // Source: World Bank NY.GDP.MKTP.CD (nominal GDP, actual USD → /1e9 = billions)
   grossDebtUSD?:    number | null;   // billions USD
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
@@ -414,11 +425,11 @@ export default async function handler(
 
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
     // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6), and
-    // nominal GDP from IMF DataMapper (all 6) – all in parallel.
+    // nominal GDP from World Bank (all 6) – all in parallel.
     // grossDebtUSD is derived server-side: (debtToGDP / 100) * gdpUSD.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, imfGdpMap] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpMap] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -438,10 +449,10 @@ export default async function handler(
       Promise.allSettled(
         COUNTRIES.map((c) => fetchFredObs(c.debtSeries, apiKey, OBS_LIMIT)),
       ),
-      // IMF DataMapper: nominal GDP in current USD (billions) for all 6 economies.
+      // World Bank nominal GDP for all 6 economies.
       // Used to derive gross national debt: (debtToGDP / 100) × gdpUSD.
       // Failure is non-fatal; grossDebtUSD shows "—" if the API is unreachable.
-      fetchImfNominalGdp()
+      fetchWorldBankNominalGdp()
         .catch((): Record<string, number | null> => ({})),
     ]);
 
@@ -579,10 +590,10 @@ export default async function handler(
         : null;
 
       // ── Gross National Debt in current USD ────────────────────────────────
-      // Source: IMF DataMapper NGDPD (nominal GDP, USD billions) × debtToGDP%.
-      // Both series are from IMF WEO so they share the same reference year.
+      // Source: World Bank NY.GDP.MKTP.CD (nominal GDP, actual USD → /1e9 = billions) × debtToGDP%.
+      // Both series are annual so they share the same reference year.
       // Failure is non-fatal: grossDebtUSD is null if either value is unavailable.
-      const gdpUSD       = imfGdpMap[cfg.id] ?? null;
+      const gdpUSD       = gdpMap[cfg.id] ?? null;
       const grossDebtUSD = debtToGDP !== null && gdpUSD !== null
         ? (debtToGDP / 100) * gdpUSD
         : null;
