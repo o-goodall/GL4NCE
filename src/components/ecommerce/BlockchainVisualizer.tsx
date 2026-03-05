@@ -139,10 +139,10 @@ function fmtReward(sats: number): string {
 
 function pctColor(n: number | null): string {
   if (n === null) return "text-gray-400 dark:text-gray-500";
-  if (n > 5)  return "text-emerald-500 dark:text-emerald-400";
-  if (n > 0)  return "text-blue-500 dark:text-blue-400";
-  if (n > -5) return "text-yellow-500 dark:text-yellow-400";
-  return "text-red-500 dark:text-red-400";
+  if (n > 0)  return "text-emerald-500 dark:text-emerald-400";
+  if (n < 0)  return "text-red-500 dark:text-red-400";
+  // n === 0: no change — treat as neutral
+  return "text-gray-400 dark:text-gray-500";
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -154,12 +154,10 @@ interface ProgressRowProps {
   right:           string | null;
   /** CSS gradient string for the filled bar, e.g. "linear-gradient(to right, ...)" */
   gradient:        string;
-  /** CSS box-shadow string for the glow effect on the filled bar */
-  glow:            string;
   loading:         boolean;
 }
 
-function ProgressRow({ label, pct, percentageLabel, right, gradient, glow, loading }: ProgressRowProps) {
+function ProgressRow({ label, pct, percentageLabel, right, gradient, loading }: ProgressRowProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
@@ -188,7 +186,6 @@ function ProgressRow({ label, pct, percentageLabel, right, gradient, glow, loadi
             style={{
               width: `${Math.min(100, Math.max(0, pct))}%`,
               background: gradient,
-              boxShadow: glow,
             }}
           />
         ) : null}
@@ -340,8 +337,8 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         isNew ? `animate-[btc-block-enter_${BLOCK_ENTER_DURATION}_ease-out_both]` : ""
       } ${
         isLatest
-          ? `bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30 border-t-[3px] border-t-orange-400 dark:border-t-orange-500 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
-          : "bg-white border-gray-100 dark:bg-white/[0.025] dark:border-gray-800 border-t-2 border-t-gray-200 dark:border-t-gray-700"
+          ? `bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
+          : "bg-white border-gray-100 dark:bg-white/[0.025] dark:border-gray-800"
       }`}
     >
       {/* Height */}
@@ -586,16 +583,16 @@ export default function BlockchainVisualizer() {
       <div className="px-5 pt-5 pb-4 shrink-0">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/15 shrink-0">
-              <span className="text-orange-500 dark:text-orange-400 text-base font-bold leading-none select-none">₿</span>
+            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 shrink-0">
+              <span className="text-gray-500 dark:text-gray-400 text-base font-bold leading-none select-none">₿</span>
             </div>
             <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
               Blockchain
             </h3>
           </div>
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse shrink-0" />
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Live</span>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 animate-pulse shrink-0" />
+            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Live</span>
           </div>
         </div>
         {loading ? (
@@ -615,7 +612,6 @@ export default function BlockchainVisualizer() {
           percentageLabel={halvingPct !== null ? `${halvingPct.toFixed(1)}%` : null}
           right={blocksToHalving !== null ? `${fmtNum(blocksToHalving)} blocks left` : null}
           gradient="linear-gradient(to right, rgba(245,158,11,0.85), rgba(251,191,36,0.98))"
-          glow="0 0 8px 1px rgba(245,158,11,0.40)"
           loading={loading}
         />
         <ProgressRow
@@ -623,8 +619,7 @@ export default function BlockchainVisualizer() {
           pct={epochProgress}
           percentageLabel={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : null}
           right={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : null}
-          gradient="linear-gradient(to right, rgba(251,146,60,0.85), rgba(239,68,68,0.75))"
-          glow="0 0 8px 1px rgba(239,68,68,0.35)"
+          gradient="linear-gradient(to right, rgba(245,158,11,0.65), rgba(251,191,36,0.80))"
           loading={loading}
         />
       </div>

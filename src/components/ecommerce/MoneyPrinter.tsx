@@ -42,67 +42,11 @@ interface PrinterScore {
 /** Auto-advance interval (ms) — slower than Polymarket's 5 s */
 const AUTO_SLIDE_MS = 7_000;
 
-// ── Regime styles ─────────────────────────────────────────────────────────
-
-interface RegimeStyle {
-  color:  string;
-  bg:     string;
-  badge:  string;
-  dot:    string;
-}
-
-function regimeStyle(regime: string): RegimeStyle {
-  switch (regime) {
-    case "Brrrr":
-    case "Crisis":
-      return {
-        color: "text-red-500 dark:text-red-400",
-        bg:    "bg-red-500",
-        badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
-        dot:   "bg-red-500 dark:bg-red-400",
-      };
-    case "Alert":
-      return {
-        color: "text-orange-500 dark:text-orange-400",
-        bg:    "bg-orange-500",
-        badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
-        dot:   "bg-orange-500 dark:bg-orange-400",
-      };
-    case "Warming":
-      return {
-        color: "text-yellow-500 dark:text-yellow-400",
-        bg:    "bg-yellow-500",
-        badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
-        dot:   "bg-yellow-500 dark:bg-yellow-400",
-      };
-    default:
-      return {
-        color: "text-emerald-500 dark:text-emerald-400",
-        bg:    "bg-emerald-500",
-        badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
-        dot:   "bg-gray-400 dark:bg-gray-500",
-      };
-  }
-}
-
-function regimeBg(regime: string): string {
-  switch (regime) {
-    case "Brrrr":
-    case "Crisis":  return "bg-red-50 dark:bg-red-500/[0.08]";
-    case "Alert":   return "bg-orange-50 dark:bg-orange-500/[0.07]";
-    case "Warming": return "bg-yellow-50/80 dark:bg-yellow-500/[0.05]";
-    default:        return "bg-emerald-50/60 dark:bg-emerald-500/[0.04]";
-  }
-}
-
-function regimeGlow(regime: string): string {
-  switch (regime) {
-    case "Brrrr":
-    case "Crisis":  return "0 0 10px 2px rgba(239,68,68,0.30)";
-    case "Alert":   return "0 0 10px 2px rgba(249,115,22,0.30)";
-    case "Warming": return "0 0 10px 2px rgba(234,179,8,0.25)";
-    default:        return "0 0 10px 2px rgba(16,185,129,0.20)";
-  }
+// ── Regime label helper ───────────────────────────────────────────────────
+// All regime badges use the same neutral site colours; only the label text
+// changes so the information is still surfaced without adding visual noise.
+function regimeLabel(regime: string): string {
+  return regime || "Normal";
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────
@@ -189,15 +133,6 @@ export default function MoneyPrinter() {
   const isUSWithPrinter = c?.id === "US" && printer !== null;
   const slideScore  = isUSWithPrinter ? printer!.score  : (c?.printerScore ?? null);
   const slideRegime = isUSWithPrinter ? printer!.regime : (c?.scoreRegime ?? "Normal");
-  const rs          = regimeStyle(slideRegime);
-
-  const debtCls = c?.debtToGDP == null
-    ? "text-gray-400 dark:text-gray-500"
-    : c.debtToGDP > 90
-      ? "text-red-500 dark:text-red-400"
-      : c.debtToGDP > 60
-        ? "text-yellow-500 dark:text-yellow-300"
-        : "text-emerald-500 dark:text-emerald-400";
 
   const scorePct = slideScore !== null ? Math.min(100, Math.max(0, slideScore)) : 0;
 
@@ -208,8 +143,8 @@ export default function MoneyPrinter() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4 md:mb-5">
         <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 shrink-0">
-            <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold leading-none select-none">$</span>
+          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 shrink-0">
+            <span className="text-gray-500 dark:text-gray-400 text-sm font-bold leading-none select-none">$</span>
           </div>
           <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">
             Money Printer
@@ -258,7 +193,7 @@ export default function MoneyPrinter() {
         ) : (
           <>
             {/* ── Country identity card ── */}
-            <div className={`rounded-2xl p-4 mb-4 ${regimeBg(slideRegime)}`}>
+            <div className="rounded-2xl bg-gray-50 dark:bg-gray-800/50 p-4 mb-4">
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-5xl leading-none select-none">{c.flag}</span>
                 <div className="flex-1 min-w-0">
@@ -266,29 +201,26 @@ export default function MoneyPrinter() {
                     {c.name}
                   </p>
                   {!c.error && slideScore !== null && (
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold mt-1 ${rs.badge}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${rs.dot}`} />
-                      {slideRegime}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold mt-1 bg-gray-100 border-gray-200 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-400 dark:bg-gray-500" />
+                      {regimeLabel(slideRegime)}
                     </span>
                   )}
                 </div>
                 {!c.error && slideScore !== null && (
                   <div className="text-right shrink-0">
-                    <span className={`text-3xl font-black tabular-nums leading-none ${rs.color}`}>{slideScore}</span>
+                    <span className="text-3xl font-black tabular-nums leading-none text-gray-800 dark:text-white/90">{slideScore}</span>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 block mt-0.5 leading-none">/100</span>
                   </div>
                 )}
               </div>
 
-              {/* Printer score bar with glow */}
+              {/* Printer score bar — site-accent amber fill, no glow */}
               {!c.error && slideScore !== null && (
-                <div className="h-2 w-full rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden">
+                <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-700 ${rs.bg}`}
-                    style={{
-                      width: `${scorePct}%`,
-                      boxShadow: regimeGlow(slideRegime),
-                    }}
+                    className="h-full rounded-full bg-amber-400 dark:bg-amber-500 transition-all duration-700"
+                    style={{ width: `${scorePct}%` }}
                   />
                 </div>
               )}
@@ -297,13 +229,7 @@ export default function MoneyPrinter() {
             {/* Metric cards */}
             <div className="grid grid-cols-3 gap-2 md:gap-3">
               {/* M2 */}
-              <div className={`rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 ${
-                m2Change == null
-                  ? "border-t-gray-200 dark:border-t-gray-700"
-                  : m2Change >= 0
-                    ? "border-t-emerald-400 dark:border-t-emerald-500"
-                    : "border-t-red-400 dark:border-t-red-500"
-              }`}>
+              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 border-t-gray-200 dark:border-t-gray-700">
                 <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
                   M2
                 </p>
@@ -315,7 +241,7 @@ export default function MoneyPrinter() {
                     m2Change == null
                       ? "text-gray-400 dark:text-gray-500"
                       : m2Change < 0
-                        ? "text-red-400"
+                        ? "text-red-500 dark:text-red-400"
                         : "text-emerald-500 dark:text-emerald-400"
                   }`}>
                     {fmtDelta(m2Change)}
@@ -324,13 +250,7 @@ export default function MoneyPrinter() {
               </div>
 
               {/* M1 */}
-              <div className={`rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 ${
-                c.m1DataMissing || c.m1ChangeUSD == null
-                  ? "border-t-gray-200 dark:border-t-gray-700"
-                  : c.m1ChangeUSD >= 0
-                    ? "border-t-emerald-400 dark:border-t-emerald-500"
-                    : "border-t-red-400 dark:border-t-red-500"
-              }`}>
+              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 border-t-gray-200 dark:border-t-gray-700">
                 <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
                   M1
                 </p>
@@ -345,7 +265,7 @@ export default function MoneyPrinter() {
                       c.m1ChangeUSD == null
                         ? "text-gray-400 dark:text-gray-500"
                         : c.m1ChangeUSD < 0
-                          ? "text-red-400"
+                          ? "text-red-500 dark:text-red-400"
                           : "text-emerald-500 dark:text-emerald-400"
                     }`}>
                       {fmtDelta(c.m1ChangeUSD)}
@@ -355,15 +275,7 @@ export default function MoneyPrinter() {
               </div>
 
               {/* Gross Debt */}
-              <div className={`rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 ${
-                c.debtToGDP == null
-                  ? "border-t-gray-200 dark:border-t-gray-700"
-                  : c.debtToGDP > 90
-                    ? "border-t-red-400 dark:border-t-red-500"
-                    : c.debtToGDP > 60
-                      ? "border-t-yellow-400 dark:border-t-yellow-500"
-                      : "border-t-emerald-400 dark:border-t-emerald-500"
-              }`}>
+              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 border-t-gray-200 dark:border-t-gray-700">
                 <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
                   Debt
                 </p>
@@ -371,7 +283,7 @@ export default function MoneyPrinter() {
                   {c.error ? "—" : fmtUSD(c.grossDebtUSD)}
                 </p>
                 {!c.error && c.debtToGDP != null && (
-                  <p className={`text-[11px] tabular-nums mt-0.5 font-medium ${debtCls}`}>
+                  <p className="text-[11px] tabular-nums mt-0.5 font-medium text-gray-500 dark:text-gray-400">
                     {fmtPct(c.debtToGDP)} GDP
                   </p>
                 )}
