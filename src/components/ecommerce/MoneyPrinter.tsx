@@ -147,7 +147,7 @@ export default function MoneyPrinter() {
   // ── Skeleton table rows ───────────────────────────────────────────────
   const skeletonRows = Array.from({ length: 6 }, (_, i) => (
     <tr key={i}>
-      {Array.from({ length: 6 }, (__, j) => (
+      {Array.from({ length: 4 }, (__, j) => (
         <td key={j} className="py-2 pr-2">
           <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "5rem" : "2.5rem" }} />
         </td>
@@ -220,14 +220,12 @@ export default function MoneyPrinter() {
 
       {/* ── M1 + M2 per-bank table ─────────────────────────────────────── */}
       <div className="overflow-x-auto flex-1">
-        <table className="w-full min-w-[620px]">
+        <table className="w-full">
           <thead>
             <tr className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
               <th className="text-left pb-2 pr-2">Bank</th>
               <th className="text-right pb-2 pr-2">M1</th>
-              <th className="text-right pb-2 pr-2">M1 Δ</th>
               <th className="text-right pb-2 pr-2">M2</th>
-              <th className="text-right pb-2 pr-2">M2 Δ</th>
               <th className="text-right pb-2">Debt/GDP</th>
             </tr>
           </thead>
@@ -268,38 +266,42 @@ export default function MoneyPrinter() {
                         </div>
                       </td>
 
-                      {/* M1 current */}
-                      <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
-                        {c.error ? "—" : c.m1DataMissing ? (
-                          <span className="text-gray-400 dark:text-gray-500 italic">Missing</span>
-                        ) : fmtUSD(c.m1USD)}
+                      {/* M1 current + Δ stacked */}
+                      <td className="py-2 pr-2 text-right">
+                        <div className="text-xs tabular-nums text-gray-700 dark:text-gray-200">
+                          {c.error ? "—" : c.m1DataMissing ? (
+                          <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
+                          ) : fmtUSD(c.m1USD)}
+                        </div>
+                        {!c.error && !c.m1DataMissing && (
+                          <div className={`text-[10px] tabular-nums ${
+                            c.m1ChangeUSD == null
+                              ? "text-gray-400 dark:text-gray-500"
+                              : c.m1ChangeUSD < 0
+                                ? "text-red-400 dark:text-red-400"
+                                : "text-emerald-500 dark:text-emerald-400"
+                          }`}>
+                            {fmtDelta(c.m1ChangeUSD)}
+                          </div>
+                        )}
                       </td>
 
-                      {/* M1 Δ */}
-                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
-                        c.error || c.m1DataMissing || c.m1ChangeUSD == null
-                          ? "text-gray-400 dark:text-gray-500"
-                          : c.m1ChangeUSD < 0
-                            ? "text-red-400 dark:text-red-400"
-                            : "text-emerald-500 dark:text-emerald-400"
-                      }`}>
-                        {c.error || c.m1DataMissing ? "—" : fmtDelta(c.m1ChangeUSD)}
-                      </td>
-
-                      {/* M2 current */}
-                      <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
-                        {c.error ? "—" : fmtUSD(m2Current)}
-                      </td>
-
-                      {/* M2 Δ */}
-                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
-                        c.error || m2Change == null
-                          ? "text-gray-400 dark:text-gray-500"
-                          : m2Change < 0
-                            ? "text-red-400 dark:text-red-400"
-                            : "text-emerald-500 dark:text-emerald-400"
-                      }`}>
-                        {c.error ? "—" : fmtDelta(m2Change)}
+                      {/* M2 current + Δ stacked */}
+                      <td className="py-2 pr-2 text-right">
+                        <div className="text-xs tabular-nums text-gray-700 dark:text-gray-200">
+                          {c.error ? "—" : fmtUSD(m2Current)}
+                        </div>
+                        {!c.error && (
+                          <div className={`text-[10px] tabular-nums ${
+                            m2Change == null
+                              ? "text-gray-400 dark:text-gray-500"
+                              : m2Change < 0
+                                ? "text-red-400 dark:text-red-400"
+                                : "text-emerald-500 dark:text-emerald-400"
+                          }`}>
+                            {fmtDelta(m2Change)}
+                          </div>
+                        )}
                       </td>
 
                       {/* Debt / GDP */}
