@@ -52,26 +52,31 @@ interface RegimeConfig {
 function regimeCfg(regime: string): RegimeConfig {
   switch (regime) {
     case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
-    case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    case "Warming": return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
+    case "Caution": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    case "Watch":   return { color: "text-sky-500 dark:text-sky-400",       bg: "bg-sky-500"       };
     default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
   }
 }
 
-// ── Per-bank regime badge styles (green → yellow → orange → red) ─────────────
+// ── Per-bank regime badge styles (green → sky → yellow → orange → red) ──────
 
 const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
-  Crisis:  {
+  Crisis: {
     badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
     dot:   "bg-red-500 dark:bg-red-400",
   },
-  High: {
+  Warming: {
     badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
     dot:   "bg-orange-500 dark:bg-orange-400",
   },
-  Warming: {
+  Caution: {
     badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
     dot:   "bg-yellow-500 dark:bg-yellow-400",
+  },
+  Watch: {
+    badge: "bg-sky-50 border-sky-200 text-sky-600 dark:bg-sky-500/10 dark:border-sky-500/30 dark:text-sky-400",
+    dot:   "bg-sky-500 dark:bg-sky-400",
   },
   Normal: {
     badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",

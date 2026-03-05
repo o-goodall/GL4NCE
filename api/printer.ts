@@ -10,11 +10,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   HY credit spread     (25%) – BAMLH0A0HYM2    ICE BofA US HY OAS, percentage, daily
 //   Yield curve          (10%) – T10Y2Y           10Y minus 2Y spread, percentage, daily
 //
-// Regime thresholds:
-//   0–30   Normal
-//   30–60  Printer Warming
-//   60–80  Alert
-//   80–100 Brrrr
+// Regime thresholds (DEFCON guide):
+//   0–29   Normal    (DEFCON 5) – Economy in normal cycle; no systemic stress
+//   30–44  Watch     (DEFCON 4) – Early signs of liquidity tightening or minor market stress
+//   45–59  Caution   (DEFCON 3) – Liquidity stress building; markets front-running potential cuts
+//   60–74  Warming   (DEFCON 2) – High probability of aggressive intervention
+//   75–100 Brrrr     (DEFCON 1) – Full-on emergency monetary expansion; QE unleashed
 
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 
@@ -92,7 +93,7 @@ export interface PrinterIndicator {
 
 export interface PrinterScoreResult {
   score:      number;                 // 0–100 composite
-  regime:     string;                 // "Normal" | "Warming" | "Alert" | "Brrrr"
+  regime:     string;                 // "Normal" | "Watch" | "Caution" | "Warming" | "Brrrr"
   indicators: PrinterIndicator[];
   updatedAt:  string;                 // ISO timestamp
 }
@@ -100,9 +101,10 @@ export interface PrinterScoreResult {
 // ── Regime helper ──────────────────────────────────────────────────────────
 
 function regime(score: number): string {
-  if (score >= 80) return "Brrrr";
-  if (score >= 60) return "Alert";
-  if (score >= 30) return "Warming";
+  if (score >= 75) return "Brrrr";
+  if (score >= 60) return "Warming";
+  if (score >= 45) return "Caution";
+  if (score >= 30) return "Watch";
   return "Normal";
 }
 
