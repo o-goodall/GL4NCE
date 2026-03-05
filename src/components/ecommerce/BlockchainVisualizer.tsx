@@ -67,20 +67,24 @@ function setCache<T>(key: string, data: T): void {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BLOCKS_KEY  = "btc-blocks-v1";
-const MEMPOOL_KEY = "btc-mempool-v1";
-const DIFF_KEY    = "btc-diff-adj-v1";
-const FEES_KEY    = "btc-fees-v1";
+const BLOCKS_KEY       = "btc-blocks-v1";
+const MEMPOOL_KEY      = "btc-mempool-v1";
+const DIFF_KEY         = "btc-diff-adj-v1";
+const FEES_KEY         = "btc-fees-v1";
 
-const BLOCKS_TTL  = 60_000;
-const MEMPOOL_TTL = 30_000;
-const DIFF_TTL    = 5 * 60_000;
-const FEES_TTL    = 60_000;
+const BLOCKS_TTL       = 60_000;
+const MEMPOOL_TTL      = 30_000;
+const DIFF_TTL         = 5 * 60_000;
+const FEES_TTL         = 60_000;
 
-const POLL_MS         = 60_000;
-const MAX_BLOCKS      = 8;
-const BLOCKS_PER_EPOCH = 2016;
-const SATS_PER_BTC    = 1e8;
+const POLL_MS           = 60_000;
+const MAX_BLOCKS        = 6;
+const HALVING_INTERVAL  = 210_000;
+const SATS_PER_BTC      = 1e8;
+const FEE_SEPARATOR     = " · ";
+// Block card dimensions — keep in sync with the skeleton placeholder
+const BLOCK_CARD_W      = "w-[90px]";
+const BLOCK_CARD_H      = "h-[76px]";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -119,27 +123,71 @@ function pctColor(n: number | null): string {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-interface StatCardProps {
-  label:    string;
-  value:    string;
-  sub?:     string;
-  color?:   string;
-  loading?: boolean;
+interface ProgressRowProps {
+  label:          string;
+  pct:            number | null;
+  percentageLabel: string | null;
+  right:          string | null;
+  /** Tailwind bg-* class for the filled portion, e.g. "bg-amber-400" */
+  color:          string;
+  loading:        boolean;
 }
 
-function StatCard({ label, value, sub, color = "text-gray-800 dark:text-white/90", loading = false }: StatCardProps) {
+function ProgressRow({ label, pct, percentageLabel, right, color, loading }: ProgressRowProps) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide leading-none">
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            {label}
+          </span>
+          {!loading && percentageLabel && (
+            <span className="text-[10px] tabular-nums font-medium text-gray-500 dark:text-gray-400">
+              {percentageLabel}
+            </span>
+          )}
+        </div>
+        {loading ? (
+          <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        ) : right ? (
+          <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500">{right}</span>
+        ) : null}
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+        {loading ? (
+          <div className="h-full w-2/5 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
+        ) : pct !== null ? (
+          <div
+            className={`h-full rounded-full ${color} transition-all duration-700`}
+            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+interface MiniStatProps {
+  label:   string;
+  value:   string;
+  sub?:    string;
+  color?:  string;
+  loading: boolean;
+}
+
+function MiniStat({ label, value, sub, color = "text-gray-800 dark:text-white/90", loading }: MiniStatProps) {
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[9px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide leading-none">
         {label}
       </span>
       {loading ? (
-        <div className="h-5 w-16 mt-0.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        <div className="h-4 w-12 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
       ) : (
-        <span className={`text-sm font-bold tabular-nums ${color}`}>{value}</span>
+        <span className={`text-xs font-bold tabular-nums leading-tight ${color}`}>{value}</span>
       )}
       {sub && !loading && (
-        <span className="text-[10px] text-gray-400 dark:text-gray-500 leading-tight">{sub}</span>
+        <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">{sub}</span>
       )}
     </div>
   );
@@ -151,36 +199,36 @@ function BlockCard({ block, isLatest }: { block: Block; isLatest: boolean }) {
 
   return (
     <div
-      className={`flex-none w-[108px] rounded-xl border p-2.5 transition-colors ${
+      className={`flex-none w-[90px] rounded-xl border p-2 transition-colors ${
         isLatest
           ? "bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30"
           : "bg-gray-50 border-gray-100 dark:bg-white/[0.02] dark:border-gray-800"
       }`}
     >
       <div
-        className={`text-[11px] font-bold tabular-nums ${
+        className={`text-[11px] font-bold tabular-nums leading-tight ${
           isLatest ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
         }`}
       >
         #{fmtNum(block.height)}
       </div>
-      <div className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5">
+      <div className="text-[9px] text-gray-400 dark:text-gray-500 mb-1">
         {timeAgo(block.timestamp)} ago
       </div>
       <div className="space-y-0.5">
-        <div className="text-[10px] tabular-nums text-gray-600 dark:text-gray-300">
+        <div className="text-[9px] tabular-nums text-gray-600 dark:text-gray-300">
           {fmtNum(block.tx_count)} txs
         </div>
-        <div className="text-[10px] text-gray-400 dark:text-gray-500">
+        <div className="text-[9px] text-gray-400 dark:text-gray-500">
           {fmtBytes(block.size)}
         </div>
         {reward != null && (
-          <div className="text-[10px] tabular-nums text-amber-500 dark:text-amber-400">
+          <div className="text-[9px] tabular-nums text-amber-500 dark:text-amber-400">
             {fmtReward(reward)}
           </div>
         )}
         {pool && (
-          <div className="text-[9px] text-gray-400 dark:text-gray-500 truncate" title={pool}>
+          <div className="text-[8px] text-gray-400 dark:text-gray-500 truncate" title={pool}>
             {pool}
           </div>
         )}
@@ -258,16 +306,20 @@ export default function BlockchainVisualizer() {
   }, []);
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const blockHeight     = blocks[0]?.height ?? null;
+  const blockHeight = blocks[0]?.height ?? null;
+
+  // Halving — computed from block height position within 210,000-block cycle
+  const halvingCompleted = blockHeight !== null ? blockHeight % HALVING_INTERVAL : null;
+  const halvingPct       = halvingCompleted !== null ? (halvingCompleted / HALVING_INTERVAL) * 100 : null;
+  const blocksToHalving  = halvingCompleted !== null ? HALVING_INTERVAL - halvingCompleted : null;
+
+  // Difficulty epoch
   const epochProgress   = difficulty?.progressPercent ?? null;
   const estDiffChange   = difficulty?.difficultyChange ?? null;
   const lastDiffChange  = difficulty?.previousRetarget ?? null;
   const remainingBlocks = difficulty?.remainingBlocks ?? null;
-  const blocksInEpoch   =
-    remainingBlocks !== null && epochProgress !== null
-      ? Math.round((epochProgress / 100) * BLOCKS_PER_EPOCH)
-      : null;
 
+  // Mempool
   const mempoolCount = mempool?.count ?? null;
   const mempoolVsize = mempool?.vsize ?? null;
   const avgFeeRate   =
@@ -275,166 +327,111 @@ export default function BlockchainVisualizer() {
       ? Math.round(mempool.total_fee / mempoolVsize)
       : null;
 
+  // Fee display — "fast · mid · slow" using shared separator constant
+  const feeStr = fees
+    ? `${fees.fastestFee}${FEE_SEPARATOR}${fees.halfHourFee}${FEE_SEPARATOR}${fees.hourFee}`
+    : "—";
+  const feeSub = fees ? `fast${FEE_SEPARATOR}mid${FEE_SEPARATOR}slow` : undefined;
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-5 pb-4 sm:px-6 sm:pt-6 border-b border-gray-100 dark:border-gray-800">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] flex flex-col">
+
+      {/* ── Header: title + block height + live dot ── */}
+      <div className="flex items-start justify-between px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
+        <div className="flex items-start gap-2">
+          <span className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400 mt-0.5">
             3
           </span>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Blockchain</h3>
+          <div>
+            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
+              Blockchain
+            </h3>
+            {loading ? (
+              <div className="h-5 w-28 mt-0.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            ) : blockHeight !== null ? (
+              <span className="text-xl font-bold tabular-nums text-gray-800 dark:text-white/90 leading-tight">
+                #{fmtNum(blockHeight)}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           <span className="text-[10px] text-gray-400 dark:text-gray-500">Live</span>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col px-5 pb-5 pt-4 sm:px-6 gap-4 min-h-0">
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
-          <StatCard
-            label="Block Height"
-            value={blockHeight !== null ? `#${fmtNum(blockHeight)}` : "—"}
-            loading={loading}
-          />
-          <StatCard
-            label="Epoch Progress"
-            value={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : "—"}
-            sub={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : undefined}
-            loading={loading}
-          />
-          <StatCard
-            label="Est. Diff Adj"
-            value={estDiffChange !== null ? fmtPct(estDiffChange) : "—"}
-            color={pctColor(estDiffChange)}
-            loading={loading}
-          />
-          <StatCard
-            label="Last Diff Adj"
-            value={lastDiffChange !== null ? fmtPct(lastDiffChange) : "—"}
-            color={pctColor(lastDiffChange)}
-            loading={loading}
-          />
-        </div>
+      {/* ── Progress bars: Halving + Epoch ── */}
+      <div className="px-4 pb-3 sm:px-5 space-y-2.5">
+        <ProgressRow
+          label="Halving"
+          pct={halvingPct}
+          percentageLabel={halvingPct !== null ? `${halvingPct.toFixed(1)}%` : null}
+          right={blocksToHalving !== null ? `${fmtNum(blocksToHalving)} blocks left` : null}
+          color="bg-amber-400"
+          loading={loading}
+        />
+        <ProgressRow
+          label="Epoch"
+          pct={epochProgress}
+          percentageLabel={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : null}
+          right={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : null}
+          color="bg-orange-400"
+          loading={loading}
+        />
+      </div>
 
-        {/* Epoch progress bar */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wide font-medium">
-              Epoch
-            </span>
-            {loading ? (
-              <div className="h-3 w-24 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-            ) : blocksInEpoch !== null && remainingBlocks !== null ? (
-              <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
-                {fmtNum(blocksInEpoch)} / {fmtNum(BLOCKS_PER_EPOCH)} blocks
-              </span>
-            ) : null}
-          </div>
-          <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-            {loading ? (
-              <div className="h-full w-1/3 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
-            ) : epochProgress !== null ? (
-              <div
-                className="h-full rounded-full bg-orange-400 transition-all duration-700"
-                style={{ width: `${Math.min(100, epochProgress)}%` }}
-              />
-            ) : null}
-          </div>
-        </div>
+      {/* ── Condensed stats row ── */}
+      <div className="px-4 sm:px-5 py-3 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-3">
+        <MiniStat
+          label="Est. Diff Adj"
+          value={estDiffChange !== null ? fmtPct(estDiffChange) : "—"}
+          color={pctColor(estDiffChange)}
+          loading={loading}
+        />
+        <MiniStat
+          label="Last Diff Adj"
+          value={lastDiffChange !== null ? fmtPct(lastDiffChange) : "—"}
+          color={pctColor(lastDiffChange)}
+          loading={loading}
+        />
+        <MiniStat
+          label="Mempool"
+          value={mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
+          sub={avgFeeRate !== null ? `${avgFeeRate} sat/vB avg` : undefined}
+          loading={loading}
+        />
+        <MiniStat
+          label="Fees sat/vB"
+          value={feeStr}
+          sub={feeSub}
+          loading={loading}
+        />
+      </div>
 
-        {/* Mempool + Fees */}
-        <div className="grid grid-cols-2 gap-3">
-          {/* Mempool */}
-          <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.02] p-3">
-            <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2.5 block">
-              Mempool
-            </span>
-            {loading ? (
-              <div className="space-y-2">
-                <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Unconfirmed</span>
-                  <span className="text-xs font-semibold tabular-nums text-gray-800 dark:text-white/80">
-                    {mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
-                  </span>
+      {/* ── Recent Blocks — horizontal chain scroll ── */}
+      <div className="px-4 pb-4 pt-3 sm:px-5 border-t border-gray-100 dark:border-gray-800">
+        <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2 block">
+          Recent Blocks
+        </span>
+        <div className="flex items-center overflow-x-auto pb-0.5">
+          {loading
+            ? Array.from({ length: MAX_BLOCKS }).map((_, i) => (
+                <div key={i} className="flex items-center shrink-0">
+                  <div className={`${BLOCK_CARD_W} ${BLOCK_CARD_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
+                  {i < MAX_BLOCKS - 1 && (
+                    <div className="w-3 h-px bg-gray-200 dark:bg-gray-700 mx-0.5 shrink-0" />
+                  )}
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Size</span>
-                  <span className="text-xs font-semibold tabular-nums text-gray-800 dark:text-white/80">
-                    {mempoolVsize !== null ? fmtBytes(mempoolVsize) : "—"}
-                  </span>
+              ))
+            : blocks.map((block, i) => (
+                <div key={block.id} className="flex items-center shrink-0">
+                  <BlockCard block={block} isLatest={i === 0} />
+                  {i < blocks.length - 1 && (
+                    <div className="w-3 h-px bg-gray-200 dark:bg-gray-700 mx-0.5 shrink-0" />
+                  )}
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Avg fee</span>
-                  <span className="text-xs font-semibold tabular-nums text-gray-800 dark:text-white/80">
-                    {avgFeeRate !== null ? `${avgFeeRate} sat/vB` : "—"}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Fee Estimator */}
-          <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.02] p-3">
-            <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2.5 block">
-              Fee Estimator
-            </span>
-            {loading ? (
-              <div className="space-y-2">
-                <div className="h-3 w-24 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Fast (~10 min)</span>
-                  <span className="text-xs font-semibold tabular-nums text-red-500 dark:text-red-400">
-                    {fees?.fastestFee != null ? `${fees.fastestFee} sat/vB` : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Mid (~30 min)</span>
-                  <span className="text-xs font-semibold tabular-nums text-yellow-500 dark:text-yellow-400">
-                    {fees?.halfHourFee != null ? `${fees.halfHourFee} sat/vB` : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Slow (~1 hr)</span>
-                  <span className="text-xs font-semibold tabular-nums text-emerald-500 dark:text-emerald-400">
-                    {fees?.hourFee != null ? `${fees.hourFee} sat/vB` : "—"}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Recent Blocks */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2 shrink-0">
-            Recent Blocks
-          </span>
-          <div className="flex gap-2 overflow-x-auto pb-1 items-start">
-            {loading
-              ? Array.from({ length: MAX_BLOCKS }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="flex-none w-[108px] h-[90px] rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse"
-                  />
-                ))
-              : blocks.map((block, i) => (
-                  <BlockCard key={block.id} block={block} isLatest={i === 0} />
-                ))}
-          </div>
+              ))}
         </div>
       </div>
     </div>
