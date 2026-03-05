@@ -627,9 +627,6 @@ export default function BtcLiveChart() {
         {/* Left: tile badge + title + live price */}
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-              1
-            </span>
             <span
               className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-500 leading-none"
               aria-label="Bitcoin"

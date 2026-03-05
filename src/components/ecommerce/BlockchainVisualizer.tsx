@@ -606,9 +606,6 @@ export default function BlockchainVisualizer() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between px-5 pt-5 pb-3 shrink-0">
         <div className="flex items-start gap-2">
-          <span className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400 mt-0.5">
-            3
-          </span>
           <div>
             <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
               Blockchain
