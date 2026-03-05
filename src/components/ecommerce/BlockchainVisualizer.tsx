@@ -604,27 +604,18 @@ export default function BlockchainVisualizer() {
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between px-5 pt-5 pb-3 shrink-0">
-        <div className="flex items-start gap-2">
-          <span className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400 mt-0.5">
-            3
-          </span>
-          <div>
-            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
-              Blockchain
-            </h3>
-            {loading ? (
-              <div className="h-5 w-28 mt-0.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-            ) : blockHeight !== null ? (
-              <span className="text-xl font-bold tabular-nums text-gray-800 dark:text-white/90 leading-tight">
-                #{fmtNum(blockHeight)}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          <span className="text-[10px] text-gray-400 dark:text-gray-500">Live</span>
+      <div className="px-5 pt-5 pb-3 shrink-0">
+        <div>
+          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
+            Blockchain
+          </h3>
+          {loading ? (
+            <div className="h-5 w-28 mt-0.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+          ) : blockHeight !== null ? (
+            <span className="text-xl font-bold tabular-nums text-gray-800 dark:text-white/90 leading-tight">
+              #{fmtNum(blockHeight)}
+            </span>
+          ) : null}
         </div>
       </div>
 

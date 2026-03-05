@@ -30,9 +30,18 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   DEXJPUS – JPY per USD  (inverted: toUSD = 1/rate)
 //   DEXCAUS – CAD per USD  (inverted)
 //   DEXCHUS – CNY per USD  (inverted)
+//
+// Gross debt / GDP data:
+//   Debt-to-GDP  – FRED GGGDTA*188N (IMF WEO annual, % of GDP)
+//   Nominal GDP  – World Bank API NY.GDP.MKTP.CD (free, no key, actual USD → /1e9 = billions)
+//   Gross debt   – derived: (debtToGDP / 100) × gdpUSD
 
-const FRED_BASE  = "https://api.stlouisfed.org/fred/series/observations";
-const OECD_BASE  = "https://sdmx.oecd.org/public/rest/data";
+const FRED_BASE       = "https://api.stlouisfed.org/fred/series/observations";
+const OECD_BASE       = "https://sdmx.oecd.org/public/rest/data";
+// World Bank Indicators API (free, no key required) for nominal GDP in current USD.
+// Used to derive gross national debt: grossDebtUSD = (debtToGDP / 100) * gdpUSD.
+// Reference: https://datahelpdesk.worldbank.org/knowledgebase/articles/889392
+const WORLDBANK_BASE  = "https://api.worldbank.org/v2";
 
 // Number of monthly observations to retrieve (15 gives the 13 valid points
 // needed for the latest value + 12 prior months, with a 2-observation buffer
@@ -121,6 +130,10 @@ interface CountryConfig {
   // ── FX conversion (FRED daily rates) ────────────────────────────────────
   fxSeries:         string | null;  // null → already USD
   fxInverted:       boolean;        // true = LCU/USD (invert); false = USD/LCU
+  // ── Debt-to-GDP (FRED GGGDTA*188N series, sourced from IMF WEO) ──────────
+  // Annual, % of GDP.  Uses the confirmed-working FRED API key (same as M1/M2).
+  // Series IDs follow the pattern GGGDTA{country}A188N.
+  debtSeries:       string;         // FRED series ID for general govt gross debt
 }
 
 const COUNTRIES: readonly CountryConfig[] = [
@@ -128,36 +141,42 @@ const COUNTRIES: readonly CountryConfig[] = [
   { id: "US", name: "Fed",  flag: "🇺🇸",
     m1Series: "M1SL",              m1OecdCode: null,  m1LocalToBillions: 1,
     m2Series: "M2SL",              localToBillions: 1,
-    fxSeries: null,                fxInverted: false },
+    fxSeries: null,                fxInverted: false,
+    debtSeries: "GGGDTAUSA188N" },
   // EU: M1 from FRED (MANMM101EZM189S, individual EUR) with OECD fallback;
   //     M2 from FRED (MABMM301EZM189S, individual EUR)
   { id: "EU", name: "ECB",  flag: "🇪🇺",
     m1Series: "MANMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
     m2Series: "MABMM301EZM189S",   localToBillions: 1e-9,
-    fxSeries: "DEXUSEU",           fxInverted: false },
+    fxSeries: "DEXUSEU",           fxInverted: false,
+    debtSeries: "GGGDTAEZA188N" },
   // UK: M1 from FRED (MANMM101GBM189S, individual GBP) with OECD fallback;
   //     M2 from FRED (MABMM301GBM189S, individual GBP)
   { id: "UK", name: "BOE",  flag: "🇬🇧",
     m1Series: "MANMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301GBM189S",   localToBillions: 1e-9,
-    fxSeries: "DEXUSUK",           fxInverted: false },
+    fxSeries: "DEXUSUK",           fxInverted: false,
+    debtSeries: "GGGDTAGBA188N" },
   // JP: M1 from FRED (MANMM101JPM189S, individual JPY) with OECD fallback;
   //     M2 from FRED (MABMM301JPM189S, individual JPY)
   { id: "JP", name: "BOJ",  flag: "🇯🇵",
     m1Series: "MANMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301JPM189S",   localToBillions: 1e-9,
-    fxSeries: "DEXJPUS",           fxInverted: true  },
+    fxSeries: "DEXJPUS",           fxInverted: true,
+    debtSeries: "GGGDTAJPA188N" },
   // CA: M1 from FRED (MANMM101CAM189S, individual CAD) with OECD fallback;
   //     M2 from FRED (MABMM301CAM189S, individual CAD)
   { id: "CA", name: "BOC",  flag: "🇨🇦",
     m1Series: "MANMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301CAM189S",   localToBillions: 1e-9,
-    fxSeries: "DEXCAUS",           fxInverted: true  },
+    fxSeries: "DEXCAUS",           fxInverted: true,
+    debtSeries: "GGGDTACAA188N" },
   // CN: M1 and M2 both from FRED (individual CNY)
   { id: "CN", name: "PBOC", flag: "🇨🇳",
     m1Series: "MYAGM1CNM189N",     m1OecdCode: null,  m1LocalToBillions: 1e-9,
     m2Series: "MYAGM2CNM189N",     localToBillions: 1e-9,
-    fxSeries: "DEXCHUS",           fxInverted: true  },
+    fxSeries: "DEXCHUS",           fxInverted: true,
+    debtSeries: "GGGDTACNA188N" },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
@@ -277,7 +296,119 @@ async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
   return parseOecdSdmx((await res.json()) as OecdSdmxBody);
 }
 
-// ── Response types ────────────────────────────────────────────────────────────
+// ── World Bank Indicators helpers (for nominal GDP in current USD) ────────────
+//
+// The World Bank Indicators API (api.worldbank.org/v2) is free, requires no
+// API key, and provides GDP at current market prices in actual US$.  Values
+// must be divided by 1e9 to obtain billions of USD used in the gross debt
+// derivation: grossDebtUSD = (debtToGDP / 100) * gdpUSD.
+//
+// World Bank country / region codes used:
+//   US  = United States · EMU = Economic and Monetary Union (Euro area)
+//   GB  = United Kingdom · JP  = Japan · CA = Canada · CN = China
+// Indicator: NY.GDP.MKTP.CD (GDP at current market prices, current US$)
+
+// Map from our country IDs to World Bank API country codes
+const WB_GDP_CODES: Record<string, string> = {
+  US: "US",
+  EU: "EMU",   // Economic and Monetary Union aggregate (Euro area)
+  UK: "GB",
+  JP: "JP",
+  CA: "CA",
+  CN: "CN",
+};
+
+interface WbGdpEntry {
+  country:         { id: string; value: string };
+  countryiso3code: string;   // ISO alpha-3 or aggregate code (e.g. "EMU"); matches query code for aggregates
+  date:            string;
+  value:           number | null;
+}
+
+// Returns a map of our country IDs to the most recent annual nominal GDP
+// (USD billions).  Throws on network / HTTP errors so callers can .catch().
+async function fetchWorldBankNominalGdp(): Promise<Record<string, number | null>> {
+  // Semicolon-separated multi-country World Bank path; mrv=3 fetches the 3 most
+  // recent annual observations per country so a one-year lag in the data doesn't
+  // result in a null GDP.  per_page covers all expected rows plus a buffer.
+  const codes = Object.values(WB_GDP_CODES).join(";");
+  const perPage = Object.keys(WB_GDP_CODES).length * 3 + 2;
+  const url =
+    `${WORLDBANK_BASE}/country/${codes}/indicator/NY.GDP.MKTP.CD` +
+    `?format=json&mrv=3&per_page=${perPage}`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`World Bank HTTP ${res.status}`);
+
+  const body = (await res.json()) as [unknown, WbGdpEntry[] | null];
+  const rows = body[1];
+  if (!Array.isArray(rows)) throw new Error("World Bank response missing data array");
+
+  const result: Record<string, number | null> = {};
+  for (const [countryId, wbCode] of Object.entries(WB_GDP_CODES)) {
+    // Filter to this country's rows, sort newest-first, take first non-null value.
+    // Check both country.id (used for standard ISO-2 countries) and countryiso3code
+    // (used for aggregates like "EMU" where country.id may differ from the query code).
+    const countryRows = rows
+      .filter(r => r.country?.id === wbCode || r.countryiso3code === wbCode)
+      .sort((a, b) => parseInt(b.date) - parseInt(a.date));
+
+    let gdp: number | null = null;
+    for (const row of countryRows) {
+      if (typeof row.value === "number" && isFinite(row.value) && row.value > 0) {
+        gdp = row.value / 1e9; // World Bank returns actual USD; convert to billions
+        break;
+      }
+    }
+    result[countryId] = gdp;
+  }
+  return result;
+}
+
+// ── Eurostat REST API helpers (for Euro Area government debt as % of GDP) ─────
+//
+// Eurostat gov_10dd_edpt1 (Excessive Deficit Procedure – Government Debt) is
+// the official source for Euro Area general government consolidated gross debt
+// as a percentage of GDP (Maastricht criterion).  It is used as a fallback for
+// the EU/ECB row when the FRED series GGGDTAEZA188N is unavailable.
+//
+// Eurostat API reference:
+//   https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/
+//   gov_10dd_edpt1?format=JSON&geo=EA&unit=PC_GDP&sector=S13&na_item=GD
+//
+// Response format: JSON-stat (value dictionary keyed by string index, plus
+//   dimension objects keyed by dimension name with category.index mappings).
+
+interface EurostatJsonStat {
+  value:     Record<string, number | null>;
+  dimension: {
+    time?: { category: { index: Record<string, number> } };
+    // other dimensions not needed
+  };
+}
+
+// Returns the most recent Euro Area general government gross debt, % of GDP.
+// Throws on network / HTTP errors so callers can .catch().
+async function fetchEurostatEuroAreaDebt(): Promise<number | null> {
+  const url =
+    "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/gov_10dd_edpt1" +
+    "?format=JSON&geo=EA&unit=PC_GDP&sector=S13&na_item=GD&lang=en";
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Eurostat HTTP ${res.status}`);
+
+  const body = (await res.json()) as EurostatJsonStat;
+  const timeIndex = body.dimension?.time?.category?.index;
+  if (!timeIndex || !body.value) return null;
+
+  // Sort years descending; pick the first non-null positive value.
+  const years = Object.keys(timeIndex).sort().reverse();
+  for (const yr of years) {
+    const val = body.value[String(timeIndex[yr])];
+    if (typeof val === "number" && isFinite(val) && val > 0) return val;
+  }
+  return null;
+}
 
 export interface M2CountryResult {
   id:               string;
@@ -292,6 +423,11 @@ export interface M2CountryResult {
   m2USD?:           number | null;   // billions USD (most recent month)
   m2ChangeUSD?:     number | null;   // MoM absolute change in billions USD
   m2Date?:          string | null;   // ISO date of latest M2 observation
+  // Debt-to-GDP (FRED GGGDTA*188N series from IMF WEO – annual)
+  debtToGDP?:       number | null;   // General government gross debt, % of GDP
+  // Gross National Debt in current USD (annual, derived: debtToGDP% × nominal GDP)
+  // Source: World Bank NY.GDP.MKTP.CD (nominal GDP, actual USD → /1e9 = billions)
+  grossDebtUSD?:    number | null;   // billions USD
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
   scoreRegime?:     string;          // "Normal" | "Warming" | "Alert" | "Crisis"
@@ -334,10 +470,13 @@ export default async function handler(
       .filter((code): code is string => code !== null);
 
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
-    // and M1 from OECD (EU/UK/JP/CA) – all in parallel.
+    // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6),
+    // nominal GDP from World Bank (all 6), and Euro Area debt from Eurostat –
+    // all in parallel.
+    // grossDebtUSD is derived server-side: (debtToGDP / 100) * gdpUSD.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpMap, euroAreaDebt] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -354,6 +493,19 @@ export default async function handler(
         // rather than breaking the whole widget. This covers network issues or
         // OECD API downtime without affecting M2 / printer-status data.
         .catch((): OecdObsMap => new Map()),
+      Promise.allSettled(
+        COUNTRIES.map((c) => fetchFredObs(c.debtSeries, apiKey, OBS_LIMIT)),
+      ),
+      // World Bank nominal GDP for all 6 economies.
+      // Used to derive gross national debt: (debtToGDP / 100) × gdpUSD.
+      // Failure is non-fatal; grossDebtUSD shows "—" if the API is unreachable.
+      fetchWorldBankNominalGdp()
+        .catch((): Record<string, number | null> => ({})),
+      // Eurostat gov_10dd_edpt1: Euro Area general govt gross debt, % of GDP.
+      // Used as fallback for EU/ECB when FRED GGGDTAEZA188N is unavailable
+      // (that series was discontinued in 2010).  Failure is non-fatal.
+      fetchEurostatEuroAreaDebt()
+        .catch(() => null),
     ]);
 
     // Build FX lookup: series_id → latest USD conversion rate
@@ -482,6 +634,29 @@ export default async function handler(
         }
       }
 
+      // ── Debt-to-GDP (FRED GGGDTA*188N – IMF WEO annual, % of GDP) ───────
+      // For the EU/ECB row, FRED series GGGDTAEZA188N was discontinued in 2010.
+      // Eurostat gov_10dd_edpt1 is used as a fallback when FRED returns null.
+      // Failure is non-fatal: column shows "—" if all sources are unreachable.
+      const debtResult = debtSettled[i];
+      const fredDebt   = debtResult.status === "fulfilled"
+        ? (parseObs(debtResult.value)[0]?.value ?? null)
+        : null;
+      // Prefer FRED; fall back to Eurostat for EU when FRED is unavailable.
+      const debtToGDP  =
+        fredDebt !== null              ? fredDebt          :
+        cfg.id === "EU"               ? euroAreaDebt      :
+                                        null;
+
+      // ── Gross National Debt in current USD ────────────────────────────────
+      // Source: World Bank NY.GDP.MKTP.CD (nominal GDP, actual USD → /1e9 = billions) × debtToGDP%.
+      // Both series are annual so they share the same reference year.
+      // Failure is non-fatal: grossDebtUSD is null if either value is unavailable.
+      const gdpUSD       = gdpMap[cfg.id] ?? null;
+      const grossDebtUSD = debtToGDP !== null && gdpUSD !== null
+        ? (debtToGDP / 100) * gdpUSD
+        : null;
+
       return {
         ...base,
         error: false,
@@ -492,6 +667,8 @@ export default async function handler(
         m2USD,
         m2ChangeUSD,
         m2Date,
+        debtToGDP,
+        grossDebtUSD,
         printerScore,
         scoreRegime,
         printing,

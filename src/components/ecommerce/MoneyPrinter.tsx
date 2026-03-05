@@ -14,6 +14,10 @@ interface CountryData {
   // M2 / broad money
   m2USD?:           number | null;
   m2ChangeUSD?:     number | null;
+  // Debt-to-GDP (World Bank, annual)
+  debtToGDP?:       number | null;
+  // Gross National Debt in current USD (annual, IMF WEO: debtToGDP% × nominal GDP)
+  grossDebtUSD?:    number | null;
   // Per-bank Printer Score
   printerScore?:    number | null;
   scoreRegime?:     string | null;
@@ -104,6 +108,11 @@ function fmtDelta(billions: number | null | undefined): string {
   return `${sign}$${str}T`;
 }
 
+function fmtPct(pct: number | null | undefined): string {
+  if (pct == null) return "—";
+  return `${pct.toFixed(1)}%`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 export default function MoneyPrinter() {
   const [countries, setCountries] = useState<CountryData[]>([]);
@@ -140,46 +149,44 @@ export default function MoneyPrinter() {
   // ── Skeleton table rows ───────────────────────────────────────────────
   const skeletonRows = Array.from({ length: 6 }, (_, i) => (
     <tr key={i}>
-      {Array.from({ length: 6 }, (__, j) => (
-        <td key={j} className="py-2 pr-2">
-          <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "3.5rem" : "2.5rem" }} />
+      {Array.from({ length: 4 }, (__, j) => (
+        <td key={j} className="py-2 md:py-3 pr-3 md:pr-4">
+          <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "5rem" : "2.5rem" }} />
+          {j === 3 && (
+            <div className="h-2.5 mt-1 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: "1.75rem" }} />
+          )}
         </td>
       ))}
     </tr>
   ));
 
   return (
-    <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6 h-full flex flex-col">
-      {/* Tile number badge */}
-      <span className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-        6
-      </span>
-
+    <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-7 h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+      <div className="flex items-center gap-2 mb-4 md:mb-5">
+        <h3 className="text-lg md:text-xl font-semibold text-gray-800 dark:text-white/90">
           Money Printer
         </h3>
       </div>
 
       {/* ── US Printer Score ───────────────────────────────────────────── */}
-      <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
+      <div className="mb-4 md:mb-5 pb-4 md:pb-5 border-b border-gray-100 dark:border-gray-800">
         {/* Score row */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            US Printer Score
-          </span>
+        <div className="flex items-center justify-between mb-2 md:mb-3">
           {loading ? (
             <div className="w-12 h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
           ) : (
-            <span className={`text-sm font-bold tabular-nums ${score !== null ? cfg.color : "text-gray-400"}`}>
+            <span className={`text-sm md:text-base font-bold tabular-nums ${score !== null ? cfg.color : "text-gray-400"}`}>
               {score !== null ? `${score}/100` : "—"}
             </span>
           )}
+          <span className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            US Printer Score
+          </span>
         </div>
 
         {/* Progress bar */}
-        <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mb-2">
+        <div className="h-1.5 md:h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mb-2 md:mb-3">
           {loading ? (
             <div className="h-full w-1/3 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
           ) : score !== null ? (
@@ -195,7 +202,7 @@ export default function MoneyPrinter() {
           {loading ? (
             <div className="w-20 h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
           ) : (
-            <span className={`text-xs font-semibold ${score !== null ? cfg.color : "text-gray-400"}`}>
+            <span className={`text-xs md:text-sm font-semibold ${score !== null ? cfg.color : "text-gray-400"}`}>
               {score !== null ? rg : "—"}
             </span>
           )}
@@ -218,15 +225,13 @@ export default function MoneyPrinter() {
 
       {/* ── M1 + M2 per-bank table ─────────────────────────────────────── */}
       <div className="overflow-x-auto flex-1">
-        <table className="w-full min-w-[520px]">
+        <table className="w-full">
           <thead>
-            <tr className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-              <th className="text-left pb-2 pr-2">Bank</th>
-              <th className="text-right pb-2 pr-2">M1</th>
-              <th className="text-right pb-2 pr-2">M1 Δ</th>
-              <th className="text-right pb-2 pr-2">M2</th>
-              <th className="text-right pb-2 pr-2">M2 Δ</th>
-              <th className="text-right pb-2">Score</th>
+            <tr className="text-[10px] md:text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+              <th className="text-left pb-2 md:pb-3 pr-3 md:pr-4">Bank</th>
+              <th className="text-right pb-2 md:pb-3 pr-3 md:pr-4">M1</th>
+              <th className="text-right pb-2 md:pb-3 pr-3 md:pr-4">M2</th>
+              <th className="text-right pb-2 md:pb-3">Gross Debt</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -236,75 +241,84 @@ export default function MoneyPrinter() {
                   const m2Current = c.m2USD ?? c.latestUSD ?? null;
                   const m2Change  = c.m2ChangeUSD ?? c.printedUSD ?? null;
 
+                  const isUSWithPrinter = c.id === "US" && printer !== null;
+                  const rowScore  = isUSWithPrinter ? printer!.score  : c.printerScore ?? 0;
+                  const rowRegime = isUSWithPrinter ? printer!.regime : c.scoreRegime ?? "Normal";
+                  const styles = REGIME_BADGE[rowRegime] ?? REGIME_BADGE.Normal;
+
+                  // Debt-to-GDP colour: green ≤ 60 %, yellow 60–90 %, red > 90 %
+                  const debtCls = c.debtToGDP == null
+                    ? "text-gray-400 dark:text-gray-500"
+                    : c.debtToGDP > 90
+                      ? "text-red-500 dark:text-red-400"
+                      : c.debtToGDP > 60
+                        ? "text-yellow-500 dark:text-yellow-300"
+                        : "text-emerald-500 dark:text-emerald-400";
+
                   return (
                     <tr key={c.id}>
-                      {/* Bank */}
-                      <td className="py-2 pr-2">
-                        <span className="text-base leading-none select-none mr-1">{c.flag}</span>
-                        <span className="text-xs font-semibold text-gray-700 dark:text-white/80">{c.name}</span>
+                      {/* Bank + Score badge */}
+                      <td className="py-2 md:py-3 pr-3 md:pr-4">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {!c.error && (
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium shrink-0 ${styles.badge}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
+                              {rowScore}/100
+                            </span>
+                          )}
+                          <span className="text-base md:text-lg leading-none select-none">{c.flag}</span>
+                          <span className="text-xs md:text-sm font-semibold text-gray-700 dark:text-white/80">{c.name}</span>
+                        </div>
                       </td>
 
-                      {/* M1 current */}
-                      <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
-                        {c.error ? "—" : c.m1DataMissing ? (
-                          <span className="text-gray-400 dark:text-gray-500 italic">Missing</span>
-                        ) : fmtUSD(c.m1USD)}
+                      {/* M1 current + Δ stacked */}
+                      <td className="py-2 md:py-3 pr-3 md:pr-4 text-right">
+                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
+                          {c.error ? "—" : c.m1DataMissing ? (
+                          <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
+                          ) : fmtUSD(c.m1USD)}
+                        </div>
+                        {!c.error && !c.m1DataMissing && (
+                          <div className={`text-[10px] md:text-xs tabular-nums ${
+                            c.m1ChangeUSD == null
+                              ? "text-gray-400 dark:text-gray-500"
+                              : c.m1ChangeUSD < 0
+                                ? "text-red-400 dark:text-red-400"
+                                : "text-emerald-500 dark:text-emerald-400"
+                          }`}>
+                            {fmtDelta(c.m1ChangeUSD)}
+                          </div>
+                        )}
                       </td>
 
-                      {/* M1 Δ */}
-                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
-                        c.error || c.m1DataMissing || c.m1ChangeUSD == null
-                          ? "text-gray-400 dark:text-gray-500"
-                          : c.m1ChangeUSD < 0
-                            ? "text-red-400 dark:text-red-400"
-                            : "text-emerald-500 dark:text-emerald-400"
-                      }`}>
-                        {c.error || c.m1DataMissing ? "—" : fmtDelta(c.m1ChangeUSD)}
+                      {/* M2 current + Δ stacked */}
+                      <td className="py-2 md:py-3 pr-3 md:pr-4 text-right">
+                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
+                          {c.error ? "—" : fmtUSD(m2Current)}
+                        </div>
+                        {!c.error && (
+                          <div className={`text-[10px] md:text-xs tabular-nums ${
+                            m2Change == null
+                              ? "text-gray-400 dark:text-gray-500"
+                              : m2Change < 0
+                                ? "text-red-400 dark:text-red-400"
+                                : "text-emerald-500 dark:text-emerald-400"
+                          }`}>
+                            {fmtDelta(m2Change)}
+                          </div>
+                        )}
                       </td>
 
-                      {/* M2 current */}
-                      <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
-                        {c.error ? "—" : fmtUSD(m2Current)}
-                      </td>
-
-                      {/* M2 Δ */}
-                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
-                        c.error || m2Change == null
-                          ? "text-gray-400 dark:text-gray-500"
-                          : m2Change < 0
-                            ? "text-red-400 dark:text-red-400"
-                            : "text-emerald-500 dark:text-emerald-400"
-                      }`}>
-                        {c.error ? "—" : fmtDelta(m2Change)}
-                      </td>
-
-                      {/* Score */}
-                      <td className="py-2 text-right">
-                        {c.error ? (
-                          <span className="text-xs text-gray-400">—</span>
-                        ) : (() => {
-                          // The Fed (US) row uses the comprehensive printer score
-                          // (4-indicator model from /api/printer) so it matches
-                          // the "US Printer Score" shown in the panel above.
-                          const rowScore  = c.id === "US" && printer !== null
-                            ? printer.score
-                            : c.printerScore ?? 0;
-                          const rowRegime = c.id === "US" && printer !== null
-                            ? printer.regime
-                            : c.scoreRegime ?? "Normal";
-                          const styles = REGIME_BADGE[rowRegime] ?? REGIME_BADGE.Normal;
-                          return (
-                            <div className="inline-flex flex-col items-end gap-0.5">
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${styles.badge}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
-                                {rowRegime}
-                              </span>
-                              <span className="text-[9px] tabular-nums text-gray-400 dark:text-gray-500">
-                                {rowScore}/100
-                              </span>
-                            </div>
-                          );
-                        })()}
+                      {/* Gross Debt (USD) + Debt/GDP % stacked */}
+                      <td className="py-2 md:py-3 text-right">
+                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
+                          {c.error ? "—" : fmtUSD(c.grossDebtUSD)}
+                        </div>
+                        {!c.error && c.debtToGDP != null && (
+                          <div className={`text-[10px] md:text-xs tabular-nums ${debtCls}`}>
+                            {fmtPct(c.debtToGDP)}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
