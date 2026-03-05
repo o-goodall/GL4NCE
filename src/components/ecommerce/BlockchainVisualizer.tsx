@@ -90,8 +90,8 @@ const MAX_BLOCK_VSIZE   = 1_000_000;
 // Block card dimensions — keep in sync with skeleton placeholders
 const BLOCK_CARD_W            = "w-[108px]";
 const PENDING_BLOCK_W         = "w-[120px]";
-/** Minimum height for loading skeleton cards */
-const BLOCK_CARD_SKELETON_H   = "min-h-[148px]";
+/** Fixed height for loading skeleton cards — matches natural card height */
+const BLOCK_CARD_SKELETON_H   = "h-[120px]";
 
 // Animation timing
 const BLOCK_ENTER_MS              = 600;
@@ -245,74 +245,78 @@ function PendingBlock({
   }
 
   return (
+    /* Outer div: owns the 3D box-shadow + seal animation — no overflow clip so shadow shows */
     <div
-      className={`flex-none ${PENDING_BLOCK_W} flex flex-col relative overflow-hidden rounded-xl border-2 border-dashed border-amber-400/60 dark:border-amber-500/35 bg-gray-50 dark:bg-white/[0.025] ${
+      className={`flex-none ${PENDING_BLOCK_W} btc-block-3d-pending rounded-xl ${
         isSealing ? `animate-[btc-pending-seal_${PENDING_SEAL_DURATION}_ease-in-out_both]` : ""
       }`}
     >
-      {/* Gradient fill — rises from the bottom */}
-      {fillPct !== null && (
-        <div
-          className={`absolute bottom-0 left-0 right-0 transition-all duration-[1200ms] animate-[btc-fill-pulse_${FILL_PULSE_DURATION}_ease-in-out_infinite]`}
-          style={{
-            height: `${fillPct}%`,
-            background:
-              "linear-gradient(to top, rgba(245,158,11,0.28) 0%, rgba(251,191,36,0.10) 70%, transparent 100%)",
-          }}
-        />
-      )}
+      {/* Inner div: clips the rising fill & particles inside the card boundary */}
+      <div className="relative overflow-hidden rounded-[10px] border-2 border-dashed border-amber-400/60 dark:border-amber-500/35 bg-gray-50 dark:bg-white/[0.025]">
 
-      {/* Floating tx particles */}
-      {PARTICLE_POSITIONS.map((leftPct, i) => (
-        <div
-          key={i}
-          className={`absolute rounded-full bg-amber-400 dark:bg-amber-500 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
-          style={{
-            width:          i % 2 === 0 ? "5px" : "4px",
-            height:         i % 2 === 0 ? "5px" : "4px",
-            left:           `${leftPct}%`,
-            bottom:         `${fillPct ?? PARTICLE_BOTTOM_FALLBACK}%`,
-            animationDelay: `${i * PARTICLE_STAGGER_S}s`,
-            opacity: 0,
-          }}
-        />
-      ))}
+        {/* Gradient fill — rises from the bottom */}
+        {fillPct !== null && (
+          <div
+            className={`absolute bottom-0 left-0 right-0 transition-all duration-[1200ms] animate-[btc-fill-pulse_${FILL_PULSE_DURATION}_ease-in-out_infinite]`}
+            style={{
+              height: `${fillPct}%`,
+              background:
+                "linear-gradient(to top, rgba(245,158,11,0.28) 0%, rgba(251,191,36,0.10) 70%, transparent 100%)",
+            }}
+          />
+        )}
 
-      {/* Card content */}
-      <div className="relative z-10 p-2.5 flex flex-col flex-1">
-        {/* Header */}
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none">
-            Next
-          </span>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500 animate-pulse shrink-0" />
-        </div>
+        {/* Floating tx particles */}
+        {PARTICLE_POSITIONS.map((leftPct, i) => (
+          <div
+            key={i}
+            className={`absolute rounded-full bg-amber-400 dark:bg-amber-500 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
+            style={{
+              width:          i % 2 === 0 ? "5px" : "4px",
+              height:         i % 2 === 0 ? "5px" : "4px",
+              left:           `${leftPct}%`,
+              bottom:         `${fillPct ?? PARTICLE_BOTTOM_FALLBACK}%`,
+              animationDelay: `${i * PARTICLE_STAGGER_S}s`,
+              opacity: 0,
+            }}
+          />
+        ))}
 
-        <div className="text-sm font-bold tabular-nums text-gray-700 dark:text-gray-200 leading-tight">
-          {nextHeight !== null ? `#${fmtNum(nextHeight)}` : "—"}
-        </div>
-
-        {/* Spacer pushes stats to bottom */}
-        <div className="flex-1" />
-
-        {/* Bottom stats */}
-        <div className="space-y-1 mt-2">
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none">Pending</span>
-            <span className="text-[9px] font-semibold tabular-nums text-gray-700 dark:text-gray-200 leading-none">
-              {mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
+        {/* Card content — stacked naturally, no flex-1 spacer */}
+        <div className="relative z-10 p-2.5">
+          {/* Header */}
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none">
+              Next
             </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500 animate-pulse shrink-0" />
           </div>
-          {avgFeeRate !== null && (
+
+          <div className="text-sm font-bold tabular-nums text-gray-700 dark:text-gray-200 leading-tight">
+            {nextHeight !== null ? `#${fmtNum(nextHeight)}` : "—"}
+          </div>
+
+          {/* Stats */}
+          <div className="space-y-1 mt-2.5">
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none">Avg fee</span>
+              <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none">Pending</span>
               <span className="text-[9px] font-semibold tabular-nums text-gray-700 dark:text-gray-200 leading-none">
-                {avgFeeRate} sat/vB
+                {mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
               </span>
             </div>
-          )}
+            {avgFeeRate !== null && (
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none">Avg fee</span>
+                <span className="text-[9px] font-semibold tabular-nums text-gray-700 dark:text-gray-200 leading-none">
+                  {avgFeeRate} sat/vB
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Fill bar */}
           {fillPct !== null && (
-            <div className="mt-1.5">
+            <div className="mt-2.5">
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold leading-none">
                   {fillPct >= 100 ? "Full" : `${fillPct}%`}
@@ -351,7 +355,9 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
 
   return (
     <div
-      className={`flex-none ${BLOCK_CARD_W} flex flex-col rounded-xl border p-2.5 transition-all ${
+      className={`flex-none ${BLOCK_CARD_W} rounded-xl border p-2.5 transition-all ${
+        isLatest ? "btc-block-3d-latest" : "btc-block-3d"
+      } ${
         isNew ? `animate-[btc-block-enter_${BLOCK_ENTER_DURATION}_ease-out_both]` : ""
       } ${
         isLatest
@@ -373,11 +379,8 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         {timeAgo(block.timestamp)} ago
       </div>
 
-      {/* Spacer pushes detail rows to the bottom half */}
-      <div className="flex-1" />
-
-      {/* Key-value detail rows */}
-      <div className="space-y-1 mt-2">
+      {/* Key-value detail rows — directly below, no flex-1 spacer */}
+      <div className="space-y-1 mt-2.5">
         <div className="flex items-center justify-between gap-1">
           <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">Txs</span>
           <span className="text-[9px] font-semibold tabular-nums text-gray-700 dark:text-gray-200 leading-none">
@@ -439,18 +442,15 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
 function GhostBlockCard() {
   return (
     <div
-      className={`flex-none ${BLOCK_CARD_W} flex flex-col rounded-xl border border-gray-100 dark:border-gray-800 p-2.5 bg-gray-50 dark:bg-white/[0.015]`}
+      className={`flex-none ${BLOCK_CARD_W} btc-block-3d rounded-xl border border-gray-100 dark:border-gray-800 p-2.5 bg-gray-50 dark:bg-white/[0.015]`}
     >
       {/* Height placeholder */}
       <div className="h-[14px] w-[56px] rounded bg-gray-100 dark:bg-gray-800" />
       {/* Time placeholder */}
       <div className="h-[10px] w-[36px] rounded bg-gray-100/70 dark:bg-gray-800/70 mt-1" />
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Detail row placeholders */}
-      <div className="space-y-1.5 mt-2">
+      {/* Detail row placeholders — stacked directly, no spacer */}
+      <div className="space-y-1.5 mt-2.5">
         <div className="flex items-center justify-between gap-1">
           <div className="h-[9px] w-[16px] rounded bg-gray-100 dark:bg-gray-800" />
           <div className="h-[9px] w-[32px] rounded bg-gray-100 dark:bg-gray-800" />
@@ -686,20 +686,20 @@ export default function BlockchainVisualizer() {
         </div>
       </div>
 
-      {/* ── Live Chain — fills remaining height ── */}
-      <div className="flex-1 min-h-0 flex flex-col px-5 pb-5 pt-3 border-t border-gray-100 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-2.5 shrink-0">
+      {/* ── Live Chain — fills remaining height, cards float at natural height ── */}
+      <div className="flex-1 min-h-0 flex flex-col px-5 pb-5 pt-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-white/[0.008]">
+        <div className="flex items-center justify-between mb-3 shrink-0">
           <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
             Live Chain
           </span>
           <span className="text-[9px] text-gray-400 dark:text-gray-500">older →</span>
         </div>
 
-        {/* Horizontally-scrollable block row — fills remaining vertical space */}
-        <div className="flex-1 min-h-0 flex items-stretch overflow-x-auto pb-1">
+        {/* Scrollable chain row — items-center keeps cards at natural height, centered */}
+        <div className="flex-1 min-h-0 flex items-center overflow-x-auto pb-1">
 
           {/* Pending block */}
-          <div className="flex items-stretch shrink-0">
+          <div className="flex items-center shrink-0">
             <PendingBlock
               nextHeight={blockHeight !== null ? blockHeight + 1 : null}
               mempoolCount={mempoolCount}
@@ -716,8 +716,8 @@ export default function BlockchainVisualizer() {
           {/* Confirmed blocks */}
           {loading
             ? Array.from({ length: MAX_BLOCKS }).map((_, i) => (
-                <div key={i} className="flex items-stretch shrink-0">
-                  <div className={`${BLOCK_CARD_W} h-full ${BLOCK_CARD_SKELETON_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
+                <div key={i} className="flex items-center shrink-0">
+                  <div className={`${BLOCK_CARD_W} ${BLOCK_CARD_SKELETON_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
                   {i < MAX_BLOCKS - 1 && (
                     <div className="flex items-center">
                       <ChainArrow />
@@ -727,7 +727,7 @@ export default function BlockchainVisualizer() {
               ))
             : blocks.length === 0
             ? Array.from({ length: MAX_BLOCKS }).map((_, i) => (
-                <div key={i} className="flex items-stretch shrink-0">
+                <div key={i} className="flex items-center shrink-0">
                   <GhostBlockCard />
                   {i < MAX_BLOCKS - 1 && (
                     <div className="flex items-center">
@@ -737,7 +737,7 @@ export default function BlockchainVisualizer() {
                 </div>
               ))
             : blocks.map((block, i) => (
-                <div key={block.id} className="flex items-stretch shrink-0">
+                <div key={block.id} className="flex items-center shrink-0">
                   <BlockCard
                     block={block}
                     isLatest={i === 0}
