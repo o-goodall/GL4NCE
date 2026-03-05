@@ -14,6 +14,8 @@ interface CountryData {
   // M2 / broad money
   m2USD?:           number | null;
   m2ChangeUSD?:     number | null;
+  // Debt-to-GDP (World Bank, annual)
+  debtToGDP?:       number | null;
   // Per-bank Printer Score
   printerScore?:    number | null;
   scoreRegime?:     string | null;
@@ -104,6 +106,11 @@ function fmtDelta(billions: number | null | undefined): string {
   return `${sign}$${str}T`;
 }
 
+function fmtPct(pct: number | null | undefined): string {
+  if (pct == null) return "—";
+  return `${pct.toFixed(1)}%`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 export default function MoneyPrinter() {
   const [countries, setCountries] = useState<CountryData[]>([]);
@@ -140,7 +147,7 @@ export default function MoneyPrinter() {
   // ── Skeleton table rows ───────────────────────────────────────────────
   const skeletonRows = Array.from({ length: 6 }, (_, i) => (
     <tr key={i}>
-      {Array.from({ length: 5 }, (__, j) => (
+      {Array.from({ length: 6 }, (__, j) => (
         <td key={j} className="py-2 pr-2">
           <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "5rem" : "2.5rem" }} />
         </td>
@@ -213,14 +220,15 @@ export default function MoneyPrinter() {
 
       {/* ── M1 + M2 per-bank table ─────────────────────────────────────── */}
       <div className="overflow-x-auto flex-1">
-        <table className="w-full min-w-[520px]">
+        <table className="w-full min-w-[620px]">
           <thead>
             <tr className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
               <th className="text-left pb-2 pr-2">Bank</th>
               <th className="text-right pb-2 pr-2">M1</th>
               <th className="text-right pb-2 pr-2">M1 Δ</th>
               <th className="text-right pb-2 pr-2">M2</th>
-              <th className="text-right pb-2">M2 Δ</th>
+              <th className="text-right pb-2 pr-2">M2 Δ</th>
+              <th className="text-right pb-2">Debt/GDP</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -234,6 +242,15 @@ export default function MoneyPrinter() {
                   const rowScore  = isUSWithPrinter ? printer!.score  : c.printerScore ?? 0;
                   const rowRegime = isUSWithPrinter ? printer!.regime : c.scoreRegime ?? "Normal";
                   const styles = REGIME_BADGE[rowRegime] ?? REGIME_BADGE.Normal;
+
+                  // Debt-to-GDP colour: green ≤ 60 %, yellow 60–90 %, red > 90 %
+                  const debtCls = c.debtToGDP == null
+                    ? "text-gray-400 dark:text-gray-500"
+                    : c.debtToGDP > 90
+                      ? "text-red-500 dark:text-red-400"
+                      : c.debtToGDP > 60
+                        ? "text-yellow-500 dark:text-yellow-300"
+                        : "text-emerald-500 dark:text-emerald-400";
 
                   return (
                     <tr key={c.id}>
@@ -275,7 +292,7 @@ export default function MoneyPrinter() {
                       </td>
 
                       {/* M2 Δ */}
-                      <td className={`py-2 text-right text-xs tabular-nums ${
+                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
                         c.error || m2Change == null
                           ? "text-gray-400 dark:text-gray-500"
                           : m2Change < 0
@@ -283,6 +300,11 @@ export default function MoneyPrinter() {
                             : "text-emerald-500 dark:text-emerald-400"
                       }`}>
                         {c.error ? "—" : fmtDelta(m2Change)}
+                      </td>
+
+                      {/* Debt / GDP */}
+                      <td className={`py-2 text-right text-xs tabular-nums ${debtCls}`}>
+                        {c.error ? "—" : fmtPct(c.debtToGDP)}
                       </td>
                     </tr>
                   );
