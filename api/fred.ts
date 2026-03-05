@@ -35,6 +35,14 @@ const ALLOWED_SERIES = new Set([
   // Printer-score indicators
   "BAMLH0A0HYM2",  // ICE BofA US HY OAS (credit stress)
   "T10Y2Y",        // 10Y-2Y yield spread (yield curve)
+  // IMF WEO nominal GDP in current USD (billions) – used by /api/m2 to derive
+  // gross national debt: grossDebtUSD = (debtToGDP / 100) * gdpUSD
+  "NGDPDUSA188N",  // US
+  "NGDPDEZA188N",  // Euro area
+  "NGDPDGBA188N",  // UK
+  "NGDPDJPA188N",  // Japan
+  "NGDPDCAA188N",  // Canada
+  "NGDPDCNA188N",  // China
 ]);
 
 export default async function handler(

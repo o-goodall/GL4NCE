@@ -125,6 +125,11 @@ interface CountryConfig {
   // Annual, % of GDP.  Uses the confirmed-working FRED API key (same as M1/M2).
   // Series IDs follow the pattern GGGDTA{country}A188N.
   debtSeries:       string;         // FRED series ID for general govt gross debt
+  // ── Nominal GDP in current USD (FRED NGDPD*A188N, sourced from IMF WEO) ──
+  // Annual, billions USD.  Combined with debtSeries to derive absolute gross
+  // national debt:  grossDebtUSD = (debtToGDP / 100) * gdpUSD.
+  // Series IDs follow the same pattern: NGDPD{country}A188N.
+  gdpSeries:        string;         // FRED series ID for nominal GDP in current USD
 }
 
 const COUNTRIES: readonly CountryConfig[] = [
@@ -133,41 +138,41 @@ const COUNTRIES: readonly CountryConfig[] = [
     m1Series: "M1SL",              m1OecdCode: null,  m1LocalToBillions: 1,
     m2Series: "M2SL",              localToBillions: 1,
     fxSeries: null,                fxInverted: false,
-    debtSeries: "GGGDTAUSA188N" },
+    debtSeries: "GGGDTAUSA188N",   gdpSeries: "NGDPDUSA188N" },
   // EU: M1 from FRED (MANMM101EZM189S, individual EUR) with OECD fallback;
   //     M2 from FRED (MABMM301EZM189S, individual EUR)
   { id: "EU", name: "ECB",  flag: "🇪🇺",
     m1Series: "MANMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
     m2Series: "MABMM301EZM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSEU",           fxInverted: false,
-    debtSeries: "GGGDTAEZA188N" },
+    debtSeries: "GGGDTAEZA188N",   gdpSeries: "NGDPDEZA188N" },
   // UK: M1 from FRED (MANMM101GBM189S, individual GBP) with OECD fallback;
   //     M2 from FRED (MABMM301GBM189S, individual GBP)
   { id: "UK", name: "BOE",  flag: "🇬🇧",
     m1Series: "MANMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301GBM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSUK",           fxInverted: false,
-    debtSeries: "GGGDTAGBA188N" },
+    debtSeries: "GGGDTAGBA188N",   gdpSeries: "NGDPDGBA188N" },
   // JP: M1 from FRED (MANMM101JPM189S, individual JPY) with OECD fallback;
   //     M2 from FRED (MABMM301JPM189S, individual JPY)
   { id: "JP", name: "BOJ",  flag: "🇯🇵",
     m1Series: "MANMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301JPM189S",   localToBillions: 1e-9,
     fxSeries: "DEXJPUS",           fxInverted: true,
-    debtSeries: "GGGDTAJPA188N" },
+    debtSeries: "GGGDTAJPA188N",   gdpSeries: "NGDPDJPA188N" },
   // CA: M1 from FRED (MANMM101CAM189S, individual CAD) with OECD fallback;
   //     M2 from FRED (MABMM301CAM189S, individual CAD)
   { id: "CA", name: "BOC",  flag: "🇨🇦",
     m1Series: "MANMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301CAM189S",   localToBillions: 1e-9,
     fxSeries: "DEXCAUS",           fxInverted: true,
-    debtSeries: "GGGDTACAA188N" },
+    debtSeries: "GGGDTACAA188N",   gdpSeries: "NGDPDCAA188N" },
   // CN: M1 and M2 both from FRED (individual CNY)
   { id: "CN", name: "PBOC", flag: "🇨🇳",
     m1Series: "MYAGM1CNM189N",     m1OecdCode: null,  m1LocalToBillions: 1e-9,
     m2Series: "MYAGM2CNM189N",     localToBillions: 1e-9,
     fxSeries: "DEXCHUS",           fxInverted: true,
-    debtSeries: "GGGDTACNA188N" },
+    debtSeries: "GGGDTACNA188N",   gdpSeries: "NGDPDCNA188N" },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
@@ -304,6 +309,9 @@ export interface M2CountryResult {
   m2Date?:          string | null;   // ISO date of latest M2 observation
   // Debt-to-GDP (FRED GGGDTA*188N series from IMF WEO – annual)
   debtToGDP?:       number | null;   // General government gross debt, % of GDP
+  // Gross National Debt in current USD (annual, derived: debtToGDP% × nominal GDP)
+  // Source: FRED NGDPD*A188N (IMF WEO nominal GDP in current USD, billions)
+  grossDebtUSD?:    number | null;   // billions USD
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
   scoreRegime?:     string;          // "Normal" | "Warming" | "Alert" | "Crisis"
@@ -346,12 +354,14 @@ export default async function handler(
       .filter((code): code is string => code !== null);
 
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
-    // M1 from OECD (EU/UK/JP/CA), and debt-to-GDP from FRED (all 6) – all in parallel.
-    // GGGDTA*188N are annual IMF-WEO-sourced series served by FRED; they use the
-    // same confirmed-working API key and fetchFredObs path as M1/M2.
+    // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6), and
+    // nominal GDP in current USD from FRED (all 6) – all in parallel.
+    // GGGDTA*188N and NGDPD*188N are annual IMF-WEO-sourced series served by
+    // FRED; they use the same confirmed-working API key and fetchFredObs path.
+    // grossDebtUSD is derived server-side: (debtToGDP / 100) * gdpUSD.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpSettled] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -370,6 +380,12 @@ export default async function handler(
         .catch((): OecdObsMap => new Map()),
       Promise.allSettled(
         COUNTRIES.map((c) => fetchFredObs(c.debtSeries, apiKey, OBS_LIMIT)),
+      ),
+      // NGDPD*A188N: nominal GDP in current USD (billions) from IMF WEO.
+      // Used to derive gross national debt: (debtToGDP / 100) × gdpUSD.
+      // Failure is non-fatal; grossDebtUSD will be null if unavailable.
+      Promise.allSettled(
+        COUNTRIES.map((c) => fetchFredObs(c.gdpSeries, apiKey, OBS_LIMIT)),
       ),
     ]);
 
@@ -506,6 +522,18 @@ export default async function handler(
         ? (parseObs(debtResult.value)[0]?.value ?? null)
         : null;
 
+      // ── Gross National Debt in current USD ────────────────────────────────
+      // Source: FRED NGDPD*A188N (IMF WEO nominal GDP, billions USD) × debtToGDP%
+      // Both series are annual from IMF WEO so they share the same reference year.
+      // Failure is non-fatal: grossDebtUSD is null if either series is unavailable.
+      const gdpResult  = gdpSettled[i];
+      const gdpUSD     = gdpResult.status === "fulfilled"
+        ? (parseObs(gdpResult.value)[0]?.value ?? null)
+        : null;
+      const grossDebtUSD = debtToGDP !== null && gdpUSD !== null
+        ? (debtToGDP / 100) * gdpUSD
+        : null;
+
       return {
         ...base,
         error: false,
@@ -517,6 +545,7 @@ export default async function handler(
         m2ChangeUSD,
         m2Date,
         debtToGDP,
+        grossDebtUSD,
         printerScore,
         scoreRegime,
         printing,

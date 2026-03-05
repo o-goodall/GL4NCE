@@ -16,6 +16,8 @@ interface CountryData {
   m2ChangeUSD?:     number | null;
   // Debt-to-GDP (World Bank, annual)
   debtToGDP?:       number | null;
+  // Gross National Debt in current USD (annual, IMF WEO: debtToGDP% × nominal GDP)
+  grossDebtUSD?:    number | null;
   // Per-bank Printer Score
   printerScore?:    number | null;
   scoreRegime?:     string | null;
@@ -150,6 +152,9 @@ export default function MoneyPrinter() {
       {Array.from({ length: 4 }, (__, j) => (
         <td key={j} className="py-2 md:py-3 pr-3 md:pr-4">
           <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "5rem" : "2.5rem" }} />
+          {j === 3 && (
+            <div className="h-2.5 mt-1 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: "1.75rem" }} />
+          )}
         </td>
       ))}
     </tr>
@@ -226,7 +231,7 @@ export default function MoneyPrinter() {
               <th className="text-left pb-2 md:pb-3 pr-3 md:pr-4">Bank</th>
               <th className="text-right pb-2 md:pb-3 pr-3 md:pr-4">M1</th>
               <th className="text-right pb-2 md:pb-3 pr-3 md:pr-4">M2</th>
-              <th className="text-right pb-2 md:pb-3">Debt/GDP</th>
+              <th className="text-right pb-2 md:pb-3">Gross Debt</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -304,9 +309,16 @@ export default function MoneyPrinter() {
                         )}
                       </td>
 
-                      {/* Debt / GDP */}
-                      <td className={`py-2 md:py-3 text-right text-xs md:text-sm tabular-nums ${debtCls}`}>
-                        {c.error ? "—" : fmtPct(c.debtToGDP)}
+                      {/* Gross Debt (USD) + Debt/GDP % stacked */}
+                      <td className="py-2 md:py-3 text-right">
+                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
+                          {c.error ? "—" : fmtUSD(c.grossDebtUSD)}
+                        </div>
+                        {!c.error && c.debtToGDP != null && (
+                          <div className={`text-[10px] md:text-xs tabular-nums ${debtCls}`}>
+                            {fmtPct(c.debtToGDP)}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
