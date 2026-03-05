@@ -7,9 +7,11 @@ import {
   SOURCE_WEIGHTS, CONFLICT_GROUPS,
   ARTICLES_PER_FEED, FETCH_TIMEOUT, MAX_CONCURRENT_FETCHES, NEWS_MAP_UA,
 } from "./sources.js";
+import { STATIC_CONFLICTS, FLASHPOINT_DATA_SOURCES, getConflictsByCode } from "./conflicts.js";
 
 // ── Types (mirror src/components/news-map/types.ts) ─────────────────────────
 type AlertLevel = "critical" | "high" | "medium" | "watch";
+type ConflictStatus = "active" | "escalating" | "ceasefire" | "frozen" | "low-intensity";
 
 /** Number of characters used to build the deduplication key from a title.
  *  Short enough to also catch the same story re-published with a minor
@@ -45,6 +47,10 @@ interface CountryNewsData {
   events: NewsEvent[];
   /** Weighted event activity score over the rolling 7-day window (higher = more sustained conflict) */
   escalationIndex?: number;
+  /** Name of the primary known conflict (from static database) */
+  conflictName?: string;
+  /** Operational status of the known conflict (from static database) */
+  conflictStatus?: ConflictStatus;
 }
 
 interface NewsMapData {
@@ -58,6 +64,8 @@ interface NewsMapData {
    * involved in the same active conflict.  Each inner array has ≥ 2 codes.
    */
   conflictGroups?: string[][];
+  /** Canonical list of data sources that contributed to this snapshot */
+  dataSources: string[];
 }
 
 // ── Country database ─────────────────────────────────────────────────────────
@@ -482,9 +490,11 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
   const { trending, trendingRanks, conflictGroups } = computeTrending(recent);
   const byCode: Record<string, NewsEvent[]> = {};
   for (const ev of recent) (byCode[ev.countryCode] ??= []).push(ev);
-  const countries = Object.entries(byCode).map(([code, evs]) => {
+  const countries: CountryNewsData[] = Object.entries(byCode).map(([code, evs]) => {
     const info = getCountryInfoByCode(code);
     const isTrending = trending.has(code);
+    // Enrich with static conflict metadata (primary conflict for this country)
+    const staticConflict = getConflictsByCode(code)[0];
     return {
       code,
       name: evs[0].country,
@@ -501,8 +511,50 @@ function aggregateCountries(events: NewsEvent[]): { countries: CountryNewsData[]
       events: evs
         .sort((a, b) => parseTimeMs(b.time) - parseTimeMs(a.time))
         .slice(0, MAX_EVENTS_PER_COUNTRY),
+      ...(staticConflict && {
+        conflictName: staticConflict.name,
+        conflictStatus: staticConflict.status,
+      }),
     };
   });
+
+  // ── Baseline conflict layer (ACLED / UCDP / CFR / UN OCHA / DoD) ────────────
+  // For countries with active or escalating conflicts that have no live RSS
+  // coverage in this snapshot, add a minimal entry so they always appear on
+  // the map.  These entries carry no events — they exist solely to show the
+  // known conflict zone at the appropriate alert level.
+  const existingCodes = new Set(countries.map((c) => c.code));
+  for (const conflict of STATIC_CONFLICTS) {
+    // Skip non-active statuses: ceasefire / frozen / low-intensity countries
+    // should only appear when news coverage surfaces them.
+    if (
+      conflict.status === "ceasefire" ||
+      conflict.status === "frozen" ||
+      conflict.status === "low-intensity"
+    ) continue;
+    if (existingCodes.has(conflict.code)) continue; // already covered by RSS
+    const info = getCountryInfoByCode(conflict.code);
+    if (!info) continue;
+    // Map conflict status + baselineSeverity → AlertLevel conservatively so
+    // the static layer never produces a "critical" marker (critical requires
+    // active trending from live news).
+    const alertLevel: AlertLevel =
+      conflict.status === "escalating"     ? "high"   :
+      conflict.baselineSeverity === "high" ? "medium" : "watch";
+    countries.push({
+      code: conflict.code,
+      name: info.name,
+      lat: info.lat,
+      lng: info.lng,
+      trending: false,
+      alertLevel,
+      events: [],
+      conflictName: conflict.name,
+      conflictStatus: conflict.status,
+    });
+    existingCodes.add(conflict.code);
+  }
+
   return { countries, ...(conflictGroups.length > 0 ? { conflictGroups } : {}) };
 }
 
@@ -586,7 +638,12 @@ function generateMockData(): NewsMapData {
       return info ? { ...e, countryCode: info.code } : null;
     })
     .filter((e): e is NewsEvent => e !== null);
-  return { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), usingMockData: true };
+  return {
+    ...aggregateCountries(events),
+    lastUpdated: new Date().toISOString(),
+    usingMockData: true,
+    dataSources: [...FLASHPOINT_DATA_SOURCES],
+  };
 }
 
 // ── Module-level response cache ──────────────────────────────────────────────
@@ -945,7 +1002,7 @@ export default async function handler(_req: IncomingMessage, res: ServerResponse
     if (events.length > 0) appendToEscalationStore(events);
     const data: NewsMapData =
       events.length > 0
-        ? { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), feedStats }
+        ? { ...aggregateCountries(events), lastUpdated: new Date().toISOString(), feedStats, dataSources: [...FLASHPOINT_DATA_SOURCES] }
         : { ...generateMockData(), feedStats };
 
     _cache = data;

@@ -1,4 +1,16 @@
 export type EventSeverity = "high" | "medium" | "low";
+
+/**
+ * Operational status of a known conflict zone, derived from the curated
+ * static conflicts database (ACLED / UCDP / CFR / UN OCHA / DoD).
+ */
+export type ConflictStatus =
+  | "active"
+  | "escalating"
+  | "ceasefire"
+  | "frozen"
+  | "low-intensity";
+
 export type EventCategory =
   | "violent"       // active armed conflict / generic violence
   | "terrorism"     // terrorism, suicide attacks, car bombs
@@ -59,6 +71,17 @@ export interface CountryNewsData {
   events: NewsEvent[];
   /** Weighted event-density score over the rolling 7-day window (higher = more sustained activity) */
   escalationIndex?: number;
+  /**
+   * Name of the primary known conflict associated with this country, sourced from the
+   * static conflict database (ACLED / UCDP / CFR / UN OCHA / DoD).
+   * Present only when a curated conflict entry exists for this country.
+   */
+  conflictName?: string;
+  /**
+   * Operational status of the known conflict (active / escalating / ceasefire / etc.).
+   * Sourced from the curated static database, not inferred from live RSS events.
+   */
+  conflictStatus?: ConflictStatus;
 }
 
 export interface NewsMapData {
@@ -75,4 +98,10 @@ export interface NewsMapData {
    * Absent / empty when no interconnected conflict is detected.
    */
   conflictGroups?: string[][];
+  /**
+   * Canonical list of data sources that contributed to this snapshot.
+   * Combines live RSS/Telegram/Reddit feeds with the curated static conflict
+   * database (ACLED, CFR, UCDP, UN OCHA, DoD).
+   */
+  dataSources?: string[];
 }
