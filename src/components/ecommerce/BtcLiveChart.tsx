@@ -768,7 +768,7 @@ export default function BtcLiveChart() {
         />
       </div>
 
-      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
+      <p className="mt-1 text-center text-[10px] text-gray-400 select-none">
         Drag to zoom · Scroll / pinch to zoom
       </p>
     </div>

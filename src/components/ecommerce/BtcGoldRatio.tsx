@@ -364,7 +364,7 @@ export default function BtcGoldRatio() {
         <Chart options={options} series={series} type="line" height={300} />
       </div>
 
-      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
+      <p className="mt-1 text-center text-[10px] text-gray-400 select-none">
         Drag to zoom · Scroll / pinch to zoom
       </p>
     </div>
