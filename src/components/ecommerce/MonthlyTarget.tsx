@@ -351,69 +351,67 @@ export default function MonthlyTarget() {
   };
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-2 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1 flex flex-col">
+    <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
 
-        {/* Header — title */}
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            DCA signal
-          </h3>
-        </div>
+      {/* Header */}
+      <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+        <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">
+          DCA signal
+        </h3>
+      </div>
 
-        {/* Chart + label section — fills remaining card height, centres content */}
-        <div className="flex-1 flex flex-col justify-center">
-          {/* Radial bar — allocation % */}
+      {/* Chart + label section — fills remaining card height, centres content */}
+      <div className="flex-1 flex flex-col justify-center px-5 sm:px-6">
+        {/* Radial bar — allocation % */}
+        <div
+          style={{
+            position: "relative",
+            transform: animate ? "scale(1.02)" : "scale(1)",
+            transition: "transform 0.3s ease",
+          }}
+        >
+          <Chart
+            options={options}
+            series={[chartValue]}
+            type="radialBar"
+            height={280}
+          />
+
+          {/* Recommended buy amount — bottom edge aligned with the arc endpoints.
+              The label's containing block is the position:relative wrapper
+              (height ~135px). ApexCharts renders the 280px-chart SVG at 300px,
+              overflowing the wrapper by ~56px upward. The arc endpoints sit
+              ~129px below the wrapper's top, leaving ~6px to the wrapper's
+              bottom. Setting bottom:"6px" aligns the text's bottom edge flush
+              with the arc tips (the lowest visible points of the curved bar). */}
           <div
             style={{
-              position: "relative",
-              transform: animate ? "scale(1.02)" : "scale(1)",
-              transition: "transform 0.3s ease",
+              position: "absolute",
+              bottom: "6px",
+              left: 0,
+              right: 0,
+              textAlign: "center",
+              pointerEvents: "none",
             }}
           >
-            <Chart
-              options={options}
-              series={[chartValue]}
-              type="radialBar"
-              height={280}
-            />
-
-            {/* Recommended buy amount — bottom edge aligned with the arc endpoints.
-                The label's containing block is the position:relative wrapper
-                (height ~135px). ApexCharts renders the 280px-chart SVG at 300px,
-                overflowing the wrapper by ~56px upward. The arc endpoints sit
-                ~129px below the wrapper's top, leaving ~6px to the wrapper's
-                bottom. Setting bottom:"6px" aligns the text's bottom edge flush
-                with the arc tips (the lowest visible points of the curved bar). */}
-            <div
+            <span
               style={{
-                position: "absolute",
-                bottom: "6px",
-                left: 0,
-                right: 0,
-                textAlign: "center",
-                pointerEvents: "none",
+                color: gaugeColor,
+                fontSize: "clamp(36px, 9vw, 52px)",
+                fontWeight: 600,
+                fontFamily: CHART_FONT,
+                lineHeight: 1,
+                transition: "color 0.3s ease",
               }}
             >
-              <span
-                style={{
-                  color: gaugeColor,
-                  fontSize: "clamp(36px, 9vw, 52px)",
-                  fontWeight: 600,
-                  fontFamily: CHART_FONT,
-                  lineHeight: 1,
-                  transition: "color 0.3s ease",
-                }}
-              >
-                {centerLabel}
-              </span>
-            </div>
+              {centerLabel}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Signals footer — 4 signals */}
-      <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
+      <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
         <SignalItem
           active={fearActive}
           label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
