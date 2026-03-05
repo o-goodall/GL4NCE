@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 // ── Fallback constants (used while async fetches are in-flight) ────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
 const HIGH_PRICE_USD_FALLBACK = 126_200;
-const MAX_DCA_AUD             = 1_000;
+// $104,000 AUD over 4 years ÷ 423-day PoC period = $245/day (rounded down)
+const MAX_DCA_AUD             = 245;
 
 // ── Cache config ───────────────────────────────────────────────────────────
 const ATH_CACHE_KEY = "btc-ath";       // shared with BtcLiveChart
@@ -56,8 +57,8 @@ const CHART_FONT     = "Inter, sans-serif";
 const CHART_TRACK_BG = "#E5E5E7";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function roundToNearest50(n: number): number {
-  return Math.round(n / 50) * 50;
+function roundToNearest5(n: number): number {
+  return Math.round(n / 5) * 5;
 }
 
 function fmtAUD(n: number): string {
@@ -344,7 +345,7 @@ export default function MonthlyTarget() {
         )
       );
       const rawBuy = MAX_DCA_AUD * allocationPct * (1 + totalBoost / 100);
-      recommendedBuy = roundToNearest50(Math.min(rawBuy, MAX_DCA_AUD));
+      recommendedBuy = roundToNearest5(Math.min(rawBuy, MAX_DCA_AUD));
     }
   }
 
