@@ -477,6 +477,21 @@ export default function MonthlyTarget() {
               >
                 {centerLabel}
               </span>
+              {!isLoading && !isPass && (
+                <div
+                  style={{
+                    color: gaugeColor,
+                    fontSize: "clamp(11px, 2.5vw, 14px)",
+                    fontWeight: 500,
+                    fontFamily: CHART_FONT,
+                    opacity: 0.75,
+                    lineHeight: 1.2,
+                    transition: "color 0.3s ease",
+                  }}
+                >
+                  / day
+                </div>
+              )}
             </div>
           </div>
         </div>
