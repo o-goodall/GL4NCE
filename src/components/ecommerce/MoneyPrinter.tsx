@@ -85,6 +85,26 @@ function regimeStyle(regime: string): RegimeStyle {
   }
 }
 
+function regimeBg(regime: string): string {
+  switch (regime) {
+    case "Brrrr":
+    case "Crisis":  return "bg-red-50 dark:bg-red-500/[0.08]";
+    case "Alert":   return "bg-orange-50 dark:bg-orange-500/[0.07]";
+    case "Warming": return "bg-yellow-50/80 dark:bg-yellow-500/[0.05]";
+    default:        return "bg-emerald-50/60 dark:bg-emerald-500/[0.04]";
+  }
+}
+
+function regimeGlow(regime: string): string {
+  switch (regime) {
+    case "Brrrr":
+    case "Crisis":  return "0 0 10px 2px rgba(239,68,68,0.30)";
+    case "Alert":   return "0 0 10px 2px rgba(249,115,22,0.30)";
+    case "Warming": return "0 0 10px 2px rgba(234,179,8,0.25)";
+    default:        return "0 0 10px 2px rgba(16,185,129,0.20)";
+  }
+}
+
 // ── Formatting helpers ────────────────────────────────────────────────────
 
 function fmtUSD(billions: number | null | undefined): string {
@@ -187,11 +207,16 @@ export default function MoneyPrinter() {
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4 md:mb-5">
-        <h3 className="text-lg md:text-xl font-semibold text-gray-800 dark:text-white/90">
-          Money Printer
-        </h3>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 shrink-0">
+            <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold leading-none select-none">$</span>
+          </div>
+          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">
+            Money Printer
+          </h3>
+        </div>
         {!loading && total > 0 && (
-          <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+          <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums font-medium">
             {active + 1} / {total}
           </span>
         )}
@@ -202,17 +227,23 @@ export default function MoneyPrinter() {
         {loading ? (
           /* Skeleton */
           <div className="flex-1 flex flex-col gap-4 animate-pulse">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800" />
-              <div className="flex-1 space-y-1.5">
-                <div className="h-4 w-32 rounded bg-gray-100 dark:bg-gray-800" />
-                <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-800" />
+            <div className="rounded-2xl bg-gray-50 dark:bg-gray-800/50 p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-5 w-32 rounded bg-gray-200 dark:bg-gray-700" />
+                  <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-800" />
+                </div>
+                <div className="space-y-1 text-right">
+                  <div className="h-8 w-12 rounded bg-gray-200 dark:bg-gray-700 ml-auto" />
+                  <div className="h-2.5 w-8 rounded bg-gray-100 dark:bg-gray-800 ml-auto" />
+                </div>
               </div>
+              <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700" />
             </div>
-            <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800" />
-            <div className="grid grid-cols-3 gap-3 mt-2">
+            <div className="grid grid-cols-3 gap-3">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3 space-y-2">
+                <div key={i} className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3 space-y-2 border-t-2 border-t-gray-200 dark:border-t-gray-700">
                   <div className="h-2.5 w-10 rounded bg-gray-200 dark:bg-gray-700" />
                   <div className="h-4 w-14 rounded bg-gray-200 dark:bg-gray-700" />
                   <div className="h-3 w-10 rounded bg-gray-100 dark:bg-gray-800" />
@@ -226,46 +257,61 @@ export default function MoneyPrinter() {
           </div>
         ) : (
           <>
-            {/* Country identity */}
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-4xl leading-none select-none">{c.flag}</span>
-              <div className="min-w-0">
-                <p className="text-base md:text-lg font-bold text-gray-800 dark:text-white/90 leading-tight">
-                  {c.name}
-                </p>
+            {/* ── Country identity card ── */}
+            <div className={`rounded-2xl p-4 mb-4 ${regimeBg(slideRegime)}`}>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-5xl leading-none select-none">{c.flag}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-lg font-black text-gray-800 dark:text-white/90 leading-tight truncate">
+                    {c.name}
+                  </p>
+                  {!c.error && slideScore !== null && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold mt-1 ${rs.badge}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${rs.dot}`} />
+                      {slideRegime}
+                    </span>
+                  )}
+                </div>
                 {!c.error && slideScore !== null && (
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold mt-1 ${rs.badge}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${rs.dot}`} />
-                    {slideRegime} · {slideScore}/100
-                  </span>
+                  <div className="text-right shrink-0">
+                    <span className={`text-3xl font-black tabular-nums leading-none ${rs.color}`}>{slideScore}</span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 block mt-0.5 leading-none">/100</span>
+                  </div>
                 )}
               </div>
-            </div>
 
-            {/* Printer score bar */}
-            {!c.error && slideScore !== null && (
-              <div className="mb-4">
-                <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+              {/* Printer score bar with glow */}
+              {!c.error && slideScore !== null && (
+                <div className="h-2 w-full rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ${rs.bg}`}
-                    style={{ width: `${scorePct}%` }}
+                    style={{
+                      width: `${scorePct}%`,
+                      boxShadow: regimeGlow(slideRegime),
+                    }}
                   />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Metric cards */}
             <div className="grid grid-cols-3 gap-2 md:gap-3">
               {/* M2 */}
-              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3">
-                <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+              <div className={`rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 ${
+                m2Change == null
+                  ? "border-t-gray-200 dark:border-t-gray-700"
+                  : m2Change >= 0
+                    ? "border-t-emerald-400 dark:border-t-emerald-500"
+                    : "border-t-red-400 dark:border-t-red-500"
+              }`}>
+                <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
                   M2
                 </p>
-                <p className="text-sm font-bold tabular-nums text-gray-800 dark:text-white/90">
+                <p className="text-sm font-black tabular-nums text-gray-800 dark:text-white/90">
                   {c.error ? "—" : fmtUSD(m2Current)}
                 </p>
                 {!c.error && (
-                  <p className={`text-[11px] tabular-nums mt-0.5 ${
+                  <p className={`text-[11px] tabular-nums mt-0.5 font-medium ${
                     m2Change == null
                       ? "text-gray-400 dark:text-gray-500"
                       : m2Change < 0
@@ -278,18 +324,24 @@ export default function MoneyPrinter() {
               </div>
 
               {/* M1 */}
-              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3">
-                <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+              <div className={`rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 ${
+                c.m1DataMissing || c.m1ChangeUSD == null
+                  ? "border-t-gray-200 dark:border-t-gray-700"
+                  : c.m1ChangeUSD >= 0
+                    ? "border-t-emerald-400 dark:border-t-emerald-500"
+                    : "border-t-red-400 dark:border-t-red-500"
+              }`}>
+                <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
                   M1
                 </p>
                 {c.error || c.m1DataMissing ? (
                   <p className="text-sm font-bold text-gray-400 dark:text-gray-500 italic">N/A</p>
                 ) : (
                   <>
-                    <p className="text-sm font-bold tabular-nums text-gray-800 dark:text-white/90">
+                    <p className="text-sm font-black tabular-nums text-gray-800 dark:text-white/90">
                       {fmtUSD(c.m1USD)}
                     </p>
-                    <p className={`text-[11px] tabular-nums mt-0.5 ${
+                    <p className={`text-[11px] tabular-nums mt-0.5 font-medium ${
                       c.m1ChangeUSD == null
                         ? "text-gray-400 dark:text-gray-500"
                         : c.m1ChangeUSD < 0
@@ -303,15 +355,23 @@ export default function MoneyPrinter() {
               </div>
 
               {/* Gross Debt */}
-              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3">
-                <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+              <div className={`rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 border-t-2 ${
+                c.debtToGDP == null
+                  ? "border-t-gray-200 dark:border-t-gray-700"
+                  : c.debtToGDP > 90
+                    ? "border-t-red-400 dark:border-t-red-500"
+                    : c.debtToGDP > 60
+                      ? "border-t-yellow-400 dark:border-t-yellow-500"
+                      : "border-t-emerald-400 dark:border-t-emerald-500"
+              }`}>
+                <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
                   Debt
                 </p>
-                <p className="text-sm font-bold tabular-nums text-gray-800 dark:text-white/90">
+                <p className="text-sm font-black tabular-nums text-gray-800 dark:text-white/90">
                   {c.error ? "—" : fmtUSD(c.grossDebtUSD)}
                 </p>
                 {!c.error && c.debtToGDP != null && (
-                  <p className={`text-[11px] tabular-nums mt-0.5 ${debtCls}`}>
+                  <p className={`text-[11px] tabular-nums mt-0.5 font-medium ${debtCls}`}>
                     {fmtPct(c.debtToGDP)} GDP
                   </p>
                 )}
