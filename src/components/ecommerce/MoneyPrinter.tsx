@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import Badge from "../ui/badge/Badge";
 
 // ── Types (mirror API responses) ──────────────────────────────────────────
 
@@ -14,6 +13,9 @@ interface CountryData {
   // M2 / broad money
   m2USD?:           number | null;
   m2ChangeUSD?:     number | null;
+  // Per-bank Printer Score
+  printerScore?:    number | null;
+  scoreRegime?:     string | null;
   printing?:        boolean;
   // legacy fields (backward compat)
   latestUSD?:       number;
@@ -55,6 +57,27 @@ function regimeCfg(regime: string): RegimeConfig {
     default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
   }
 }
+
+// ── Per-bank regime badge styles (green → yellow → orange → red) ─────────────
+
+const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
+  Crisis:  {
+    badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
+    dot:   "bg-red-500 dark:bg-red-400",
+  },
+  High: {
+    badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
+    dot:   "bg-orange-500 dark:bg-orange-400",
+  },
+  Warming: {
+    badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
+    dot:   "bg-yellow-500 dark:bg-yellow-400",
+  },
+  Normal: {
+    badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
+    dot:   "bg-gray-400 dark:bg-gray-500",
+  },
+};
 
 // ── Formatting helpers ────────────────────────────────────────────────────
 
@@ -188,7 +211,7 @@ export default function MoneyPrinter() {
 
       {/* ── M1 + M2 per-bank table ─────────────────────────────────────── */}
       <div className="overflow-x-auto flex-1">
-        <table className="w-full min-w-[460px]">
+        <table className="w-full min-w-[520px]">
           <thead>
             <tr className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
               <th className="text-left pb-2 pr-2">Bank</th>
@@ -203,7 +226,6 @@ export default function MoneyPrinter() {
             {loading
               ? skeletonRows
               : countries.map((c: CountryData) => {
-                  const isOn      = !c.error && c.printing === true;
                   const m2Current = c.m2USD ?? c.latestUSD ?? null;
                   const m2Change  = c.m2ChangeUSD ?? c.printedUSD ?? null;
 
@@ -251,18 +273,22 @@ export default function MoneyPrinter() {
                       <td className="py-2 text-right">
                         {c.error ? (
                           <span className="text-xs text-gray-400">—</span>
-                        ) : (
-                          <Badge color={isOn ? "success" : "light"} size="sm">
-                            <span
-                              className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
-                                isOn
-                                  ? "bg-success-500 dark:bg-success-400"
-                                  : "bg-gray-400 dark:bg-gray-500"
-                              }`}
-                            />
-                            {isOn ? "ON" : "OFF"}
-                          </Badge>
-                        )}
+                        ) : (() => {
+                          const regime = c.scoreRegime ?? "Normal";
+                          const styles = REGIME_BADGE[regime] ?? REGIME_BADGE.Normal;
+                          const score  = c.printerScore ?? 0;
+                          return (
+                            <div className="inline-flex flex-col items-end gap-0.5">
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${styles.badge}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
+                                {regime}
+                              </span>
+                              <span className="text-[9px] tabular-nums text-gray-400 dark:text-gray-500">
+                                {score}/100
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );

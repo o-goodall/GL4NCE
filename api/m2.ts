@@ -41,9 +41,61 @@ const OBS_LIMIT = 15;
 // Number of daily FX observations to retrieve (take the most recent valid one)
 const FX_LIMIT = 10;
 
-// A country is considered "printing" when its most-recent monthly M2 growth
-// exceeds this threshold (percentage, month-on-month).
+// ── Per-bank Printer Score ────────────────────────────────────────────────────
+// Weighted composite (0–100) derived from M1 and M2 month-on-month growth.
+//
+// Sub-score mapping (same scale used by api/printer.ts for US M2):
+//   sub = clamp(momPct × MONEY_GROWTH_SCALE, 0, 100)
+//   0.7 % MoM growth → sub = 100  (annualised ≈ 8.4 %)
+//   0 % → 0;  negative growth → 0 (clamped)
+//
+// Composite weights (renormalized to sum to 1.0 when both signals available):
+//   M1 available:  score = round((m1Sub × 3 + m2Sub × 4) / 7)
+//                  [M1 ≈ 42.9 %, M2 ≈ 57.1 % — original intent M1:M2 = 30:40]
+//   M1 unavailable: score = round(m2Sub)                         [M2 at 100 %]
+//
+// Score → regime / Status:
+//   0–39   → "Normal"  / OFF
+//   40–59  → "Warming" / ON
+//   60–79  → "High"    / ON
+//   80–100 → "Crisis"  / ON
+const MONEY_GROWTH_SCALE = 143;
+
+// Minimum M2 MoM growth rate (%) to record a historical "printed" episode in
+// the legacy printedUSD / lastPrintedDate fields.  Kept separate from the
+// score threshold so historical lookback is not affected by the scoring change.
 const PRINT_THRESHOLD_PCT = 0.1;
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * Compute a 0–100 Printer Score for a single central bank using M1 and M2
+ * month-on-month growth rates (expressed as percentages, e.g. 0.7 for 0.7 %).
+ * When M1 data is unavailable (null), the score is derived from M2 alone.
+ */
+function computeBankPrinterScore(
+  m1MomPct: number | null,
+  m2MomPct: number,
+): number {
+  const m2Sub = clamp(m2MomPct * MONEY_GROWTH_SCALE, 0, 100);
+  if (m1MomPct !== null) {
+    const m1Sub = clamp(m1MomPct * MONEY_GROWTH_SCALE, 0, 100);
+    // Weights: original intent M1 = 30 %, M2 = 40 %; renormalized 3 : 4 ratio
+    // so they sum to 1.0 when no balance-sheet data is available.
+    // M1 effective weight = 3/7 ≈ 42.9 %; M2 effective weight = 4/7 ≈ 57.1 %.
+    return Math.round((m1Sub * 3 + m2Sub * 4) / 7);
+  }
+  return Math.round(m2Sub);
+}
+
+function bankScoreRegime(score: number): string {
+  if (score >= 80) return "Crisis";
+  if (score >= 60) return "High";
+  if (score >= 40) return "Warming";
+  return "Normal";
+}
 
 interface CountryConfig {
   id:               string;
@@ -234,7 +286,10 @@ export interface M2CountryResult {
   m2USD?:           number | null;   // billions USD (most recent month)
   m2ChangeUSD?:     number | null;   // MoM absolute change in billions USD
   m2Date?:          string | null;   // ISO date of latest M2 observation
-  printing?:        boolean;         // true = M2 grew ≥ PRINT_THRESHOLD_PCT last month
+  // Per-bank Printer Score
+  printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
+  scoreRegime?:     string;          // "Normal" | "Warming" | "High" | "Crisis"
+  printing?:        boolean;         // true when printerScore ≥ 40 (Warming+)
   // legacy fields kept for backward compatibility
   latestUSD?:       number;
   printedUSD?:      number | null;
@@ -372,19 +427,32 @@ export default async function handler(
       const prevMonUSD = pts[1].valueUSD;
 
       const momPct   = ((latestUSD - prevMonUSD) / prevMonUSD) * 100;
-      const printing = momPct >= PRINT_THRESHOLD_PCT;
+
+      // ── Per-bank Printer Score ─────────────────────────────────────────────
+      // Compute M1 MoM % from the absolute change (when M1 data is available)
+      // m1PrevUSD = m1USD - m1ChangeUSD; guard against divide-by-zero / negative prev
+      const m1PrevUSD   = m1USD !== null && m1ChangeUSD !== null ? m1USD - m1ChangeUSD : null;
+      const m1MomPct    = m1PrevUSD !== null && m1PrevUSD > 0 ? (m1ChangeUSD! / m1PrevUSD) * 100 : null;
+
+      const printerScore = computeBankPrinterScore(m1MomPct, momPct);
+      const scoreRegime  = bankScoreRegime(printerScore);
+
+      // printing = true when score ≥ 40 (Warming / High / Crisis)
+      const printing = printerScore >= 40;
 
       const m2USD       = latestUSD;
       const m2ChangeUSD = latestUSD - prevMonUSD;
       const m2Date      = pts[0].date;
 
       // ── Legacy fields (kept for any existing consumers) ──────────────────
+      // Use the M2 MoM % threshold (not the composite score) for the historical
+      // episode scan so that past "printed" months are not retroactively changed.
       let printedUSD:      number | null = null;
       let printedDate:     string | null = null;
       let lastPrintedDate: string | null = null;
       let lastPrintedUSD:  number | null = null;
 
-      if (printing) {
+      if (momPct >= PRINT_THRESHOLD_PCT) {
         printedUSD  = m2ChangeUSD;
         printedDate = m2Date;
       } else {
@@ -409,6 +477,8 @@ export default async function handler(
         m2USD,
         m2ChangeUSD,
         m2Date,
+        printerScore,
+        scoreRegime,
         printing,
         latestUSD,
         printedUSD,
