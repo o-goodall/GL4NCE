@@ -10,6 +10,7 @@ interface CountryData {
   // M1
   m1USD?:           number | null;
   m1ChangeUSD?:     number | null;
+  m1DataMissing?:   boolean;
   // M2 / broad money
   m2USD?:           number | null;
   m2ChangeUSD?:     number | null;
@@ -53,25 +54,30 @@ function regimeCfg(regime: string): RegimeConfig {
   switch (regime) {
     case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
     case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    case "Caution": return { color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    case "Watch":   return { color: "text-blue-500 dark:text-blue-400",     bg: "bg-blue-400"      };
     default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
   }
 }
 
-// ── Per-bank regime badge styles (green → yellow → orange → red) ─────────────
+// ── Per-bank DEFCON badge styles (green → yellow → orange → red) ─────────────
 
 const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
-  Crisis:  {
+  Crisis: {
     badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
     dot:   "bg-red-500 dark:bg-red-400",
   },
-  High: {
+  "Printer Warming": {
     badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
     dot:   "bg-orange-500 dark:bg-orange-400",
   },
-  Warming: {
+  Caution: {
     badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
     dot:   "bg-yellow-500 dark:bg-yellow-400",
+  },
+  Watch: {
+    badge: "bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-400",
+    dot:   "bg-blue-400 dark:bg-blue-400",
   },
   Normal: {
     badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
@@ -219,7 +225,7 @@ export default function MoneyPrinter() {
               <th className="text-right pb-2 pr-2">M1 Δ</th>
               <th className="text-right pb-2 pr-2">M2</th>
               <th className="text-right pb-2 pr-2">M2 Δ</th>
-              <th className="text-right pb-2">Status</th>
+              <th className="text-right pb-2">DEFCON</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -239,18 +245,20 @@ export default function MoneyPrinter() {
 
                       {/* M1 current */}
                       <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
-                        {c.error ? "—" : fmtUSD(c.m1USD)}
+                        {c.error ? "—" : c.m1DataMissing ? (
+                          <span className="text-gray-400 dark:text-gray-500 italic">Missing</span>
+                        ) : fmtUSD(c.m1USD)}
                       </td>
 
                       {/* M1 Δ */}
                       <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
-                        c.error || c.m1ChangeUSD == null
+                        c.error || c.m1DataMissing || c.m1ChangeUSD == null
                           ? "text-gray-400 dark:text-gray-500"
                           : c.m1ChangeUSD < 0
                             ? "text-red-400 dark:text-red-400"
                             : "text-emerald-500 dark:text-emerald-400"
                       }`}>
-                        {c.error ? "—" : fmtDelta(c.m1ChangeUSD)}
+                        {c.error || c.m1DataMissing ? "—" : fmtDelta(c.m1ChangeUSD)}
                       </td>
 
                       {/* M2 current */}

@@ -10,11 +10,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   HY credit spread     (25%) – BAMLH0A0HYM2    ICE BofA US HY OAS, percentage, daily
 //   Yield curve          (10%) – T10Y2Y           10Y minus 2Y spread, percentage, daily
 //
-// Regime thresholds:
-//   0–30   Normal
-//   30–60  Printer Warming
-//   60–80  Alert
-//   80–100 Brrrr
+// Regime thresholds (DEFCON-aligned):
+//    0–29  Normal
+//   30–44  Watch
+//   45–59  Caution
+//   60–74  Alert
+//   75–100 Brrrr
 
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 
@@ -92,17 +93,24 @@ export interface PrinterIndicator {
 
 export interface PrinterScoreResult {
   score:      number;                 // 0–100 composite
-  regime:     string;                 // "Normal" | "Warming" | "Alert" | "Brrrr"
+  regime:     string;                 // "Normal" | "Watch" | "Caution" | "Alert" | "Brrrr"
   indicators: PrinterIndicator[];
   updatedAt:  string;                 // ISO timestamp
 }
 
 // ── Regime helper ──────────────────────────────────────────────────────────
+// DEFCON-aligned labels (matches per-bank scoring in api/m2.ts):
+//    0–29  → "Normal"          (DEFCON 5)
+//   30–44  → "Watch"           (DEFCON 4)
+//   45–59  → "Caution"         (DEFCON 3)
+//   60–74  → "Alert"           (DEFCON 2 / Printer Warming)
+//   75–100 → "Brrrr"           (DEFCON 1 / Crisis)
 
 function regime(score: number): string {
-  if (score >= 80) return "Brrrr";
+  if (score >= 75) return "Brrrr";
   if (score >= 60) return "Alert";
-  if (score >= 30) return "Warming";
+  if (score >= 45) return "Caution";
+  if (score >= 30) return "Watch";
   return "Normal";
 }
 

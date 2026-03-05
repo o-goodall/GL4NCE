@@ -54,11 +54,12 @@ const FX_LIMIT = 10;
 //                  [M1 ≈ 42.9 %, M2 ≈ 57.1 % — original intent M1:M2 = 30:40]
 //   M1 unavailable: score = round(m2Sub)                         [M2 at 100 %]
 //
-// Score → regime / Status:
-//   0–39   → "Normal"  / OFF
-//   40–59  → "Warming" / ON
-//   60–79  → "High"    / ON
-//   80–100 → "Crisis"  / ON
+// Score → regime / DEFCON Level:
+//    0–29  → "Normal"          / DEFCON 5 / OFF
+//   30–44  → "Watch"           / DEFCON 4 / ON
+//   45–59  → "Caution"         / DEFCON 3 / ON
+//   60–74  → "Printer Warming" / DEFCON 2 / ON
+//   75–100 → "Crisis"          / DEFCON 1 / ON
 const MONEY_GROWTH_SCALE = 143;
 
 // Minimum M2 MoM growth rate (%) to record a historical "printed" episode in
@@ -91,9 +92,10 @@ function computeBankPrinterScore(
 }
 
 function bankScoreRegime(score: number): string {
-  if (score >= 80) return "Crisis";
-  if (score >= 60) return "High";
-  if (score >= 40) return "Warming";
+  if (score >= 75) return "Crisis";
+  if (score >= 60) return "Printer Warming";
+  if (score >= 45) return "Caution";
+  if (score >= 30) return "Watch";
   return "Normal";
 }
 
@@ -288,8 +290,9 @@ export interface M2CountryResult {
   m2Date?:          string | null;   // ISO date of latest M2 observation
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
-  scoreRegime?:     string;          // "Normal" | "Warming" | "High" | "Crisis"
-  printing?:        boolean;         // true when printerScore ≥ 40 (Warming+)
+  scoreRegime?:     string;          // "Normal" | "Watch" | "Caution" | "Printer Warming" | "Crisis"
+  printing?:        boolean;         // true when printerScore ≥ 30 (Watch+)
+  m1DataMissing?:   boolean;         // true when M1 was expected but not available
   // legacy fields kept for backward compatibility
   latestUSD?:       number;
   printedUSD?:      number | null;
@@ -434,11 +437,15 @@ export default async function handler(
       const m1PrevUSD   = m1USD !== null && m1ChangeUSD !== null ? m1USD - m1ChangeUSD : null;
       const m1MomPct    = m1PrevUSD !== null && m1PrevUSD > 0 ? (m1ChangeUSD! / m1PrevUSD) * 100 : null;
 
+      // m1DataMissing: true when the bank has an M1 source (OECD or FRED) but
+      // no valid observations were returned (e.g. OECD API temporarily down).
+      const m1DataMissing = m1USD === null && (cfg.m1OecdCode !== null || cfg.m1Series !== null);
+
       const printerScore = computeBankPrinterScore(m1MomPct, momPct);
       const scoreRegime  = bankScoreRegime(printerScore);
 
-      // printing = true when score ≥ 40 (Warming / High / Crisis)
-      const printing = printerScore >= 40;
+      // printing = true when score ≥ 30 (Watch / Caution / Printer Warming / Crisis)
+      const printing = printerScore >= 30;
 
       const m2USD       = latestUSD;
       const m2ChangeUSD = latestUSD - prevMonUSD;
@@ -474,6 +481,7 @@ export default async function handler(
         m1USD,
         m1ChangeUSD,
         m1Date,
+        m1DataMissing,
         m2USD,
         m2ChangeUSD,
         m2Date,
