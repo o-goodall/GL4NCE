@@ -33,18 +33,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 const FRED_BASE  = "https://api.stlouisfed.org/fred/series/observations";
 const OECD_BASE  = "https://sdmx.oecd.org/public/rest/data";
-// IMF DataMapper API – free, no API key required.
-// Indicator GGXWDG_NGDP = General government gross debt (% of GDP).
-// Updated with each IMF World Economic Outlook release (Apr/Oct).
-// Full coverage for all G20 economies including Japan, China, and Euro area.
-// Euro area group code is "EURO" (not "EMU").
-const IMF_BASE      = "https://www.imf.org/external/datamapper/api/v1";
-const IMF_INDICATOR = "GGXWDG_NGDP";
-// World Bank Open Data API – free, no API key required.
-// Indicator GC.DOD.TOTL.GD.ZS = Central government debt, total (% of GDP).
-// Used as fallback when IMF DataMapper is unreachable; covers US / UK / CA well.
-const WB_BASE      = "https://api.worldbank.org/v2";
-const WB_INDICATOR = "GC.DOD.TOTL.GD.ZS";
 
 // Number of monthly observations to retrieve (15 gives the 13 valid points
 // needed for the latest value + 12 prior months, with a 2-observation buffer
@@ -133,13 +121,10 @@ interface CountryConfig {
   // ── FX conversion (FRED daily rates) ────────────────────────────────────
   fxSeries:         string | null;  // null → already USD
   fxInverted:       boolean;        // true = LCU/USD (invert); false = USD/LCU
-  // ── Debt-to-GDP ──────────────────────────────────────────────────────────
-  // IMF DataMapper (primary): best coverage – has all 6 economies including
-  // Euro area (EURO), Japan, and China.  Euro area group code is "EURO".
-  imfCode:          string | null;  // IMF DataMapper country/group code; null = skip
-  // World Bank (fallback): used when IMF DataMapper is unreachable.
-  // Coverage for GC.DOD.TOTL.GD.ZS: US ✓  UK ✓  CA ✓  JP/CN/EU limited.
-  wbCode:           string | null;  // World Bank country code; null = skip
+  // ── Debt-to-GDP (FRED GGGDTA*188N series, sourced from IMF WEO) ──────────
+  // Annual, % of GDP.  Uses the confirmed-working FRED API key (same as M1/M2).
+  // Series IDs follow the pattern GGGDTA{country}A188N.
+  debtSeries:       string;         // FRED series ID for general govt gross debt
 }
 
 const COUNTRIES: readonly CountryConfig[] = [
@@ -148,41 +133,41 @@ const COUNTRIES: readonly CountryConfig[] = [
     m1Series: "M1SL",              m1OecdCode: null,  m1LocalToBillions: 1,
     m2Series: "M2SL",              localToBillions: 1,
     fxSeries: null,                fxInverted: false,
-    imfCode: "USA",  wbCode: "US" },
+    debtSeries: "GGGDTAUSA188N" },
   // EU: M1 from FRED (MANMM101EZM189S, individual EUR) with OECD fallback;
   //     M2 from FRED (MABMM301EZM189S, individual EUR)
   { id: "EU", name: "ECB",  flag: "🇪🇺",
     m1Series: "MANMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
     m2Series: "MABMM301EZM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSEU",           fxInverted: false,
-    imfCode: "EURO", wbCode: "EMU" },  // "EMU" is WB's best-effort Euro area code; coverage limited
+    debtSeries: "GGGDTAEZA188N" },
   // UK: M1 from FRED (MANMM101GBM189S, individual GBP) with OECD fallback;
   //     M2 from FRED (MABMM301GBM189S, individual GBP)
   { id: "UK", name: "BOE",  flag: "🇬🇧",
     m1Series: "MANMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301GBM189S",   localToBillions: 1e-9,
     fxSeries: "DEXUSUK",           fxInverted: false,
-    imfCode: "GBR",  wbCode: "GB" },
+    debtSeries: "GGGDTAGBA188N" },
   // JP: M1 from FRED (MANMM101JPM189S, individual JPY) with OECD fallback;
   //     M2 from FRED (MABMM301JPM189S, individual JPY)
   { id: "JP", name: "BOJ",  flag: "🇯🇵",
     m1Series: "MANMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301JPM189S",   localToBillions: 1e-9,
     fxSeries: "DEXJPUS",           fxInverted: true,
-    imfCode: "JPN",  wbCode: "JP" },
+    debtSeries: "GGGDTAJPA188N" },
   // CA: M1 from FRED (MANMM101CAM189S, individual CAD) with OECD fallback;
   //     M2 from FRED (MABMM301CAM189S, individual CAD)
   { id: "CA", name: "BOC",  flag: "🇨🇦",
     m1Series: "MANMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
     m2Series: "MABMM301CAM189S",   localToBillions: 1e-9,
     fxSeries: "DEXCAUS",           fxInverted: true,
-    imfCode: "CAN",  wbCode: "CA" },
+    debtSeries: "GGGDTACAA188N" },
   // CN: M1 and M2 both from FRED (individual CNY)
   { id: "CN", name: "PBOC", flag: "🇨🇳",
     m1Series: "MYAGM1CNM189N",     m1OecdCode: null,  m1LocalToBillions: 1e-9,
     m2Series: "MYAGM2CNM189N",     localToBillions: 1e-9,
     fxSeries: "DEXCHUS",           fxInverted: true,
-    imfCode: "CHN",  wbCode: "CN" },
+    debtSeries: "GGGDTACNA188N" },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
@@ -302,100 +287,6 @@ async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
   return parseOecdSdmx((await res.json()) as OecdSdmxBody);
 }
 
-// ── World Bank Open Data helpers (debt-to-GDP fallback) ───────────────────────
-//
-// Indicator GC.DOD.TOTL.GD.ZS = Central government debt, total (% of GDP).
-// Used as fallback when IMF DataMapper is unreachable.
-// Good coverage for US / UK / CA; limited for JP, CN, and Euro area aggregate.
-// mrv=10 retrieves the 10 most-recent observations to bridge publication lags.
-//
-// World Bank codes used:
-//   US → "US"   UK → "GB"   JP → "JP"   CA → "CA"   CN → "CN"   EU → "EMU"
-
-interface WbObservation {
-  country: { id: string };
-  date:    string;
-  value:   number | null;
-}
-
-async function fetchWorldBankDebt(
-  wbCodes: string[],
-): Promise<Map<string, number | null>> {
-  if (wbCodes.length === 0) return new Map();
-  const codes = wbCodes.join(";");
-  const url =
-    `${WB_BASE}/country/${encodeURIComponent(codes)}/indicator/${WB_INDICATOR}` +
-    `?format=json&mrv=10&per_page=100`;
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`World Bank HTTP ${res.status}`);
-  const body = (await res.json()) as [unknown, WbObservation[] | null];
-  const obs  = body[1] ?? [];
-
-  const result = new Map<string, number | null>();
-  // obs is sorted most-recent first; skip null entries to find the latest real value per country
-  for (const o of obs) {
-    const code = o.country.id.toUpperCase();
-    if (!result.has(code)) {
-      if (o.value !== null) result.set(code, o.value);
-    }
-  }
-  return result;
-}
-
-// ── IMF DataMapper helpers (debt-to-GDP primary) ──────────────────────────────
-//
-// Indicator GGXWDG_NGDP = General government gross debt (% of GDP).
-// Source: IMF World Economic Outlook – free, no API key required.
-// Updated twice yearly (April and October WEO releases).
-// Full coverage for all G20 economies including Japan, China, and Euro area.
-// Euro area group code is "EURO" (not "EMU").
-// A failure here is non-fatal – World Bank is used as fallback.
-//
-// IMF DataMapper codes used:
-//   US  → "USA"   UK  → "GBR"   JP → "JPN"
-//   CA  → "CAN"   CN  → "CHN"   EU → "EURO" (Euro area WEO group)
-
-interface ImfDataMapperResponse {
-  values?: {
-    [indicator: string]: {
-      [countryCode: string]: {
-        [year: string]: number | null;
-      };
-    };
-  };
-}
-
-async function fetchImfDebt(
-  imfCodes: string[],
-): Promise<Map<string, number | null>> {
-  if (imfCodes.length === 0) return new Map();
-  const url = `${IMF_BASE}/${IMF_INDICATOR}/${imfCodes.join("/")}`;
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`IMF HTTP ${res.status}`);
-  const body = (await res.json()) as ImfDataMapperResponse;
-  const data = body.values?.[IMF_INDICATOR] ?? {};
-
-  const result = new Map<string, number | null>();
-  for (const [code, yearMap] of Object.entries(data)) {
-    // Sort years descending; take the most recent non-null value.
-    // IMF WEO includes forecasts for future years – using the latest available
-    // value (actual or near-term estimate) reflects the most current picture.
-    const years = Object.keys(yearMap).sort((a, b) => Number(b) - Number(a));
-    let latest: number | null = null;
-    for (const yr of years) {
-      const v = yearMap[yr];
-      if (v !== null && v !== undefined) {
-        latest = v;
-        break;
-      }
-    }
-    result.set(code.toUpperCase(), latest);
-  }
-  return result;
-}
-
 // ── Response types ────────────────────────────────────────────────────────────
 
 export interface M2CountryResult {
@@ -411,7 +302,7 @@ export interface M2CountryResult {
   m2USD?:           number | null;   // billions USD (most recent month)
   m2ChangeUSD?:     number | null;   // MoM absolute change in billions USD
   m2Date?:          string | null;   // ISO date of latest M2 observation
-  // Debt-to-GDP (IMF WEO primary, World Bank fallback – annual)
+  // Debt-to-GDP (FRED GGGDTA*188N series from IMF WEO – annual)
   debtToGDP?:       number | null;   // General government gross debt, % of GDP
   // Per-bank Printer Score
   printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
@@ -454,22 +345,13 @@ export default async function handler(
       .map((c) => c.m1OecdCode)
       .filter((code): code is string => code !== null);
 
-    // Collect IMF codes needed for debt-to-GDP (all 6 countries)
-    const imfCodes = COUNTRIES
-      .map((c) => c.imfCode)
-      .filter((code): code is string => code !== null);
-
-    // Collect World Bank codes for debt-to-GDP fallback (all 6 countries)
-    const wbCodes = COUNTRIES
-      .map((c) => c.wbCode)
-      .filter((code): code is string => code !== null);
-
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
-    // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from IMF DataMapper (primary),
-    // and debt-to-GDP from World Bank (fallback) – all in parallel.
+    // M1 from OECD (EU/UK/JP/CA), and debt-to-GDP from FRED (all 6) – all in parallel.
+    // GGGDTA*188N are annual IMF-WEO-sourced series served by FRED; they use the
+    // same confirmed-working API key and fetchFredObs path as M1/M2.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, imfDebtMap, wbDebtMap] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -486,12 +368,9 @@ export default async function handler(
         // rather than breaking the whole widget. This covers network issues or
         // OECD API downtime without affecting M2 / printer-status data.
         .catch((): OecdObsMap => new Map()),
-      fetchImfDebt(imfCodes)
-        // IMF failure is non-fatal: World Bank fallback is used instead.
-        .catch((): Map<string, number | null> => new Map()),
-      fetchWorldBankDebt(wbCodes)
-        // World Bank failure is non-fatal: debt-to-GDP column shows "—".
-        .catch((): Map<string, number | null> => new Map()),
+      Promise.allSettled(
+        COUNTRIES.map((c) => fetchFredObs(c.debtSeries, apiKey, OBS_LIMIT)),
+      ),
     ]);
 
     // Build FX lookup: series_id → latest USD conversion rate
@@ -620,13 +499,12 @@ export default async function handler(
         }
       }
 
-      // ── Debt-to-GDP ──────────────────────────────────────────────────────
-      // Prefer IMF DataMapper (GGXWDG_NGDP – general government gross debt,
-      // full G20 coverage); fall back to World Bank (GC.DOD.TOTL.GD.ZS) which
-      // reliably covers US / UK / CA when IMF DataMapper is unreachable.
-      const debtToGDP =
-        (cfg.imfCode !== null ? imfDebtMap.get(cfg.imfCode.toUpperCase()) ?? null : null) ??
-        (cfg.wbCode  !== null ? wbDebtMap.get(cfg.wbCode.toUpperCase())   ?? null : null);
+      // ── Debt-to-GDP (FRED GGGDTA*188N – IMF WEO annual, % of GDP) ───────
+      // Failure is non-fatal: column shows "—" if FRED is unreachable.
+      const debtResult = debtSettled[i];
+      const debtToGDP  = debtResult.status === "fulfilled"
+        ? (parseObs(debtResult.value)[0]?.value ?? null)
+        : null;
 
       return {
         ...base,
