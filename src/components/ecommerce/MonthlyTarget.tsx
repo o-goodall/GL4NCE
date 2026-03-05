@@ -24,10 +24,13 @@ const BOOST_FEAR_EXTREME = 20;
 const BOOST_FEAR_ACTIVE  = 10;
 const BOOST_DIFF_DROP    = 10;
 const BOOST_HALVING      = 10;
+const BOOST_POST_HALVING = 10; // post-halving accumulation phase (BSP cycle insight)
 const BOOST_BELOW_WMA    = 25; // price below 200WMA = historically rare extreme buy zone
 
-// ── Next halving ───────────────────────────────────────────────────────────
-const NEXT_HALVING_MS = new Date("2028-04-19T00:00:00Z").getTime();
+// ── Halving cycle ──────────────────────────────────────────────────────────
+const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
+const NEXT_HALVING_MS     = new Date("2028-04-19T00:00:00Z").getTime();
+const POST_HALVING_WINDOW = 547 * 86_400_000; // ≈ 18 months after halving
 
 // ── Chart style ────────────────────────────────────────────────────────────
 const CHART_FONT     = "Inter, sans-serif";
@@ -251,12 +254,18 @@ export default function MonthlyTarget() {
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
   const daysToWindow  = Math.max(0, Math.ceil((msToHalving - 365 * 86_400_000) / 86_400_000));
 
+  // Post-halving accumulation phase (BSP cycle-awareness)
+  const msSinceHalving    = Date.now() - PREV_HALVING_MS;
+  const daysSinceHalving  = Math.max(0, Math.floor(msSinceHalving / 86_400_000));
+  const postHalvingActive = msSinceHalving > 0 && msSinceHalving <= POST_HALVING_WINDOW;
+
   // ── Boost ──────────────────────────────────────────────────────────────
   let totalBoost = 0;
   if (fearExtreme)     totalBoost += BOOST_FEAR_EXTREME;
   else if (fearActive) totalBoost += BOOST_FEAR_ACTIVE;
   if (diffActive)      totalBoost += BOOST_DIFF_DROP;
   if (halvingActive)   totalBoost += BOOST_HALVING;
+  else if (postHalvingActive) totalBoost += BOOST_POST_HALVING;
   if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
 
   // ── DCA calculation ────────────────────────────────────────────────────
@@ -425,9 +434,9 @@ export default function MonthlyTarget() {
           sub={diffChange !== null ? `${diffChange.toFixed(1)}%` : "—"}
         />
         <SignalItem
-          active={halvingActive}
-          label={halvingActive ? "Pre-Halving" : "Halving"}
-          sub={halvingActive ? `${daysToHalving}d` : `in ${daysToWindow}d`}
+          active={halvingActive || postHalvingActive}
+          label={postHalvingActive ? "Post-Halv" : halvingActive ? "Pre-Halving" : "Cycle"}
+          sub={postHalvingActive ? `${daysSinceHalving}d ago` : halvingActive ? `${daysToHalving}d` : `in ${daysToWindow}d`}
         />
         <SignalItem
           active={belowWMA}
