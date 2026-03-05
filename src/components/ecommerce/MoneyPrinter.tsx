@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import Badge from "../ui/badge/Badge";
 
 // ── Types (mirror API responses) ──────────────────────────────────────────
 
@@ -8,10 +7,19 @@ interface CountryData {
   name:             string;
   flag:             string;
   error:            boolean;
-  latestUSD?:       number;
+  // M1
+  m1USD?:           number | null;
+  m1ChangeUSD?:     number | null;
+  // M2 / broad money
+  m2USD?:           number | null;
+  m2ChangeUSD?:     number | null;
+  // Per-bank Printer Score
+  printerScore?:    number | null;
+  scoreRegime?:     string | null;
   printing?:        boolean;
+  // legacy fields (backward compat)
+  latestUSD?:       number;
   printedUSD?:      number | null;
-  printedDate?:     string | null;
   lastPrintedDate?: string | null;
   lastPrintedUSD?:  number | null;
 }
@@ -50,26 +58,43 @@ function regimeCfg(regime: string): RegimeConfig {
   }
 }
 
+// ── Per-bank regime badge styles (green → yellow → orange → red) ─────────────
+
+const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
+  Crisis:  {
+    badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
+    dot:   "bg-red-500 dark:bg-red-400",
+  },
+  High: {
+    badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
+    dot:   "bg-orange-500 dark:bg-orange-400",
+  },
+  Warming: {
+    badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
+    dot:   "bg-yellow-500 dark:bg-yellow-400",
+  },
+  Normal: {
+    badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
+    dot:   "bg-gray-400 dark:bg-gray-500",
+  },
+};
+
 // ── Formatting helpers ────────────────────────────────────────────────────
 
-function fmtUSD(billions: number): string {
+function fmtUSD(billions: number | null | undefined): string {
+  if (billions == null) return "—";
   const t = billions / 1_000;
   const str = t >= 100 ? t.toFixed(0) : t >= 10 ? t.toFixed(1) : t.toFixed(2);
   return `$${str}T`;
 }
 
-function fmtDelta(billions: number): string {
-  const abs = Math.abs(billions);
-  const t   = abs / 1_000;
-  const str = t >= 10 ? t.toFixed(1) : t >= 1 ? t.toFixed(2) : t.toFixed(3);
-  return `+$${str}T`;
-}
-
-function fmtMonthYear(isoDate: string): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  return d.toLocaleDateString("en-GB", {
-    month: "short", year: "numeric", timeZone: "UTC",
-  });
+function fmtDelta(billions: number | null | undefined): string {
+  if (billions == null) return "—";
+  const sign = billions < 0 ? "-" : "+";
+  const abs  = Math.abs(billions);
+  const t    = abs / 1_000;
+  const str  = t >= 10 ? t.toFixed(1) : t >= 1 ? t.toFixed(2) : t.toFixed(3);
+  return `${sign}$${str}T`;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -105,17 +130,15 @@ export default function MoneyPrinter() {
   const cfg   = regimeCfg(rg);
   const pct   = score !== null ? Math.min(100, Math.max(0, score)) : 0;
 
-  // ── Skeleton rows ──────────────────────────────────────────────────────
+  // ── Skeleton table rows ───────────────────────────────────────────────
   const skeletonRows = Array.from({ length: 6 }, (_, i) => (
-    <div key={i} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-      <div className="w-6 h-5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse shrink-0" />
-      <div className="w-9 h-3.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse shrink-0" />
-      <div className="flex-1 flex flex-col gap-1">
-        <div className="w-16 h-3.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-        <div className="w-24 h-2.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-      </div>
-      <div className="w-10 h-5 rounded-full bg-gray-100 dark:bg-gray-800 animate-pulse" />
-    </div>
+    <tr key={i}>
+      {Array.from({ length: 6 }, (__, j) => (
+        <td key={j} className="py-2 pr-2">
+          <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "3.5rem" : "2.5rem" }} />
+        </td>
+      ))}
+    </tr>
   ));
 
   return (
@@ -186,67 +209,92 @@ export default function MoneyPrinter() {
         </div>
       </div>
 
-      {/* ── M2 per-country rows ────────────────────────────────────────── */}
-      <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-800 flex-1 justify-around">
-        {loading
-          ? skeletonRows
-          : countries.map((c: CountryData) => {
-              const isOn = !c.error && c.printing === true;
+      {/* ── M1 + M2 per-bank table ─────────────────────────────────────── */}
+      <div className="overflow-x-auto flex-1">
+        <table className="w-full min-w-[520px]">
+          <thead>
+            <tr className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+              <th className="text-left pb-2 pr-2">Bank</th>
+              <th className="text-right pb-2 pr-2">M1</th>
+              <th className="text-right pb-2 pr-2">M1 Δ</th>
+              <th className="text-right pb-2 pr-2">M2</th>
+              <th className="text-right pb-2 pr-2">M2 Δ</th>
+              <th className="text-right pb-2">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            {loading
+              ? skeletonRows
+              : countries.map((c: CountryData) => {
+                  const m2Current = c.m2USD ?? c.latestUSD ?? null;
+                  const m2Change  = c.m2ChangeUSD ?? c.printedUSD ?? null;
 
-              let subLabel: string | null = null;
-              if (isOn && c.printedUSD != null) {
-                subLabel = `${fmtDelta(c.printedUSD)} this month`;
-              } else if (!c.error && !isOn && c.lastPrintedUSD != null && c.lastPrintedDate != null) {
-                subLabel = `Last ${fmtDelta(c.lastPrintedUSD)} · ${fmtMonthYear(c.lastPrintedDate)}`;
-              }
+                  return (
+                    <tr key={c.id}>
+                      {/* Bank */}
+                      <td className="py-2 pr-2">
+                        <span className="text-base leading-none select-none mr-1">{c.flag}</span>
+                        <span className="text-xs font-semibold text-gray-700 dark:text-white/80">{c.name}</span>
+                      </td>
 
-              return (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-                >
-                  <span className="text-lg leading-none select-none shrink-0">{c.flag}</span>
+                      {/* M1 current */}
+                      <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
+                        {c.error ? "—" : fmtUSD(c.m1USD)}
+                      </td>
 
-                  <span className="text-xs font-semibold text-gray-700 dark:text-white/80 w-9 shrink-0">
-                    {c.name}
-                  </span>
+                      {/* M1 Δ */}
+                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
+                        c.error || c.m1ChangeUSD == null
+                          ? "text-gray-400 dark:text-gray-500"
+                          : c.m1ChangeUSD < 0
+                            ? "text-red-400 dark:text-red-400"
+                            : "text-emerald-500 dark:text-emerald-400"
+                      }`}>
+                        {c.error ? "—" : fmtDelta(c.m1ChangeUSD)}
+                      </td>
 
-                  <div className="flex-1 flex flex-col min-w-0">
-                    <span className="text-sm font-medium tabular-nums text-gray-700 dark:text-gray-200 truncate">
-                      {!c.error && c.latestUSD != null ? fmtUSD(c.latestUSD) : "—"}
-                    </span>
-                    {subLabel !== null && (
-                      <span
-                        className={`text-xs tabular-nums mt-0.5 leading-tight truncate ${
-                          isOn
-                            ? "text-emerald-500 dark:text-emerald-400"
-                            : "text-gray-400 dark:text-gray-500"
-                        }`}
-                      >
-                        {subLabel}
-                      </span>
-                    )}
-                  </div>
+                      {/* M2 current */}
+                      <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-200">
+                        {c.error ? "—" : fmtUSD(m2Current)}
+                      </td>
 
-                  {c.error ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                      —
-                    </span>
-                  ) : (
-                    <Badge color={isOn ? "success" : "light"} size="sm">
-                      <span
-                        className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
-                          isOn
-                            ? "bg-success-500 dark:bg-success-400"
-                            : "bg-gray-400 dark:bg-gray-500"
-                        }`}
-                      />
-                      {isOn ? "ON" : "OFF"}
-                    </Badge>
-                  )}
-                </div>
-              );
-            })}
+                      {/* M2 Δ */}
+                      <td className={`py-2 pr-2 text-right text-xs tabular-nums ${
+                        c.error || m2Change == null
+                          ? "text-gray-400 dark:text-gray-500"
+                          : m2Change < 0
+                            ? "text-red-400 dark:text-red-400"
+                            : "text-emerald-500 dark:text-emerald-400"
+                      }`}>
+                        {c.error ? "—" : fmtDelta(m2Change)}
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-2 text-right">
+                        {c.error ? (
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : (() => {
+                          const regime = c.scoreRegime ?? "Normal";
+                          const styles = REGIME_BADGE[regime] ?? REGIME_BADGE.Normal;
+                          const score  = c.printerScore ?? 0;
+                          return (
+                            <div className="inline-flex flex-col items-end gap-0.5">
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${styles.badge}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
+                                {regime}
+                              </span>
+                              <span className="text-[9px] tabular-nums text-gray-400 dark:text-gray-500">
+                                {score}/100
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  );
+                })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -15,14 +15,21 @@ const FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations";
 
 // Only the series IDs used by MoneyPrinter are allowed through this proxy.
 // Balance-sheet series (legacy)
-// M2 money-supply series + FX conversion rates (used by /api/m2)
+// M1 + M2 money-supply series + FX conversion rates (used by /api/m2)
 // Printer-score indicators (used by /api/printer)
+//
+// NOTE: MABMM101* (OECD MEI narrow money / M1) are NOT on FRED — those
+// are fetched directly from OECD's SDMX REST API in api/m2.ts.
 const ALLOWED_SERIES = new Set([
   // Balance sheet
   "WALCL", "ECBASSETSW", "JPNASSETS",
-  // M2 money supply
-  "M2SL", "MABMM301EZM189S", "MABMM301GBM189S",
-  "MABMM301JPM189S", "MABMM301CAM189S", "MYAGM2CNM189N",
+  // US M1 + M2
+  "M1SL", "M2SL",
+  // China (PBOC) M1 + M2 – individual CNY units
+  "MYAGM1CNM189N", "MYAGM2CNM189N",
+  // Non-US M2 / broad money (OECD MEI via FRED, individual NCU)
+  "MABMM301EZM189S", "MABMM301GBM189S",
+  "MABMM301JPM189S", "MABMM301CAM189S",
   // FX rates (daily, for USD conversion)
   "DEXUSEU", "DEXUSUK", "DEXJPUS", "DEXCAUS", "DEXCHUS",
   // Printer-score indicators

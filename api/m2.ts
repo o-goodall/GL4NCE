@@ -1,16 +1,28 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-// ── M2 Money Supply API ────────────────────────────────────────────────────
-// Fetches M2 money supply for 6 major economies from FRED, converts to USD,
-// and returns ON/OFF printing status with amounts for each country.
+// ── M1 + M2 Money Supply API ───────────────────────────────────────────────
+// Fetches M1 and M2 money supply for 6 major economies, converts to USD
+// billions, and returns monthly changes plus ON/OFF printing status.
 //
-// Sources (all via FRED, free tier – API key kept server-side):
-//   US  Fed  – M2SL             (Billions USD, monthly, SA)
-//   EU  ECB  – MABMM301EZM189S  (Millions EUR, monthly, SA)  ← OECD series: millions NCU
-//   UK  BOE  – MABMM301GBM189S  (Millions GBP, monthly, SA)  ← OECD series: millions NCU
-//   JP  BOJ  – MABMM301JPM189S  (Millions JPY, monthly, SA)  ← OECD series: millions NCU
-//   CA  BOC  – MABMM301CAM189S  (Millions CAD, monthly, SA)  ← OECD series: millions NCU
-//   CN  PBOC – MYAGM2CNM189N    (Millions CNY, monthly, NSA) ← millions NCU
+// M1 sources:
+//   US  Fed  – FRED M1SL                (billions USD, monthly, SA)
+//   CN  PBOC – FRED MYAGM1CNM189N       (individual CNY, monthly, NSA) ← 1e-9
+//   EU/UK/JP/CA – OECD SDMX REST API    (millions NCU, monthly, SA)    ← 0.001
+//     MABMM101 series via sdmx.oecd.org; free, no API key.
+//     OECD country codes: EA (Euro area), GBR, JPN, CAN.
+//     OECD MEI returns millions of national currency; multiply by 0.001 → billions.
+//
+// M2 / broad money sources (all via FRED, free tier – API key kept server-side):
+//   US  Fed  – M2SL             (billions USD, monthly, SA)
+//   EU  ECB  – MABMM301EZM189S  (individual EUR, monthly, SA) ← 1e-9
+//   UK  BOE  – MABMM301GBM189S  (individual GBP, monthly, SA) ← 1e-9
+//   JP  BOJ  – MABMM301JPM189S  (individual JPY, monthly, SA) ← 1e-9
+//   CA  BOC  – MABMM301CAM189S  (individual CAD, monthly, SA) ← 1e-9
+//   CN  PBOC – MYAGM2CNM189N    (individual CNY, monthly, NSA) ← 1e-9
+//
+// NOTE: The OECD MEI MABMM101* series do NOT exist on FRED (FRED only carries
+// OECD's broad money / M3 series MABMM301*). OECD's own SDMX REST API is used
+// as the authoritative free source for EU/UK/JP/CA M1.
 //
 // FX conversion (FRED daily rates, most recent observation):
 //   DEXUSEU – USD per EUR  (direct)
@@ -19,39 +31,126 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //   DEXCAUS – CAD per USD  (inverted)
 //   DEXCHUS – CNY per USD  (inverted)
 
-const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
+const FRED_BASE  = "https://api.stlouisfed.org/fred/series/observations";
+const OECD_BASE  = "https://sdmx.oecd.org/public/rest/data";
 
 // Number of monthly observations to retrieve (15 gives the 13 valid points
 // needed for the latest value + 12 prior months, with a 2-observation buffer
 // for FRED's occasional "." placeholder entries)
-const M2_LIMIT = 15;
+const OBS_LIMIT = 15;
 // Number of daily FX observations to retrieve (take the most recent valid one)
 const FX_LIMIT = 10;
 
-// A country is considered "printing" when its most-recent monthly M2 growth
-// exceeds this threshold (percentage, month-on-month).
+// ── Per-bank Printer Score ────────────────────────────────────────────────────
+// Weighted composite (0–100) derived from M1 and M2 month-on-month growth.
+//
+// Sub-score mapping (same scale used by api/printer.ts for US M2):
+//   sub = clamp(momPct × MONEY_GROWTH_SCALE, 0, 100)
+//   0.7 % MoM growth → sub = 100  (annualised ≈ 8.4 %)
+//   0 % → 0;  negative growth → 0 (clamped)
+//
+// Composite weights (renormalized to sum to 1.0 when both signals available):
+//   M1 available:  score = round((m1Sub × 3 + m2Sub × 4) / 7)
+//                  [M1 ≈ 42.9 %, M2 ≈ 57.1 % — original intent M1:M2 = 30:40]
+//   M1 unavailable: score = round(m2Sub)                         [M2 at 100 %]
+//
+// Score → regime / Status:
+//   0–39   → "Normal"  / OFF
+//   40–59  → "Warming" / ON
+//   60–79  → "High"    / ON
+//   80–100 → "Crisis"  / ON
+const MONEY_GROWTH_SCALE = 143;
+
+// Minimum M2 MoM growth rate (%) to record a historical "printed" episode in
+// the legacy printedUSD / lastPrintedDate fields.  Kept separate from the
+// score threshold so historical lookback is not affected by the scoring change.
 const PRINT_THRESHOLD_PCT = 0.1;
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * Compute a 0–100 Printer Score for a single central bank using M1 and M2
+ * month-on-month growth rates (expressed as percentages, e.g. 0.7 for 0.7 %).
+ * When M1 data is unavailable (null), the score is derived from M2 alone.
+ */
+function computeBankPrinterScore(
+  m1MomPct: number | null,
+  m2MomPct: number,
+): number {
+  const m2Sub = clamp(m2MomPct * MONEY_GROWTH_SCALE, 0, 100);
+  if (m1MomPct !== null) {
+    const m1Sub = clamp(m1MomPct * MONEY_GROWTH_SCALE, 0, 100);
+    // Weights: original intent M1 = 30 %, M2 = 40 %; renormalized 3 : 4 ratio
+    // so they sum to 1.0 when no balance-sheet data is available.
+    // M1 effective weight = 3/7 ≈ 42.9 %; M2 effective weight = 4/7 ≈ 57.1 %.
+    return Math.round((m1Sub * 3 + m2Sub * 4) / 7);
+  }
+  return Math.round(m2Sub);
+}
+
+function bankScoreRegime(score: number): string {
+  if (score >= 80) return "Crisis";
+  if (score >= 60) return "High";
+  if (score >= 40) return "Warming";
+  return "Normal";
+}
+
 interface CountryConfig {
-  id:             string;
-  name:           string;   // Short label (e.g. "Fed", "ECB")
-  flag:           string;   // Emoji flag
-  m2Series:       string;   // FRED series ID for M2
-  localToBillions: number;  // multiply raw FRED value → billions of local currency
-                            //   M2SL: 1 (already billions USD)
-                            //   MABMM301* / MYAGM2CNM189N: 0.001 (millions → billions)
-  fxSeries:       string | null;  // FRED FX series (null → already USD)
-  fxInverted:     boolean;  // true  → rate is LCU/USD (need 1/rate)
-                            // false → rate is USD/LCU (multiply directly)
+  id:               string;
+  name:             string;    // Short label (e.g. "Fed", "ECB")
+  flag:             string;    // Emoji flag
+  // ── M1 (narrow money) ───────────────────────────────────────────────────
+  m1Series:         string | null;  // FRED series ID; null = use OECD
+  m1OecdCode:       string | null;  // OECD country code; null = use FRED
+  m1LocalToBillions: number;        // raw value → billions of local currency
+                                    //   M1SL (US):    1     (already billions USD)
+                                    //   OECD MEI M1:  0.001 (millions NCU → billions)
+                                    //   MYAGM1CN:     1e-9  (individual CNY → billions)
+  // ── M2 / broad money (always via FRED) ──────────────────────────────────
+  m2Series:         string;         // FRED series ID for M2
+  localToBillions:  number;         // raw FRED value → billions of local currency
+                                    //   M2SL:    1     (already billions USD)
+                                    //   MABMM301*: 1e-9 (individual NCU → billions)
+                                    //   MYAGM2CN:  1e-9  (individual CNY → billions)
+  // ── FX conversion (FRED daily rates) ────────────────────────────────────
+  fxSeries:         string | null;  // null → already USD
+  fxInverted:       boolean;        // true = LCU/USD (invert); false = USD/LCU
 }
 
 const COUNTRIES: readonly CountryConfig[] = [
-  { id: "US", name: "Fed",  flag: "🇺🇸", m2Series: "M2SL",            localToBillions: 1,     fxSeries: null,      fxInverted: false },
-  { id: "EU", name: "ECB",  flag: "🇪🇺", m2Series: "MABMM301EZM189S", localToBillions: 0.001, fxSeries: "DEXUSEU", fxInverted: false },
-  { id: "UK", name: "BOE",  flag: "🇬🇧", m2Series: "MABMM301GBM189S", localToBillions: 0.001, fxSeries: "DEXUSUK", fxInverted: false },
-  { id: "JP", name: "BOJ",  flag: "🇯🇵", m2Series: "MABMM301JPM189S", localToBillions: 0.001, fxSeries: "DEXJPUS", fxInverted: true  },
-  { id: "CA", name: "BOC",  flag: "🇨🇦", m2Series: "MABMM301CAM189S", localToBillions: 0.001, fxSeries: "DEXCAUS", fxInverted: true  },
-  { id: "CN", name: "PBOC", flag: "🇨🇳", m2Series: "MYAGM2CNM189N",   localToBillions: 0.001, fxSeries: "DEXCHUS", fxInverted: true  },
+  // US: M1 and M2 both from FRED; already in billions USD
+  { id: "US", name: "Fed",  flag: "🇺🇸",
+    m1Series: "M1SL",          m1OecdCode: null,  m1LocalToBillions: 1,
+    m2Series: "M2SL",          localToBillions: 1,
+    fxSeries: null,            fxInverted: false },
+  // EU: M1 from OECD (millions EUR, m1LocalToBillions = 0.001);
+  //     M2 from FRED (individual EUR, localToBillions = 1e-9)
+  { id: "EU", name: "ECB",  flag: "🇪🇺",
+    m1Series: null,            m1OecdCode: "EA",  m1LocalToBillions: 0.001,
+    m2Series: "MABMM301EZM189S", localToBillions: 1e-9,
+    fxSeries: "DEXUSEU",       fxInverted: false },
+  // UK: M1 from OECD (millions GBP); M2 from FRED (individual GBP)
+  { id: "UK", name: "BOE",  flag: "🇬🇧",
+    m1Series: null,            m1OecdCode: "GBR", m1LocalToBillions: 0.001,
+    m2Series: "MABMM301GBM189S", localToBillions: 1e-9,
+    fxSeries: "DEXUSUK",       fxInverted: false },
+  // JP: M1 from OECD (millions JPY); M2 from FRED (individual JPY)
+  { id: "JP", name: "BOJ",  flag: "🇯🇵",
+    m1Series: null,            m1OecdCode: "JPN", m1LocalToBillions: 0.001,
+    m2Series: "MABMM301JPM189S", localToBillions: 1e-9,
+    fxSeries: "DEXJPUS",       fxInverted: true  },
+  // CA: M1 from OECD (millions CAD); M2 from FRED (individual CAD)
+  { id: "CA", name: "BOC",  flag: "🇨🇦",
+    m1Series: null,            m1OecdCode: "CAN", m1LocalToBillions: 0.001,
+    m2Series: "MABMM301CAM189S", localToBillions: 1e-9,
+    fxSeries: "DEXCAUS",       fxInverted: true  },
+  // CN: M1 and M2 both from FRED (individual CNY)
+  { id: "CN", name: "PBOC", flag: "🇨🇳",
+    m1Series: "MYAGM1CNM189N", m1OecdCode: null,  m1LocalToBillions: 1e-9,
+    m2Series: "MYAGM2CNM189N", localToBillions: 1e-9,
+    fxSeries: "DEXCHUS",       fxInverted: true  },
 ];
 
 // ── FRED helpers ──────────────────────────────────────────────────────────────
@@ -81,21 +180,122 @@ function parseObs(obs: FredObs[]): { date: string; value: number }[] {
     .filter((o) => !isNaN(o.value) && o.value > 0);
 }
 
+// ── OECD SDMX helpers (for M1 narrow money) ───────────────────────────────────
+//
+// The OECD SDMX REST API (sdmx.oecd.org) is free and requires no API key.
+// We use it to obtain narrow-money (M1) data for EU, UK, Japan and Canada
+// because the equivalent FRED series (MABMM101*) are not available in FRED's
+// catalog — FRED only carries OECD's broad-money (M3) series MABMM301*.
+//
+// OECD MEI_FIN monetary data is published in MILLIONS of national currency,
+// so the scale factor for M1 is 0.001 (millions NCU → billions NCU).
+//
+// OECD country codes used: EA (Euro area), GBR (UK), JPN (Japan), CAN (Canada).
+
+// Minimal SDMX-JSON 1.0 types for the fields we parse.
+// The OECD SDMX REST API returns SDMX-JSON 1.0; the Accept header below
+// requests this version explicitly.  If OECD ever upgrades to a newer version
+// the Accept header may need updating (structure changes are handled gracefully:
+// missing dimensions cause parseOecdSdmx to return an empty Map, showing "—").
+interface OecdDimValue  { id: string }
+interface OecdDimension { id: string; values: OecdDimValue[] }
+interface OecdSeriesObs {
+  observations: Record<string, [number, ...unknown[]]>;
+}
+interface OecdDataSet {
+  series: Record<string, OecdSeriesObs>;
+}
+interface OecdSdmxBody {
+  dataSets:  OecdDataSet[];
+  structure: {
+    dimensions: {
+      series:      OecdDimension[];
+      observation: OecdDimension[];
+    };
+  };
+}
+
+type OecdObsMap = Map<string, { date: string; value: number }[]>;
+
+function parseOecdSdmx(body: OecdSdmxBody): OecdObsMap {
+  const result = new Map<string, { date: string; value: number }[]>();
+  if (!body.dataSets?.length || !body.structure?.dimensions) return result;
+
+  const seriesDims  = body.structure.dimensions.series ?? [];
+  const obsDims     = body.structure.dimensions.observation ?? [];
+
+  const locDimIdx   = seriesDims.findIndex((d) => d.id === "LOCATION");
+  const timeDim     = obsDims.find((d) => d.id === "TIME_PERIOD");
+  if (locDimIdx === -1 || !timeDim) return result;
+
+  const locations   = seriesDims[locDimIdx].values;
+  const timePeriods = timeDim.values;
+
+  // SDMX series key format: "{indicatorIdx}:{locationIdx}:{frequencyIdx}"
+  // e.g. "0:1:0" → MABMM101 (index 0) · GBR (index 1) · M (index 0)
+  for (const [seriesKey, seriesData] of Object.entries(body.dataSets[0].series ?? {})) {
+    const parts   = seriesKey.split(":").map(Number);
+    const locCode = locations[parts[locDimIdx]]?.id;
+    if (!locCode) continue;
+
+    const obs: { date: string; value: number }[] = [];
+    for (const [obsIdxStr, obsArr] of Object.entries(seriesData.observations ?? {})) {
+      const timeIdx = parseInt(obsIdxStr, 10);
+      const date    = timePeriods[timeIdx]?.id;
+      const value   = obsArr[0];
+      if (!date || typeof value !== "number" || !isFinite(value) || value <= 0) continue;
+      // value <= 0 guard: OECD occasionally emits 0 or negative sentinels for
+      // confidential/revised data; these should not be treated as valid M1 figures.
+      obs.push({ date, value });
+    }
+    // OECD returns observations in ascending time order; sort newest-first
+    obs.sort((a, b) => b.date.localeCompare(a.date));
+    result.set(locCode, obs);
+  }
+  return result;
+}
+
+async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
+  if (oecdCodes.length === 0) return new Map();
+  // SDMX dataflow key: MABMM101 (narrow money indicator) · countries joined
+  // with "+" (multi-value selection) · M (monthly frequency)
+  const key = `MABMM101.${oecdCodes.join("+")}.M`;
+  const url =
+    `${OECD_BASE}/OECD,MEI_FIN,1.0/${encodeURIComponent(key)}` +
+    `?lastNObservations=${OBS_LIMIT}&format=jsondata`;
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/vnd.sdmx.data+json;version=1.0, application/json" },
+  });
+  if (!res.ok) throw new Error(`OECD HTTP ${res.status} for M1`);
+  return parseOecdSdmx((await res.json()) as OecdSdmxBody);
+}
+
 // ── Response types ────────────────────────────────────────────────────────────
 
 export interface M2CountryResult {
-  id:                string;
-  name:              string;
-  flag:              string;
-  error:             boolean;
-  latestUSD?:        number;        // billions USD (most recent month)
-  printing?:         boolean;       // true = M2 grew ≥ PRINT_THRESHOLD_PCT last month
-  // When printing === true:
-  printedUSD?:       number | null; // absolute increase in billions USD this month
-  printedDate?:      string | null; // ISO date (YYYY-MM-DD) of latest observation
-  // When printing === false:
-  lastPrintedDate?:  string | null; // ISO date of the most recent positive-growth month
-  lastPrintedUSD?:   number | null; // absolute increase in billions USD of that month
+  id:               string;
+  name:             string;
+  flag:             string;
+  error:            boolean;
+  // M1
+  m1USD?:           number | null;   // billions USD (most recent month)
+  m1ChangeUSD?:     number | null;   // MoM absolute change in billions USD
+  m1Date?:          string | null;   // ISO date of latest M1 observation
+  // M2 / broad money
+  m2USD?:           number | null;   // billions USD (most recent month)
+  m2ChangeUSD?:     number | null;   // MoM absolute change in billions USD
+  m2Date?:          string | null;   // ISO date of latest M2 observation
+  // Per-bank Printer Score
+  printerScore?:    number;          // 0–100 composite (M1 30%, M2 40%, renorm.)
+  scoreRegime?:     string;          // "Normal" | "Warming" | "High" | "Crisis"
+  printing?:        boolean;         // true when printerScore ≥ 40 (Warming+)
+  // legacy fields kept for backward compatibility
+  latestUSD?:       number;
+  printedUSD?:      number | null;
+  printedDate?:     string | null;
+  lastPrintedDate?: string | null;
+  lastPrintedUSD?:  number | null;
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -121,17 +321,35 @@ export default async function handler(
       ),
     ];
 
-    // Fetch all M2 series and all FX series in parallel
-    const [m2Settled, fxSettled] = await Promise.all([
+    // Collect OECD codes needed for M1 (EU/UK/JP/CA)
+    const oecdM1Codes = COUNTRIES
+      .map((c) => c.m1OecdCode)
+      .filter((code): code is string => code !== null);
+
+    // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
+    // and M1 from OECD (EU/UK/JP/CA) – all in parallel.
+    // For countries that use OECD M1, pass an empty resolved promise as FRED
+    // placeholder so the settled array stays index-aligned with COUNTRIES.
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map] = await Promise.all([
       Promise.allSettled(
-        COUNTRIES.map((c) => fetchFredObs(c.m2Series, apiKey, M2_LIMIT)),
+        COUNTRIES.map((c) =>
+          c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
+        ),
+      ),
+      Promise.allSettled(
+        COUNTRIES.map((c) => fetchFredObs(c.m2Series, apiKey, OBS_LIMIT)),
       ),
       Promise.allSettled(
         fxSeriesList.map((s) => fetchFredObs(s, apiKey, FX_LIMIT)),
       ),
+      fetchOecdNarrowMoney(oecdM1Codes)
+        // OECD M1 failure is intentionally non-fatal: the M1 columns show "—"
+        // rather than breaking the whole widget. This covers network issues or
+        // OECD API downtime without affecting M2 / printer-status data.
+        .catch((): OecdObsMap => new Map()),
     ]);
 
-    // Build FX lookup: series_id → latest USD rate
+    // Build FX lookup: series_id → latest USD conversion rate
     const fxMap: Record<string, number | null> = {};
     fxSeriesList.forEach((series, i) => {
       const result = fxSettled[i];
@@ -147,17 +365,7 @@ export default async function handler(
     const countries: M2CountryResult[] = COUNTRIES.map((cfg, i) => {
       const base = { id: cfg.id, name: cfg.name, flag: cfg.flag };
 
-      const m2Result = m2Settled[i];
-      if (m2Result.status === "rejected") {
-        return { ...base, error: true };
-      }
-
-      const validObs = parseObs(m2Result.value);
-      if (validObs.length < 2) {
-        return { ...base, error: true };
-      }
-
-      // Determine USD conversion factor
+      // Determine USD conversion factor (same currency for M1 and M2)
       let toUSD = 1;
       if (cfg.fxSeries !== null) {
         const rate = fxMap[cfg.fxSeries];
@@ -167,34 +375,87 @@ export default async function handler(
         toUSD = cfg.fxInverted ? 1 / rate : rate;
       }
 
-      // Convert observations to USD billions (take up to 13, most-recent first)
+      // ── M1 (narrow money) ────────────────────────────────────────────────
+      let m1USD:       number | null = null;
+      let m1ChangeUSD: number | null = null;
+      let m1Date:      string | null = null;
+
+      if (cfg.m1OecdCode !== null) {
+        // Source: OECD SDMX API – data in millions NCU, scale = 0.001
+        const oecdObs = oecdM1Map.get(cfg.m1OecdCode) ?? [];
+        if (oecdObs.length >= 2) {
+          const m1Scale = cfg.m1LocalToBillions * toUSD;
+          m1USD         = oecdObs[0].value * m1Scale;
+          m1ChangeUSD   = m1USD - oecdObs[1].value * m1Scale;
+          m1Date        = oecdObs[0].date;
+        }
+      } else if (cfg.m1Series !== null) {
+        // Source: FRED API
+        const m1Result = fredM1Settled[i];
+        if (m1Result.status === "fulfilled") {
+          const valid = parseObs(m1Result.value);
+          if (valid.length >= 2) {
+            const m1Scale = cfg.m1LocalToBillions * toUSD;
+            m1USD         = valid[0].value * m1Scale;
+            m1ChangeUSD   = m1USD - valid[1].value * m1Scale;
+            m1Date        = valid[0].date;
+          }
+        }
+      }
+      // M1 failure is non-fatal: country still shows with M1 columns = null
+
+      // ── M2 / broad money (always via FRED) ──────────────────────────────
+      const m2Result = m2Settled[i];
+      if (m2Result.status === "rejected") {
+        return { ...base, error: true };
+      }
+
+      const validM2 = parseObs(m2Result.value);
+      if (validM2.length < 2) {
+        return { ...base, error: true };
+      }
+
+      // Convert M2 observations to USD billions (up to 13 most-recent)
       // Step 1: raw FRED value × localToBillions → billions of local currency
       // Step 2: × toUSD → billions USD
-      const pts = validObs.slice(0, 13).map((o) => ({
+      const pts = validM2.slice(0, 13).map((o) => ({
         date:     o.date,
         valueUSD: o.value * cfg.localToBillions * toUSD,
       }));
 
       const latestUSD  = pts[0].valueUSD;
-      const prevMonUSD = pts[1]?.valueUSD ?? null;
+      const prevMonUSD = pts[1].valueUSD;
 
-      const momPct = prevMonUSD !== null
-        ? ((latestUSD - prevMonUSD) / prevMonUSD) * 100
-        : null;
+      const momPct   = ((latestUSD - prevMonUSD) / prevMonUSD) * 100;
 
-      const printing = momPct !== null && momPct >= PRINT_THRESHOLD_PCT;
+      // ── Per-bank Printer Score ─────────────────────────────────────────────
+      // Compute M1 MoM % from the absolute change (when M1 data is available)
+      // m1PrevUSD = m1USD - m1ChangeUSD; guard against divide-by-zero / negative prev
+      const m1PrevUSD   = m1USD !== null && m1ChangeUSD !== null ? m1USD - m1ChangeUSD : null;
+      const m1MomPct    = m1PrevUSD !== null && m1PrevUSD > 0 ? (m1ChangeUSD! / m1PrevUSD) * 100 : null;
 
+      const printerScore = computeBankPrinterScore(m1MomPct, momPct);
+      const scoreRegime  = bankScoreRegime(printerScore);
+
+      // printing = true when score ≥ 40 (Warming / High / Crisis)
+      const printing = printerScore >= 40;
+
+      const m2USD       = latestUSD;
+      const m2ChangeUSD = latestUSD - prevMonUSD;
+      const m2Date      = pts[0].date;
+
+      // ── Legacy fields (kept for any existing consumers) ──────────────────
+      // Use the M2 MoM % threshold (not the composite score) for the historical
+      // episode scan so that past "printed" months are not retroactively changed.
       let printedUSD:      number | null = null;
       let printedDate:     string | null = null;
       let lastPrintedDate: string | null = null;
       let lastPrintedUSD:  number | null = null;
 
-      if (printing && prevMonUSD !== null) {
-        // Printer is ON — report the current month's increase
-        printedUSD  = latestUSD - prevMonUSD;
-        printedDate = pts[0].date;
+      if (momPct >= PRINT_THRESHOLD_PCT) {
+        printedUSD  = m2ChangeUSD;
+        printedDate = m2Date;
       } else {
-        // Printer is OFF — scan back to find the most recent printing month
         for (let j = 1; j < pts.length - 1; j++) {
           const v     = pts[j].valueUSD;
           const vPrev = pts[j + 1].valueUSD;
@@ -210,8 +471,16 @@ export default async function handler(
       return {
         ...base,
         error: false,
-        latestUSD,
+        m1USD,
+        m1ChangeUSD,
+        m1Date,
+        m2USD,
+        m2ChangeUSD,
+        m2Date,
+        printerScore,
+        scoreRegime,
         printing,
+        latestUSD,
         printedUSD,
         printedDate,
         lastPrintedDate,
