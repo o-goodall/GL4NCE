@@ -9,6 +9,7 @@ export default function Home() {
       <PageMeta
         title="GL4NCE Dashboard"
         description="GL4NCE - Bitcoin DCA Signal Dashboard"
+        keywords="bitcoin, DCA, money printer, M2, inflation, macroeconomics"
       />
       <div className="grid grid-cols-12 gap-4 md:gap-6">
         {/* Row 1: Tile 1 (₿ Bitcoin Live Chart) + Tile 4 (DCA Signal) — inline */}

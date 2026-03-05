@@ -26,6 +26,9 @@ const NotFound = lazy(() => import("./pages/OtherPage/NotFound"));
 export default function App() {
   return (
     <Router>
+      <a href="#main-content" className="skip-to-content">
+        Skip to main content
+      </a>
       <ScrollToTop />
       <Suspense fallback={<div className="min-h-screen bg-white dark:bg-gray-900" />}>
         <Routes>

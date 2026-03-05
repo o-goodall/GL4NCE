@@ -1,0 +1,23 @@
+{
+  "name": "GL4NCE",
+  "short_name": "GL4NCE",
+  "description": "Real-time Bitcoin DCA signal dashboard with global money-printer metrics.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111112",
+  "theme_color": "#FFD300",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

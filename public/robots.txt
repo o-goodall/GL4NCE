@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gl4nce.vercel.app/sitemap.xml

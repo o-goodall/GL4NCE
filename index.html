@@ -2,9 +2,39 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFD300" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111112" media="(prefers-color-scheme: dark)" />
+
+    <!-- Primary meta -->
     <title>GL4NCE</title>
+    <meta name="description" content="GL4NCE – Real-time Bitcoin DCA signal dashboard with global money-printer metrics and geopolitical intelligence." />
+    <meta name="keywords" content="bitcoin, DCA, money printer, M2, inflation, macroeconomics, dashboard" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GL4NCE" />
+    <meta property="og:description" content="Real-time Bitcoin DCA signal dashboard with global money-printer metrics and geopolitical intelligence." />
+    <meta property="og:image" content="/images/logo/logo.svg" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="GL4NCE" />
+    <meta name="twitter:description" content="Real-time Bitcoin DCA signal dashboard." />
+
+    <!-- Favicons & manifest -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+
+    <!-- Preconnect to font origins for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" />
+
+    <!-- Inline theme initialisation (prevents FOUC, no render-blocking) -->
     <script>
       try {
         var theme = localStorage.getItem('theme') || 'dark';
