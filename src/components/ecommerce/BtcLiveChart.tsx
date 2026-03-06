@@ -5,7 +5,7 @@ import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Timeframe = "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y" | "ALL";
+type Timeframe = "1D" | "1W" | "1M" | "6M" | "1Y" | "ALL";
 /** [timestamp_ms, close_price] */
 type PricePoint = [number, number];
 
@@ -14,13 +14,12 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
   "1D":  { interval: "5m",  limit: 288,  cacheTTL:        60_000 },
   "1W":  { interval: "1h",  limit: 168,  cacheTTL:       300_000 },
   "1M":  { interval: "4h",  limit: 180,  cacheTTL:       900_000 },
-  "3M":  { interval: "1d",  limit: 90,   cacheTTL:     3_600_000 },
+  "6M":  { interval: "1d",  limit: 180,  cacheTTL:     3_600_000 },
   "1Y":  { interval: "1d",  limit: 365,  cacheTTL:     3_600_000 },
-  "5Y":  { interval: "1w",  limit: 260,  cacheTTL:   604_800_000 },
-  "ALL": { interval: "1w",  limit: 1000, cacheTTL:   604_800_000 },
+  "ALL": { interval: "1w",  limit: 1000, cacheTTL: 86_400_000 },
 };
 
-const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "5Y", "ALL"];
+const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "6M", "1Y", "ALL"];
 const MA_PERIOD = 200;
 const ATH_CACHE_KEY = "btc-ath";
 const ATH_CACHE_TTL = 86_400_000; // 24 hours
@@ -85,6 +84,13 @@ async function fetchKlines(tf: Timeframe, signal: AbortSignal): Promise<RawKline
 }
 
 async function fetchPrices(tf: Timeframe, signal: AbortSignal): Promise<PricePoint[]> {
+  if (tf === "ALL") {
+    // Use server-side CoinGecko proxy for full Bitcoin history (back to ~2013)
+    const res = await fetch("/api/btc-history", { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { data: PricePoint[] };
+    return data.data;
+  }
   const raw = await fetchKlines(tf, signal);
   // kline tuple: [openTime, open, high, low, close, ...]
   return raw.map((k) => [k[0] as number, parseFloat(k[4])] as PricePoint);
@@ -103,17 +109,16 @@ function calcSMA(data: PricePoint[], period: number): PricePoint[] {
 }
 
 // ── Gold overlay types & config ───────────────────────────────────────────────
-type GoldTF = "1M" | "3M" | "1Y" | "5Y" | "ALL";
+type GoldTF = "1M" | "6M" | "1Y" | "ALL";
 
 const GOLD_TF_MAP: Record<Timeframe, GoldTF> = {
-  "1D": "1M", "1W": "1M", "1M": "1M", "3M": "3M", "1Y": "1Y", "5Y": "5Y", "ALL": "ALL",
+  "1D": "1M", "1W": "1M", "1M": "1M", "6M": "6M", "1Y": "1Y", "ALL": "ALL",
 };
 
 const GOLD_TF_CONFIG: Record<GoldTF, { goldRange: string; goldInterval: string; cacheTTL: number }> = {
   "1M":  { goldRange: "1mo", goldInterval: "1d",  cacheTTL:     900_000 },
-  "3M":  { goldRange: "3mo", goldInterval: "1d",  cacheTTL:   3_600_000 },
+  "6M":  { goldRange: "6mo", goldInterval: "1d",  cacheTTL:   3_600_000 },
   "1Y":  { goldRange: "1y",  goldInterval: "1wk", cacheTTL:   3_600_000 },
-  "5Y":  { goldRange: "5y",  goldInterval: "1wk", cacheTTL:  86_400_000 },
   "ALL": { goldRange: "max", goldInterval: "1wk", cacheTTL:  86_400_000 },
 };
 
@@ -338,7 +343,7 @@ export default function BtcLiveChart() {
   }, []);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
-  // Rolling 200WMA line only makes sense on weekly-interval timeframes (ALL, 5Y)
+  // Rolling 200WMA line only makes sense on weekly-interval timeframes (ALL)
   const isWeeklyTF = TF_CONFIG[timeframe].interval === "1w";
   const maData = useMemo<PricePoint[]>(() => {
     if (!showMA || !isWeeklyTF || closeData.length <= MA_PERIOD) return [];
@@ -379,6 +384,20 @@ export default function BtcLiveChart() {
     return result;
   }, [closeData, showGold, ratioData, showMA, maData]);
 
+  // ── High / Low for the selected timeframe ─────────────────────────────────────
+  const { highPoint, lowPoint } = useMemo<{
+    highPoint: PricePoint | null;
+    lowPoint:  PricePoint | null;
+  }>(() => {
+    if (!closeData.length) return { highPoint: null, lowPoint: null };
+    let hi = closeData[0], lo = closeData[0];
+    for (const p of closeData) {
+      if (p[1] > hi[1]) hi = p;
+      if (p[1] < lo[1]) lo = p;
+    }
+    return { highPoint: hi, lowPoint: lo };
+  }, [closeData]);
+
   // ── Chart options ─────────────────────────────────────────────────────────────
   // maActive: true only when the MA series is actually present in `series`
   const maActive = showMA && maData.length > 0;
@@ -398,28 +417,23 @@ export default function BtcLiveChart() {
       ? (maActive ? [0, 0, 5]  : [0, 0])
       : (maActive ? [0, 5]     : [0]);
 
-    // Y-axis — single when no gold, dual (or triple with hidden MA axis) with gold
+    // Y-axis — hidden (we show high/low as point annotations instead)
     const yaxisConfig: ApexOptions["yaxis"] = showGold
       ? [
           {
             seriesName: "BTC/USD",
             opposite: true,
-            labels: {
-              style: { fontSize: "11px", colors: ["#6B7280"] },
-              formatter: (val: number) => `$${fmtNum(val)}`,
-            },
+            labels: { show: false },
+            axisBorder: { show: false },
+            axisTicks: { show: false },
           },
           {
             seriesName: "BTC/Gold (oz)",
             opposite: false,
-            labels: {
-              style: { fontSize: "11px", colors: ["#6B7280"] },
-              formatter: (val: number) => `${val.toFixed(1)} oz`,
-            },
+            labels: { show: false },
+            axisBorder: { show: false },
+            axisTicks: { show: false },
           },
-          // Add hidden MA axis ONLY when the MA series is actually in `series`.
-          // Keeping yaxis count === series count prevents ApexCharts from
-          // mis-assigning the oz axis to the MA line.
           ...(maActive ? [{
             seriesName: "BTC/USD",
             opposite:   true,
@@ -427,11 +441,9 @@ export default function BtcLiveChart() {
           }] : []),
         ]
       : {
-          opposite: true,
-          labels: {
-            style: { fontSize: "11px", colors: ["#6B7280"] },
-            formatter: (val: number) => `$${fmtNum(val)}`,
-          },
+          labels: { show: false },
+          axisBorder: { show: false },
+          axisTicks: { show: false },
         };
 
     // Custom tooltip — better spacing than the default shared tooltip
@@ -478,6 +490,70 @@ export default function BtcLiveChart() {
       );
     };
 
+    // ── High / low point annotations ────────────────────────────────────────────
+    const pointAnnotations: NonNullable<ApexOptions["annotations"]>["points"] = [];
+    if (highPoint && !showGold) {
+      // Determine text anchor based on position in dataset (avoid clipping on edges)
+      const hiIdx = closeData.findIndex((p) => p === highPoint);
+      const relPos = closeData.length > 1 ? hiIdx / (closeData.length - 1) : 0.5;
+      const anchor = relPos < 0.15 ? "start" : relPos > 0.85 ? "end" : "middle";
+      pointAnnotations.push({
+        x: highPoint[0],
+        y: highPoint[1],
+        seriesIndex: 0,
+        marker: {
+          size: 4,
+          fillColor: "#32CD32",
+          strokeColor: "#fff",
+          strokeWidth: 1.5,
+        },
+        label: {
+          text: `$${fmtNum(highPoint[1])}`,
+          borderColor: "transparent",
+          textAnchor: anchor,
+          offsetY: -10,
+          style: {
+            color: "#32CD32",
+            background: "transparent",
+            fontSize: "11px",
+            fontFamily: "Inter, sans-serif",
+            fontWeight: "600",
+            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+          },
+        },
+      });
+    }
+    if (lowPoint && !showGold) {
+      const loIdx = closeData.findIndex((p) => p === lowPoint);
+      const relPos = closeData.length > 1 ? loIdx / (closeData.length - 1) : 0.5;
+      const anchor = relPos < 0.15 ? "start" : relPos > 0.85 ? "end" : "middle";
+      pointAnnotations.push({
+        x: lowPoint[0],
+        y: lowPoint[1],
+        seriesIndex: 0,
+        marker: {
+          size: 4,
+          fillColor: "#FF4F4F",
+          strokeColor: "#fff",
+          strokeWidth: 1.5,
+        },
+        label: {
+          text: `$${fmtNum(lowPoint[1])}`,
+          borderColor: "transparent",
+          textAnchor: anchor,
+          offsetY: 18,
+          style: {
+            color: "#FF4F4F",
+            background: "transparent",
+            fontSize: "11px",
+            fontFamily: "Inter, sans-serif",
+            fontWeight: "600",
+            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+          },
+        },
+      });
+    }
+
     return {
       chart: {
         fontFamily: "Inter, sans-serif",
@@ -500,20 +576,14 @@ export default function BtcLiveChart() {
         type: "datetime",
         axisBorder: { show: false },
         axisTicks:  { show: false },
-        labels: {
-          datetimeUTC: false,
-          style: { fontSize: "11px", colors: "#6B7280", fontFamily: "Inter, sans-serif" },
-        },
+        labels: { show: false },
         crosshairs: { show: true },
         tooltip:    { enabled: false },
       },
       yaxis: yaxisConfig,
       grid: {
-        borderColor: "#1F2937",
-        strokeDashArray: 0,
-        xaxis: { lines: { show: false } },
-        yaxis: { lines: { show: true } },
-        padding: { left: 4, right: 4 },
+        show: false,
+        padding: { left: 8, right: 8, top: 8, bottom: 0 },
       },
       tooltip: {
         enabled: true,
@@ -521,48 +591,9 @@ export default function BtcLiveChart() {
         theme:   "dark",
         custom:  tooltipCustom,
       },
-      annotations: (ath !== null || showGold || showWmaAnnotation) ? {
+      annotations: {
+        points: pointAnnotations,
         yaxis: [
-          ...(ath !== null ? [{
-            y:               ath,
-            ...(showGold ? { yAxisIndex: 0 } : {}),
-            borderColor:     "#f59e0b",
-            strokeDashArray: 4,
-            borderWidth:     1,
-            label: {
-              text:        "ATH",
-              borderColor: "transparent",
-              position:    "right",
-              offsetX:     -4,
-              offsetY:     -6,
-              style: {
-                color:      "#f59e0b",
-                background: "transparent",
-                fontSize:   "10px",
-                fontFamily: "Inter, sans-serif",
-              },
-            },
-          }] : []),
-          ...(showGold ? [{
-            y:               goldAth.ratio,
-            yAxisIndex:      1,
-            borderColor:     "#FFD300",
-            strokeDashArray: 4,
-            borderWidth:     1,
-            label: {
-              text:        "ATH",
-              borderColor: "transparent",
-              position:    "right",
-              offsetX:     -4,
-              offsetY:     -6,
-              style: {
-                color:      "#FFD300",
-                background: "transparent",
-                fontSize:   "10px",
-                fontFamily: "Inter, sans-serif",
-              },
-            },
-          }] : []),
           // On non-weekly timeframes the rolling MA line isn't drawn, so show
           // the current 200WMA as a horizontal reference annotation instead.
           ...(showWmaAnnotation ? [{
@@ -586,10 +617,10 @@ export default function BtcLiveChart() {
             },
           }] : []),
         ],
-      } : {},
+      },
       legend: { show: false },
     };
-  }, [ath, showGold, goldAth, maActive, showMA, wmaPrice, showWmaAnnotation]);
+  }, [showGold, maActive, wmaPrice, showWmaAnnotation, highPoint, lowPoint, closeData]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;

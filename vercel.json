@@ -11,6 +11,9 @@
     },
     "api/printer.ts": {
       "maxDuration": 15
+    },
+    "api/btc-history.ts": {
+      "maxDuration": 15
     }
   }
 }
