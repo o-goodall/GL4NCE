@@ -662,7 +662,7 @@ export default function BtcLiveChart() {
                 )}
               </div>
               {ath !== null && (
-                <span className="text-xs font-medium text-amber-500 tabular-nums">
+                <span className="text-xs font-medium text-brand-500 tabular-nums">
                   ATH ${fmtNum(ath)}
                 </span>
               )}
@@ -674,7 +674,7 @@ export default function BtcLiveChart() {
                 <div className="w-px self-stretch bg-gray-200 dark:bg-gray-700" />
                 <div className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="text-2xl font-bold tabular-nums text-yellow-400">
+                    <span className="text-2xl font-bold tabular-nums text-brand-400">
                       {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
                     </span>
                     {tfGoldChangePct !== null && (
@@ -684,7 +684,7 @@ export default function BtcLiveChart() {
                       </Badge>
                     )}
                   </div>
-                  <span className="text-xs font-medium text-yellow-400/70 tabular-nums">
+                  <span className="text-xs font-medium text-brand-400/70 tabular-nums">
                     ATH {goldAth.ratio.toFixed(2)} oz
                   </span>
                 </div>
@@ -726,7 +726,7 @@ export default function BtcLiveChart() {
               onClick={() => setShowMA((m) => !m)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                 showMA
-                  ? "border-amber-400 bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"
+                  ? "border-brand-400 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
               }`}
               aria-pressed={showMA}
@@ -741,7 +741,7 @@ export default function BtcLiveChart() {
               }}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                 showGold
-                  ? "border-yellow-400 bg-yellow-50 text-yellow-600 dark:bg-yellow-500/10 dark:text-yellow-400"
+                  ? "border-brand-400 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
               }`}
               aria-pressed={showGold}

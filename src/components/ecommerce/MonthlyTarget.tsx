@@ -212,7 +212,7 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
       <div className="flex items-center gap-1">
         <span
           className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500 ${
-            active ? "bg-emerald-400" : "bg-gray-300 dark:bg-gray-600"
+            active ? "bg-brand-500" : "bg-gray-300 dark:bg-gray-600"
           }`}
         />
         <span
@@ -228,7 +228,7 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
       <span
         className={`text-[10px] tabular-nums transition-colors duration-300 ${
           active
-            ? "text-emerald-500 dark:text-emerald-400"
+            ? "text-brand-500 dark:text-brand-400"
             : "text-gray-400 dark:text-gray-500"
         }`}
       >
@@ -612,9 +612,9 @@ export default function MonthlyTarget() {
 
       {/* Phase label + signals footer */}
       <div className={`flex items-center justify-center gap-1.5 px-4 py-1.5 border-t border-gray-200 dark:border-gray-800 ${
-        isPhase1 ? "bg-amber-50/60 dark:bg-amber-900/10" : "bg-emerald-50/60 dark:bg-emerald-900/10"
+        "bg-brand-50/60 dark:bg-brand-900/10"
       }`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPhase1 ? "bg-amber-400" : "bg-emerald-400"}`} />
+        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-brand-500" />
         <span className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">
           {isPhase1 ? "Phase 1 · Accumulation" : "Phase 2 · Recovery / Bull"}
         </span>
@@ -727,7 +727,7 @@ export default function MonthlyTarget() {
             {preview1 !== null && (
               <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                 <div>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">${fmtAUD(preview1)}/day</span>
+                  <span className="font-semibold text-brand-600 dark:text-brand-400 text-sm">${fmtAUD(preview1)}/day</span>
                   {" "}× 423 days
                 </div>
                 <div>= ${fmtAUD(preview1 * DCA_WINDOW_DAYS)} total over {YEARS_IN_CYCLE} years</div>
@@ -764,7 +764,7 @@ export default function MonthlyTarget() {
               {preview2 !== null && (
                 <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                   <div>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">${fmtAUD(preview2)}/day</span>
+                    <span className="font-semibold text-brand-600 dark:text-brand-400 text-sm">${fmtAUD(preview2)}/day</span>
                     {" "}× 423 days
                   </div>
                   <div>= ${fmtAUD(preview2 * DCA_WINDOW_DAYS)} total over {YEARS_IN_CYCLE} years</div>

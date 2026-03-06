@@ -314,7 +314,7 @@ export default function BtcGoldRatio() {
               {ratio !== null ? fmt(ratio, 1) : "—"}
             </span>
             <span className="text-sm text-gray-500 dark:text-gray-400">oz</span>
-            <span className="text-xs font-medium text-amber-500 tabular-nums">
+            <span className="text-xs font-medium text-brand-500 tabular-nums">
               ATH {ath.ratio} oz
             </span>
           </div>

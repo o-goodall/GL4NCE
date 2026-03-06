@@ -58,7 +58,7 @@ function regimeCfg(regime: string): RegimeConfig {
   switch (regime) {
     case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
     case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
+    case "Warming": return { color: "text-brand-500 dark:text-brand-400", bg: "bg-brand-500"    };
     default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
   }
 }
@@ -81,8 +81,8 @@ const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
     dot:   "bg-orange-500 dark:bg-orange-400",
   },
   Warming: {
-    badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
-    dot:   "bg-yellow-500 dark:bg-yellow-400",
+    badge: "bg-brand-50 border-brand-200 text-brand-700 dark:bg-brand-500/10 dark:border-brand-500/30 dark:text-brand-300",
+    dot:   "bg-brand-500 dark:bg-brand-400",
   },
   Normal: {
     badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
@@ -252,7 +252,7 @@ export default function MoneyPrinter() {
                     : c.debtToGDP > 90
                       ? "text-red-500 dark:text-red-400"
                       : c.debtToGDP > 60
-                        ? "text-yellow-500 dark:text-yellow-300"
+                        ? "text-brand-500 dark:text-brand-300"
                         : "text-emerald-500 dark:text-emerald-400";
 
                   return (
