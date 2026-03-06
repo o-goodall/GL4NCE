@@ -18,22 +18,21 @@ const WEEKS_PER_YEAR  = 52;
 const DEFAULT_WEEKLY_AUD = 500; // $500/wk → $245/day
 
 // ── Cache config ───────────────────────────────────────────────────────────
-const ATH_CACHE_KEY      = "btc-ath";       // shared with BtcLiveChart
-const ATH_CACHE_TTL      = 86_400_000;      // 24 h
-const WMA_CACHE_KEY      = "btc-200wma";
-const WMA_CACHE_TTL      = 7 * 86_400_000;  // 7 days
-const WMA_PERIOD         = 200;
-const RSI_CACHE_KEY      = "btc-rsi14w";
-const RSI_CACHE_TTL      = 86_400_000;      // 24 h (weekly bar is incomplete until close)
-const RSI_PERIOD         = 14;
-const DCA_SETTINGS_KEY   = "dca-settings";  // user's custom DCA config
+const ATH_CACHE_KEY           = "btc-ath";           // shared with BtcLiveChart
+const ATH_CACHE_TTL           = 86_400_000;          // 24 h
+const WMA_CACHE_KEY           = "btc-200wma";
+const WMA_CACHE_TTL           = 7 * 86_400_000;      // 7 days
+const WMA_PERIOD              = 200;
+const CYCLE_PEAK_CACHE_KEY    = "btc-cycle-peak";    // ms timestamp of live-derived cycle peak
+const CYCLE_TROUGH_CACHE_KEY  = "btc-cycle-trough";  // ms timestamp of live-derived cycle trough
+const CYCLE_CACHE_TTL         = 86_400_000;          // 24 h
+const CYCLE_ZONE_DAYS         = 90;                  // "near" = within 90 days of peak or trough
+const DCA_SETTINGS_KEY        = "dca-settings";      // user's custom DCA config
 
 // ── Signal thresholds (informational only — do not affect DCA amount) ──────
 const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
-const RSI_OVERSOLD_THRESHOLD = 35;   // weekly RSI ≤ this → Phase 1 bear/accumulation confirmed
-const RSI_RECOVERY_THRESHOLD = 55;   // weekly RSI ≥ this → Phase 2 recovery/bull momentum
 
 // ── Fallbacks while async fetches are in-flight ────────────────────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
@@ -136,39 +135,70 @@ function deriveSMA(klines: RawKline[], period: number): number | null {
   return last.reduce((s, v) => s + v, 0) / period;
 }
 
-// ── Derive 14-week RSI using Wilder's smoothed method ────────────────────
-// Phase 1 signal: RSI ≤ 35 (weekly oversold = bear/accumulation confirmed)
-// Phase 2 signal: RSI ≥ 55 (above mid-line = recovery/bull momentum)
-function deriveRSI(klines: RawKline[], period: number): number | null {
-  const closes = klines.map((k) => parseFloat(k[4])).filter((v) => !isNaN(v));
-  if (closes.length < period + 1) return null;
+// ── Live cycle-event detection from weekly klines ────────────────────────
+// Finds the most recent cycle peak and subsequent trough algorithmically,
+// so the Near-Trough / Near-Peak signals self-update across future cycles.
+//
+//  Peak  = week whose HIGH is the all-time high within the klines window
+//  Trough = week whose CLOSE is the deepest after the detected peak
+//          (null if the peak is the most-recent bar — trough hasn't formed yet)
+//
+type CyclePhase = "near-peak" | "near-trough" | "mid-cycle";
+type NearestEvent = "peak" | "trough";
 
-  const changes: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    changes.push(closes[i] - closes[i - 1]);
+function detectCycleEvents(klines: RawKline[]): { peakMs: number; troughMs: number | null } | null {
+  if (klines.length < 26) return null; // need at least ~6 months
+
+  // Step 1: find the all-time high week (open-time of that candle = peakMs)
+  let peakIdx   = 0;
+  let peakHigh  = -Infinity;
+  for (let i = 0; i < klines.length; i++) {
+    const high = parseFloat(klines[i][2]);
+    if (!isNaN(high) && high > peakHigh) { peakHigh = high; peakIdx = i; }
+  }
+  const peakMs = klines[peakIdx][0] as number;
+
+  // Step 2: find the deepest weekly close after the peak
+  if (peakIdx >= klines.length - 1) return { peakMs, troughMs: null };
+  let troughIdx   = peakIdx + 1;
+  let troughClose = Infinity;
+  for (let i = peakIdx + 1; i < klines.length; i++) {
+    const close = parseFloat(klines[i][4]);
+    if (!isNaN(close) && close < troughClose) { troughClose = close; troughIdx = i; }
+  }
+  const troughMs = klines[troughIdx][0] as number;
+
+  return { peakMs, troughMs };
+}
+
+// ── Cycle-phase proximity ─────────────────────────────────────────────────
+function getCyclePhase(
+  now: number,
+  peakMs: number | null,
+  troughMs: number | null,
+): { phase: CyclePhase; daysAway: number; nearest: NearestEvent; isPast: boolean } {
+  const zoneMs = CYCLE_ZONE_DAYS * 86_400_000;
+
+  if (peakMs !== null) {
+    const d = Math.abs(now - peakMs);
+    if (d <= zoneMs) return { phase: "near-peak",   daysAway: Math.round(d / 86_400_000), nearest: "peak",   isPast: peakMs   < now };
+  }
+  if (troughMs !== null) {
+    const d = Math.abs(now - troughMs);
+    if (d <= zoneMs) return { phase: "near-trough", daysAway: Math.round(d / 86_400_000), nearest: "trough", isPast: troughMs < now };
   }
 
-  // Seed: simple average of first `period` gains/losses
-  let avgGain = 0;
-  let avgLoss = 0;
-  for (let i = 0; i < period; i++) {
-    if (changes[i] > 0) avgGain += changes[i];
-    else avgLoss += Math.abs(changes[i]);
-  }
-  avgGain /= period;
-  avgLoss /= period;
+  // Mid-cycle: report distance to whichever event is closer
+  const peakDist   = peakMs   !== null ? Math.abs(now - peakMs)   : Infinity;
+  const troughDist = troughMs !== null ? Math.abs(now - troughMs) : Infinity;
 
-  // Wilder's EMA (smoothing factor = 1/period)
-  for (let i = period; i < changes.length; i++) {
-    const gain = changes[i] > 0 ? changes[i] : 0;
-    const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  if (peakMs !== null && peakDist <= troughDist) {
+    return { phase: "mid-cycle", daysAway: Math.round(peakDist   / 86_400_000), nearest: "peak",   isPast: peakMs   < now };
   }
-
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
+  if (troughMs !== null) {
+    return { phase: "mid-cycle", daysAway: Math.round(troughDist / 86_400_000), nearest: "trough", isPast: troughMs < now };
+  }
+  return { phase: "mid-cycle", daysAway: 0, nearest: "peak", isPast: false };
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
@@ -220,6 +250,9 @@ export default function MonthlyTarget() {
   const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
   // Live ATH — PASS threshold (pauses DCA when price ≥ all-time high)
   const [highPriceUSD, setHighPriceUSD] = useState<number>(HIGH_PRICE_USD_FALLBACK);
+  // Live-derived cycle events (peak = ATH week; trough = deepest close after peak)
+  const [cyclePeakMs,   setCyclePeakMs]   = useState<number | null>(null);
+  const [cycleTroughMs, setCycleTroughMs] = useState<number | null>(null);
 
   // ── User DCA settings ─────────────────────────────────────────────────
   const [dcaSettings, setDcaSettings] = useState<DcaSettings>(loadDcaSettings);
@@ -271,13 +304,23 @@ export default function MonthlyTarget() {
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Fetch weekly klines (live ATH + 200WMA) ─────────────────────────────
+  // ── Fetch weekly klines (live ATH + 200WMA + cycle events) ─────────────
   useEffect(() => {
-    const cachedATH = getCachedNumber(ATH_CACHE_KEY, ATH_CACHE_TTL);
-    const cachedWMA = getCachedNumber(WMA_CACHE_KEY, WMA_CACHE_TTL);
-    if (cachedATH !== null) setHighPriceUSD(cachedATH);
-    if (cachedWMA !== null) setLowPriceUSD(cachedWMA);
-    if (cachedATH !== null && cachedWMA !== null) return;
+    const cachedATH      = getCachedNumber(ATH_CACHE_KEY,           ATH_CACHE_TTL);
+    const cachedWMA      = getCachedNumber(WMA_CACHE_KEY,           WMA_CACHE_TTL);
+    const cachedPeakMs   = getCachedNumber(CYCLE_PEAK_CACHE_KEY,    CYCLE_CACHE_TTL);
+    // Trough cache: positive = valid timestamp; -1 = checked, no trough yet; null = not checked
+    const rawTroughCache = getCachedNumber(CYCLE_TROUGH_CACHE_KEY,  CYCLE_CACHE_TTL);
+    const cachedTroughMs = rawTroughCache !== null && rawTroughCache > 0 ? rawTroughCache : null;
+    const troughChecked  = rawTroughCache !== null; // true when we've completed a cycle detection pass
+
+    if (cachedATH      !== null) setHighPriceUSD(cachedATH);
+    if (cachedWMA      !== null) setLowPriceUSD(cachedWMA);
+    if (cachedPeakMs   !== null) setCyclePeakMs(cachedPeakMs);
+    if (cachedTroughMs !== null) setCycleTroughMs(cachedTroughMs);
+
+    // All values fresh — no network fetch needed
+    if (cachedATH !== null && cachedWMA !== null && cachedPeakMs !== null && troughChecked) return;
 
     const ctrl = new AbortController();
     fetchWeeklyKlines(ctrl.signal)
@@ -294,6 +337,17 @@ export default function MonthlyTarget() {
           if (wma !== null && wma > 0) {
             setCachedNumber(WMA_CACHE_KEY, wma);
             setLowPriceUSD(wma);
+          }
+        }
+        if (cachedPeakMs === null || !troughChecked) {
+          const events = detectCycleEvents(klines);
+          if (events !== null) {
+            setCachedNumber(CYCLE_PEAK_CACHE_KEY, events.peakMs);
+            setCyclePeakMs(events.peakMs);
+            // Store -1 as sentinel when no trough has formed yet, so next load
+            // knows we've checked (and the skip condition fires correctly)
+            setCachedNumber(CYCLE_TROUGH_CACHE_KEY, events.troughMs ?? -1);
+            if (events.troughMs !== null) setCycleTroughMs(events.troughMs);
           }
         }
       })
@@ -379,8 +433,9 @@ export default function MonthlyTarget() {
   const daysSinceHalving  = Math.max(0, Math.floor(msSinceHalving / 86_400_000));
   const postHalvingActive = msSinceHalving > 0 && msSinceHalving <= POST_HALVING_WINDOW;
 
-  // Cycle peak/trough proximity (historical + projected cycle dates)
-  const { phase: cyclePhase, daysAway: cycleDaysAway, nearest: cycleNearest, isPast: cycleIsPast } = getCyclePhase(Date.now());
+  // Cycle peak/trough proximity — derived live from weekly klines
+  const { phase: cyclePhase, daysAway: cycleDaysAway, nearest: cycleNearest, isPast: cycleIsPast } =
+    getCyclePhase(Date.now(), cyclePeakMs, cycleTroughMs);
   const nearPeak   = cyclePhase === "near-peak";
   const nearTrough = cyclePhase === "near-trough";
 
