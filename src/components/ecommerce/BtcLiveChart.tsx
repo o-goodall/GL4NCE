@@ -351,18 +351,34 @@ export default function BtcLiveChart() {
   }, [closeData, showGold, ratioData]);
 
   // ── High / Low for the selected timeframe ─────────────────────────────────────
-  const { highPoint, lowPoint } = useMemo<{
-    highPoint: PricePoint | null;
-    lowPoint:  PricePoint | null;
+  const { highPoint, highIdx, lowPoint, lowIdx } = useMemo<{
+    highPoint: PricePoint | null; highIdx: number;
+    lowPoint:  PricePoint | null; lowIdx:  number;
   }>(() => {
-    if (!closeData.length) return { highPoint: null, lowPoint: null };
-    let hi = closeData[0], lo = closeData[0];
-    for (const p of closeData) {
-      if (p[1] > hi[1]) hi = p;
-      if (p[1] < lo[1]) lo = p;
+    if (!closeData.length) return { highPoint: null, highIdx: -1, lowPoint: null, lowIdx: -1 };
+    let hi = closeData[0], hiI = 0, lo = closeData[0], loI = 0;
+    for (let i = 1; i < closeData.length; i++) {
+      if (closeData[i][1] > hi[1]) { hi = closeData[i]; hiI = i; }
+      if (closeData[i][1] < lo[1]) { lo = closeData[i]; loI = i; }
     }
-    return { highPoint: hi, lowPoint: lo };
+    return { highPoint: hi, highIdx: hiI, lowPoint: lo, lowIdx: loI };
   }, [closeData]);
+
+  // ── High / Low for the BTC/Gold ratio series ──────────────────────────────────
+  const { goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx } = useMemo<{
+    goldHighPoint: PricePoint | null; goldHighIdx: number;
+    goldLowPoint:  PricePoint | null; goldLowIdx:  number;
+  }>(() => {
+    if (!showGold || !ratioData.length) {
+      return { goldHighPoint: null, goldHighIdx: -1, goldLowPoint: null, goldLowIdx: -1 };
+    }
+    let hi = ratioData[0], hiI = 0, lo = ratioData[0], loI = 0;
+    for (let i = 1; i < ratioData.length; i++) {
+      if (ratioData[i][1] > hi[1]) { hi = ratioData[i]; hiI = i; }
+      if (ratioData[i][1] < lo[1]) { lo = ratioData[i]; loI = i; }
+    }
+    return { goldHighPoint: hi, goldHighIdx: hiI, goldLowPoint: lo, goldLowIdx: loI };
+  }, [showGold, ratioData]);
 
   // ── Chart options ─────────────────────────────────────────────────────────────
   const options = useMemo<ApexOptions>(() => {
@@ -439,67 +455,111 @@ export default function BtcLiveChart() {
     };
 
     // ── High / low point annotations ────────────────────────────────────────────
-    const pointAnnotations: NonNullable<ApexOptions["annotations"]>["points"] = [];
-    if (highPoint && !showGold) {
-      // Clamp textAnchor to avoid labels overflowing at chart edges
-      const hiIdx = closeData.findIndex((p) => p === highPoint);
-      const relPos = closeData.length > 1 ? hiIdx / (closeData.length - 1) : 0.5;
-      const anchor = relPos < 0.1 ? "start" : relPos > 0.9 ? "end" : "middle";
-      pointAnnotations.push({
-        x: highPoint[0],
-        y: highPoint[1],
-        seriesIndex: 0,
-        marker: {
-          size: 4,
-          fillColor: "#32CD32",
-          strokeColor: "#fff",
-          strokeWidth: 1.5,
-        },
-        label: {
-          text: `$${fmtNum(highPoint[1])}`,
-          borderColor: "transparent",
-          textAnchor: anchor,
-          offsetY: -14,
-          style: {
-            color: "#32CD32",
-            background: "transparent",
-            fontSize: "11px",
-            fontFamily: "Inter, sans-serif",
-            fontWeight: "600",
-            padding: { top: 0, bottom: 0, left: 0, right: 0 },
-          },
-        },
-      });
+    // textAnchor based on relative x-position in the dataset (avoids edge clipping)
+    function anchorFor(idx: number, len: number): "start" | "middle" | "end" {
+      const rel = len > 1 ? idx / (len - 1) : 0.5;
+      return rel < 0.1 ? "start" : rel > 0.9 ? "end" : "middle";
     }
-    if (lowPoint && !showGold) {
-      const loIdx = closeData.findIndex((p) => p === lowPoint);
-      const relPos = closeData.length > 1 ? loIdx / (closeData.length - 1) : 0.5;
-      const anchor = relPos < 0.1 ? "start" : relPos > 0.9 ? "end" : "middle";
-      pointAnnotations.push({
-        x: lowPoint[0],
-        y: lowPoint[1],
-        seriesIndex: 0,
-        marker: {
-          size: 4,
-          fillColor: "#FF4F4F",
-          strokeColor: "#fff",
-          strokeWidth: 1.5,
-        },
-        label: {
-          text: `$${fmtNum(lowPoint[1])}`,
-          borderColor: "transparent",
-          textAnchor: anchor,
-          offsetY: 22,
-          style: {
-            color: "#FF4F4F",
-            background: "transparent",
-            fontSize: "11px",
-            fontFamily: "Inter, sans-serif",
-            fontWeight: "600",
-            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+
+    // Symmetric offset — both labels the same pixel distance from their dot
+    const LABEL_OFFSET = 16;
+
+    const pointAnnotations: NonNullable<ApexOptions["annotations"]>["points"] = [];
+
+    if (!showGold) {
+      // ── BTC USD high ────────────────────────────────────────────────────────────
+      if (highPoint) {
+        pointAnnotations.push({
+          x: highPoint[0],
+          y: highPoint[1],
+          seriesIndex: 0,
+          marker: { size: 4, fillColor: "#32CD32", strokeColor: "#fff", strokeWidth: 1.5 },
+          label: {
+            text: `$${fmtNum(highPoint[1])}`,
+            borderColor: "transparent",
+            textAnchor: anchorFor(highIdx, closeData.length),
+            offsetY: -LABEL_OFFSET,
+            style: {
+              color: "#32CD32",
+              background: "transparent",
+              fontSize: "11px",
+              fontFamily: "Inter, sans-serif",
+              fontWeight: "600",
+              padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            },
           },
-        },
-      });
+        });
+      }
+      // ── BTC USD low ─────────────────────────────────────────────────────────────
+      if (lowPoint) {
+        pointAnnotations.push({
+          x: lowPoint[0],
+          y: lowPoint[1],
+          seriesIndex: 0,
+          marker: { size: 4, fillColor: "#FF4F4F", strokeColor: "#fff", strokeWidth: 1.5 },
+          label: {
+            text: `$${fmtNum(lowPoint[1])}`,
+            borderColor: "transparent",
+            textAnchor: anchorFor(lowIdx, closeData.length),
+            offsetY: LABEL_OFFSET,
+            style: {
+              color: "#FF4F4F",
+              background: "transparent",
+              fontSize: "11px",
+              fontFamily: "Inter, sans-serif",
+              fontWeight: "600",
+              padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            },
+          },
+        });
+      }
+    } else {
+      // ── Gold oz high ────────────────────────────────────────────────────────────
+      if (goldHighPoint) {
+        pointAnnotations.push({
+          x: goldHighPoint[0],
+          y: goldHighPoint[1],
+          seriesIndex: 1,
+          marker: { size: 4, fillColor: "#32CD32", strokeColor: "#fff", strokeWidth: 1.5 },
+          label: {
+            text: `${goldHighPoint[1].toFixed(2)} oz`,
+            borderColor: "transparent",
+            textAnchor: anchorFor(goldHighIdx, ratioData.length),
+            offsetY: -LABEL_OFFSET,
+            style: {
+              color: "#32CD32",
+              background: "transparent",
+              fontSize: "11px",
+              fontFamily: "Inter, sans-serif",
+              fontWeight: "600",
+              padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            },
+          },
+        });
+      }
+      // ── Gold oz low ─────────────────────────────────────────────────────────────
+      if (goldLowPoint) {
+        pointAnnotations.push({
+          x: goldLowPoint[0],
+          y: goldLowPoint[1],
+          seriesIndex: 1,
+          marker: { size: 4, fillColor: "#FF4F4F", strokeColor: "#fff", strokeWidth: 1.5 },
+          label: {
+            text: `${goldLowPoint[1].toFixed(2)} oz`,
+            borderColor: "transparent",
+            textAnchor: anchorFor(goldLowIdx, ratioData.length),
+            offsetY: LABEL_OFFSET,
+            style: {
+              color: "#FF4F4F",
+              background: "transparent",
+              fontSize: "11px",
+              fontFamily: "Inter, sans-serif",
+              fontWeight: "600",
+              padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            },
+          },
+        });
+      }
     }
 
     return {
@@ -532,7 +592,7 @@ export default function BtcLiveChart() {
       grid: {
         show: false,
         // Extra vertical padding keeps high/low annotation labels inside the render area
-        padding: { left: 8, right: 8, top: 48, bottom: 36 },
+        padding: { left: 8, right: 8, top: 54, bottom: 54 },
       },
       tooltip: {
         enabled: true,
@@ -545,7 +605,7 @@ export default function BtcLiveChart() {
       },
       legend: { show: false },
     };
-  }, [showGold, highPoint, lowPoint, closeData]);
+  }, [showGold, highPoint, highIdx, lowPoint, lowIdx, closeData, goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx, ratioData]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
