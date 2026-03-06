@@ -158,7 +158,7 @@ function MarketCard({
       <p
         className={[
           "font-medium text-gray-800 dark:text-white/90 line-clamp-2 mb-2",
-          "group-hover:text-brand-700 dark:group-hover:text-brand-300 transition-colors",
+          "group-hover:text-brand-800 dark:group-hover:text-brand-200 transition-colors",
           compact ? "text-xs" : "text-sm",
         ].join(" ")}
       >
@@ -181,7 +181,7 @@ function MarketCard({
             <span>Resolves {formatEndDate(market.endDate)}</span>
           </>
         )}
-        <span className="ml-auto text-brand-500 dark:text-brand-400 opacity-0 group-hover:opacity-100 transition-opacity">
+        <span className="ml-auto text-brand-800 dark:text-brand-200 opacity-0 group-hover:opacity-100 transition-opacity">
           ↗
         </span>
       </div>
@@ -496,7 +496,7 @@ export default function GeopoliticalMarkets() {
             onClick={() => setCategory(cat.id)}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               category === cat.id
-                ? "bg-brand-500 text-white dark:bg-brand-600"
+                ? "bg-brand-500 text-gray-900 dark:bg-brand-600 dark:text-gray-900"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
             }`}
             aria-pressed={category === cat.id}

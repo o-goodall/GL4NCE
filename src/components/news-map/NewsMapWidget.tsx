@@ -33,14 +33,14 @@ const worldMill = (() => {
   } as typeof rawWorldMill;
 })();
 
-const HOVER_FILL = "#FFD300"; // brand-500 gold — used for hover AND trending region highlight
+const HOVER_FILL = "#00b8ff"; // brand-500 — used for hover AND trending region highlight
 const LIGHT_DEFAULT_FILL = "#D0D5DD";
 
 /** Marker fill colour keyed by alert level — matches the legend dots in the footer */
 const ALERT_LEVEL_MARKER_FILL: Record<string, string> = {
   critical: "#F04438", // error-500 red
   high:     "#F79009", // warning-500 orange
-  medium:   "#FFD300", // brand-500 gold
+  medium:   "#00b8ff", // brand-500
   watch:    "#98A2B3", // gray-400
 };
 

@@ -30,7 +30,7 @@ const ArticleRow = memo(function ArticleRow({ article }: { article: PulseArticle
       className="group block rounded-xl border px-3 py-2 transition-colors border-gray-100 bg-gray-50 hover:border-brand-300 hover:bg-brand-50/40 dark:border-gray-800 dark:bg-white/[0.02] dark:hover:border-brand-700/50 dark:hover:bg-brand-900/10"
       title={article.title}
     >
-      <p className="text-xs font-medium text-gray-800 dark:text-white/90 line-clamp-2 mb-1.5 group-hover:text-brand-700 dark:group-hover:text-brand-300 transition-colors">
+      <p className="text-xs font-medium text-gray-800 dark:text-white/90 line-clamp-2 mb-1.5 group-hover:text-brand-800 dark:group-hover:text-brand-200 transition-colors">
         {article.title}
       </p>
       <div className="flex items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
@@ -40,7 +40,7 @@ const ArticleRow = memo(function ArticleRow({ article }: { article: PulseArticle
         <span className="shrink-0 tabular-nums">{relativeTime(article.time)}</span>
         <span className="truncate">{article.source}</span>
         {article.link && (
-          <span className="ml-auto shrink-0 text-brand-500 dark:text-brand-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="ml-auto shrink-0 text-brand-800 dark:text-brand-200 opacity-0 group-hover:opacity-100 transition-opacity">
             ↗
           </span>
         )}
@@ -134,7 +134,7 @@ export default function PulseFeed() {
           </div>
           <button
             onClick={refresh}
-            className="text-xs text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors"
+            className="text-xs text-brand-800 hover:text-brand-700 dark:text-brand-200 dark:hover:text-brand-300 transition-colors"
             aria-label="Retry loading pulse feed"
           >
             Retry ↺
@@ -164,7 +164,7 @@ export default function PulseFeed() {
           )}
           <button
             onClick={refresh}
-            className="text-xs text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors"
+            className="text-xs text-brand-800 hover:text-brand-700 dark:text-brand-200 dark:hover:text-brand-300 transition-colors"
             aria-label="Refresh pulse feed"
           >
             ↺
@@ -178,7 +178,7 @@ export default function PulseFeed() {
           onClick={() => handleGroupChange(ALL_GROUP)}
           className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
             activeGroup === ALL_GROUP
-              ? "bg-brand-500 text-white dark:bg-brand-600"
+              ? "bg-brand-500 text-gray-900 dark:bg-brand-600 dark:text-gray-900"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
           }`}
         >
@@ -190,7 +190,7 @@ export default function PulseFeed() {
             onClick={() => handleGroupChange(group.label)}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               activeGroup === group.label
-                ? "bg-brand-500 text-white dark:bg-brand-600"
+                ? "bg-brand-500 text-gray-900 dark:bg-brand-600 dark:text-gray-900"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
             }`}
           >

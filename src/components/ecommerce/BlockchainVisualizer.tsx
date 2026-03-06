@@ -139,9 +139,9 @@ function fmtReward(sats: number): string {
 
 function pctColor(n: number | null): string {
   if (n === null) return "text-gray-400 dark:text-gray-500";
-  if (n > 5)  return "text-emerald-500 dark:text-emerald-400";
-  if (n > 0)  return "text-blue-500 dark:text-blue-400";
-  if (n > -5) return "text-yellow-500 dark:text-yellow-400";
+  if (n > 5)  return "text-success-500 dark:text-success-400";
+  if (n > 0)  return "text-success-400 dark:text-success-300";
+  if (n > -5) return "text-warning-400 dark:text-warning-300";
   return "text-red-500 dark:text-red-400";
 }
 
@@ -252,7 +252,7 @@ function PendingBlock({
       }`}
     >
       {/* Inner div: clips the rising fill & particles inside the card boundary */}
-      <div className="relative overflow-hidden rounded-[10px] border-2 border-dashed border-amber-400/60 dark:border-amber-500/35 bg-gray-50 dark:bg-white/[0.025]">
+      <div className="relative overflow-hidden rounded-[10px] border-2 border-dashed border-brand-400/60 dark:border-brand-500/35 bg-gray-50 dark:bg-white/[0.025]">
 
         {/* Gradient fill — rises from the bottom */}
         {fillPct !== null && (
@@ -261,7 +261,7 @@ function PendingBlock({
             style={{
               height: `${fillPct}%`,
               background:
-                "linear-gradient(to top, rgba(245,158,11,0.28) 0%, rgba(251,191,36,0.10) 70%, transparent 100%)",
+                "linear-gradient(to top, rgba(0,184,255,0.28) 0%, rgba(0,184,255,0.10) 70%, transparent 100%)",
             }}
           />
         )}
@@ -270,7 +270,7 @@ function PendingBlock({
         {PARTICLE_POSITIONS.map((leftPct, i) => (
           <div
             key={i}
-            className={`absolute rounded-full bg-amber-400 dark:bg-amber-500 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
+            className={`absolute rounded-full bg-brand-500 dark:bg-brand-400 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
             style={{
               width:          i % 2 === 0 ? "5px" : "4px",
               height:         i % 2 === 0 ? "5px" : "4px",
@@ -286,10 +286,10 @@ function PendingBlock({
         <div className="relative z-10 p-2.5">
           {/* Header */}
           <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none">
+            <span className="text-[9px] font-bold text-brand-800 dark:text-brand-200 uppercase tracking-widest leading-none">
               Next
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500 animate-pulse shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-500 dark:bg-brand-400 animate-pulse shrink-0" />
           </div>
 
           <div className="text-sm font-bold tabular-nums text-gray-700 dark:text-gray-200 leading-tight">
@@ -318,7 +318,7 @@ function PendingBlock({
           {fillPct !== null && (
             <div className="mt-2.5">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold leading-none">
+                <span className="text-[9px] text-brand-800 dark:text-brand-200 font-semibold leading-none">
                   {fillPct >= 100 ? "Full" : `${fillPct}%`}
                 </span>
                 <span className="text-[8px] text-gray-400 dark:text-gray-500 leading-none">fill</span>
@@ -328,7 +328,7 @@ function PendingBlock({
                   className="h-full rounded-full transition-all duration-[1200ms]"
                   style={{
                     width: `${fillPct}%`,
-                    background: "linear-gradient(to right, rgba(245,158,11,0.85), rgba(251,146,60,0.95))",
+                    background: "linear-gradient(to right, rgba(0,184,255,0.85), rgba(0,184,255,0.95))",
                   }}
                 />
               </div>
@@ -361,20 +361,20 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         isNew ? `animate-[btc-block-enter_${BLOCK_ENTER_DURATION}_ease-out_both]` : ""
       } ${
         isLatest
-          ? `bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
+          ? `bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
           : "bg-white border-gray-100 dark:bg-white/[0.025] dark:border-gray-800"
       }`}
     >
       {/* Height */}
       <div className={`text-sm font-bold tabular-nums leading-tight ${
-        isLatest ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
+        isLatest ? "text-brand-800 dark:text-brand-200" : "text-gray-700 dark:text-gray-200"
       }`}>
         #{fmtNum(block.height)}
       </div>
 
       {/* Time */}
       <div className={`text-[9px] mt-0.5 leading-none ${
-        isLatest ? "text-orange-400/80 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
+        isLatest ? "text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-gray-500"
       }`}>
         {timeAgo(block.timestamp)} ago
       </div>
@@ -396,7 +396,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         {reward != null && (
           <div className="flex items-center justify-between gap-1">
             <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">Reward</span>
-            <span className="text-[9px] tabular-nums text-amber-500 dark:text-amber-400 leading-none">
+            <span className="text-[9px] tabular-nums text-brand-800 dark:text-brand-200 leading-none">
               {fmtReward(reward)}
             </span>
           </div>
@@ -404,7 +404,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         {pool && (
           <div
             className={`text-[8px] truncate leading-none mt-0.5 ${
-              isLatest ? "text-orange-400/70 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
+              isLatest ? "text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-gray-500"
             }`}
             title={pool}
           >
@@ -421,13 +421,13 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
             style={{
               width: `${fullness}%`,
               background: isLatest
-                ? "linear-gradient(to right, rgba(251,146,60,0.8), rgba(245,158,11,0.95))"
+                ? "linear-gradient(to right, rgba(0,184,255,0.8), rgba(0,184,255,0.95))"
                 : "rgba(156,163,175,0.6)",
             }}
           />
         </div>
         <div className={`text-[8px] tabular-nums mt-0.5 text-right leading-none ${
-          isLatest ? "text-orange-400/70 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
+          isLatest ? "text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-gray-500"
         }`}>
           {fullness}%
         </div>
@@ -474,10 +474,10 @@ function GhostBlockCard() {
 /** Directional arrow connecting blocks in the chain; `isPrimary` = pending→latest */
 function ChainArrow({ isPrimary = false }: { isPrimary?: boolean }) {
   const lineColor  = isPrimary
-    ? "bg-amber-300 dark:bg-amber-600/50"
+    ? "bg-brand-400 dark:bg-brand-600/50"
     : "bg-gray-200 dark:bg-gray-700";
   const arrowColor = isPrimary
-    ? "border-l-amber-300 dark:border-l-amber-600/50"
+    ? "border-l-brand-400 dark:border-l-brand-600/50"
     : "border-l-gray-200 dark:border-l-gray-700";
   return (
     <div className="flex items-center mx-1.5 shrink-0">
@@ -626,7 +626,7 @@ export default function BlockchainVisualizer() {
           pct={halvingPct}
           percentageLabel={halvingPct !== null ? `${halvingPct.toFixed(1)}%` : null}
           right={blocksToHalving !== null ? `${fmtNum(blocksToHalving)} blocks left` : null}
-          gradient="linear-gradient(to right, rgba(245,158,11,0.8), rgba(251,191,36,0.95))"
+          gradient="linear-gradient(to right, rgba(0,184,255,0.8), rgba(0,184,255,0.95))"
           loading={loading}
         />
         <ProgressRow
@@ -634,7 +634,7 @@ export default function BlockchainVisualizer() {
           pct={epochProgress}
           percentageLabel={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : null}
           right={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : null}
-          gradient="linear-gradient(to right, rgba(251,146,60,0.8), rgba(239,68,68,0.7))"
+          gradient="linear-gradient(to right, rgba(0,184,255,0.7), rgba(0,151,209,0.9))"
           loading={loading}
         />
       </div>

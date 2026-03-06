@@ -17,18 +17,18 @@ const CATEGORY_STYLES: Record<EventCategory, string> = {
   violent:        "bg-error-100 text-error-900 dark:bg-error-900/30 dark:text-error-300",
   terrorism:      "bg-error-200 text-error-900 dark:bg-error-800/40 dark:text-error-200",
   military:       "bg-orange-200 text-orange-900 dark:bg-orange-800/40 dark:text-orange-200",
-  escalation:     "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-300",
-  diplomatic:     "bg-purple-100 text-purple-900 dark:bg-purple-900/30 dark:text-purple-300",
-  extremism:      "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200",
-  economic:       "bg-blue-light-100 text-blue-light-900 dark:bg-blue-light-900/30 dark:text-blue-light-300",
-  commodities:    "bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-200",
-  cyber:          "bg-indigo-100 text-indigo-900 dark:bg-indigo-900/30 dark:text-indigo-300",
-  health:         "bg-teal-100 text-teal-900 dark:bg-teal-900/30 dark:text-teal-300",
-  environmental:  "bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300",
-  disaster:       "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300",
-  infrastructure: "bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-300",
-  crime:          "bg-rose-100 text-rose-900 dark:bg-rose-900/30 dark:text-rose-300",
-  piracy:         "bg-cyan-100 text-cyan-900 dark:bg-cyan-900/30 dark:text-cyan-300",
+  escalation:     "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200",
+  diplomatic:     "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  extremism:      "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  economic:       "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  commodities:    "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  cyber:          "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  health:         "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  environmental:  "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  disaster:       "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  infrastructure: "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
+  crime:          "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200",
+  piracy:         "bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200",
   protest:        "bg-warning-100 text-warning-900 dark:bg-warning-900/30 dark:text-warning-400",
   minor:          "bg-warning-100 text-warning-900 dark:bg-warning-900/30 dark:text-warning-400",
 };
@@ -89,7 +89,7 @@ const EventRow = memo(function EventRow({ event }: { event: NewsEvent }) {
               href={event.link}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-0.5 rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+              className="inline-flex items-center gap-0.5 rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-200 dark:hover:bg-brand-900/40"
               onClick={(e) => e.stopPropagation()}
             >
               Read ↗
@@ -190,7 +190,7 @@ export default function EventModal({ country, onClose, markets }: EventModalProp
                     className="group block rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-gray-800 dark:bg-white/[0.02] dark:hover:border-brand-700/50 dark:hover:bg-brand-900/10"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <p className="font-medium text-gray-700 dark:text-white/80 line-clamp-2 mb-1.5 group-hover:text-brand-700 dark:group-hover:text-brand-300 transition-colors">
+                    <p className="font-medium text-gray-700 dark:text-white/80 line-clamp-2 mb-1.5 group-hover:text-brand-800 dark:group-hover:text-brand-200 transition-colors">
                       {m.question}
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -208,7 +208,7 @@ export default function EventModal({ country, onClose, markets }: EventModalProp
                           {o.probability}% {o.label}
                         </span>
                       ))}
-                      <span className="ml-auto text-[10px] text-brand-500 dark:text-brand-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="ml-auto text-[10px] text-brand-800 dark:text-brand-200 opacity-0 group-hover:opacity-100 transition-opacity">
                         ↗
                       </span>
                     </div>

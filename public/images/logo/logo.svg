@@ -6,7 +6,7 @@
   </defs>
 
   <!-- Icon background: rounded square -->
-  <rect width="40" height="40" rx="10" ry="10" fill="#FFD300" filter="url(#iconShadow)"/>
+  <rect width="40" height="40" rx="10" ry="10" fill="#00b8ff" filter="url(#iconShadow)"/>
 
   <!-- Eye icon (SVGRepo 193783), white, centered in 40x40 box -->
   <svg x="4" y="4" width="32" height="32" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -14,5 +14,5 @@
   </svg>
 
   <!-- GL4NCE text -->
-  <text x="48" y="27" font-family="'Euclid Circular A', 'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="21" fill="#121212">GL<tspan fill="#E5A900">4</tspan>NCE</text>
+  <text x="48" y="27" font-family="'Euclid Circular A', 'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="21" fill="#121212">GL<tspan fill="#00b8ff">4</tspan>NCE</text>
 </svg>

@@ -389,8 +389,8 @@ export default function BtcLiveChart() {
   const options = useMemo<ApexOptions>(() => {
     // Series colors — sized to the exact number of active series
     const colors = showGold
-      ? (maActive ? ["#10b981", "#FFD300", "#f59e0b"] : ["#10b981", "#FFD300"])
-      : (maActive ? ["#10b981", "#f59e0b"] : ["#10b981"]);
+      ? (maActive ? ["#10b981", "#f59e0b", "#94a3b8"] : ["#10b981", "#f59e0b"])
+      : (maActive ? ["#10b981", "#94a3b8"] : ["#10b981"]);
     const strokeWidths = showGold
       ? (maActive ? [2, 2, 1.5] : [2, 2])
       : (maActive ? [2, 1.5]   : [2]);
@@ -454,8 +454,8 @@ export default function BtcLiveChart() {
 
       const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
         { color: "#10b981", label: "BTC",          fmt: (v) => `$${fmtNum(v)}` },
-        ...(showGold ? [{ color: "#FFD300", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
-        ...(maActive ? [{ color: "#f59e0b", label: "200WMA", fmt: (v: number) => `$${fmtNum(v)}` }] : []),
+        ...(showGold ? [{ color: "#f59e0b", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
+        ...(maActive ? [{ color: "#94a3b8", label: "200WMA", fmt: (v: number) => `$${fmtNum(v)}` }] : []),
       ];
 
       const rows = defs.map((d, i) => {
@@ -526,6 +526,26 @@ export default function BtcLiveChart() {
           ...(ath !== null ? [{
             y:               ath,
             ...(showGold ? { yAxisIndex: 0 } : {}),
+            borderColor:     "#00b8ff",
+            strokeDashArray: 4,
+            borderWidth:     1,
+            label: {
+              text:        "ATH",
+              borderColor: "transparent",
+              position:    "right",
+              offsetX:     -4,
+              offsetY:     -6,
+              style: {
+                color:      "#00b8ff",
+                background: "transparent",
+                fontSize:   "10px",
+                fontFamily: "Inter, sans-serif",
+              },
+            },
+          }] : []),
+          ...(showGold ? [{
+            y:               goldAth.ratio,
+            yAxisIndex:      1,
             borderColor:     "#f59e0b",
             strokeDashArray: 4,
             borderWidth:     1,
@@ -537,26 +557,6 @@ export default function BtcLiveChart() {
               offsetY:     -6,
               style: {
                 color:      "#f59e0b",
-                background: "transparent",
-                fontSize:   "10px",
-                fontFamily: "Inter, sans-serif",
-              },
-            },
-          }] : []),
-          ...(showGold ? [{
-            y:               goldAth.ratio,
-            yAxisIndex:      1,
-            borderColor:     "#FFD300",
-            strokeDashArray: 4,
-            borderWidth:     1,
-            label: {
-              text:        "ATH",
-              borderColor: "transparent",
-              position:    "right",
-              offsetX:     -4,
-              offsetY:     -6,
-              style: {
-                color:      "#FFD300",
                 background: "transparent",
                 fontSize:   "10px",
                 fontFamily: "Inter, sans-serif",
@@ -568,7 +568,7 @@ export default function BtcLiveChart() {
           ...(showWmaAnnotation ? [{
             y:               wmaPrice as number,
             ...(showGold ? { yAxisIndex: 0 } : {}),
-            borderColor:     "#f59e0b",
+            borderColor:     "#94a3b8",
             strokeDashArray: 4,
             borderWidth:     1,
             label: {
@@ -578,7 +578,7 @@ export default function BtcLiveChart() {
               offsetX:     -4,
               offsetY:     -6,
               style: {
-                color:      "#f59e0b",
+                color:      "#94a3b8",
                 background: "transparent",
                 fontSize:   "10px",
                 fontFamily: "Inter, sans-serif",
@@ -628,8 +628,7 @@ export default function BtcLiveChart() {
         <div>
           <div className="flex items-center gap-2">
             <span
-              className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-500 leading-none"
-              aria-label="Bitcoin"
+              className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-800 dark:text-brand-200 leading-none"
             >
               ₿
             </span>
@@ -662,7 +661,7 @@ export default function BtcLiveChart() {
                 )}
               </div>
               {ath !== null && (
-                <span className="text-xs font-medium text-amber-500 tabular-nums">
+                <span className="text-xs font-medium text-brand-800 dark:text-brand-200 tabular-nums">
                   ATH ${fmtNum(ath)}
                 </span>
               )}
@@ -674,7 +673,7 @@ export default function BtcLiveChart() {
                 <div className="w-px self-stretch bg-gray-200 dark:bg-gray-700" />
                 <div className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="text-2xl font-bold tabular-nums text-yellow-400">
+                    <span className="text-2xl font-bold tabular-nums text-brand-700 dark:text-brand-300">
                       {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
                     </span>
                     {tfGoldChangePct !== null && (
@@ -684,7 +683,7 @@ export default function BtcLiveChart() {
                       </Badge>
                     )}
                   </div>
-                  <span className="text-xs font-medium text-yellow-400/70 tabular-nums">
+                  <span className="text-xs font-medium text-brand-800 dark:text-brand-300 tabular-nums">
                     ATH {goldAth.ratio.toFixed(2)} oz
                   </span>
                 </div>
@@ -726,7 +725,7 @@ export default function BtcLiveChart() {
               onClick={() => setShowMA((m) => !m)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                 showMA
-                  ? "border-amber-400 bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"
+                  ? "border-brand-400 bg-brand-50 text-brand-800 dark:bg-brand-500/10 dark:text-brand-200"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
               }`}
               aria-pressed={showMA}
@@ -741,7 +740,7 @@ export default function BtcLiveChart() {
               }}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                 showGold
-                  ? "border-yellow-400 bg-yellow-50 text-yellow-600 dark:bg-yellow-500/10 dark:text-yellow-400"
+                  ? "border-brand-400 bg-brand-50 text-brand-800 dark:bg-brand-500/10 dark:text-brand-200"
                   : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
               }`}
               aria-pressed={showGold}

@@ -44,18 +44,18 @@ layer(base);
   --color-white: #ffffff;
   --color-black: #121212;
 
-  --color-brand-25: #FFFDE7;
-  --color-brand-50: #FFF9C4;
-  --color-brand-100: #FFF176;
-  --color-brand-200: #FFDB33;
-  --color-brand-300: #FFD900;
-  --color-brand-400: #F0C200;
-  --color-brand-500: #FFD300;
-  --color-brand-600: #E5A900;
-  --color-brand-700: #5A3C00;
-  --color-brand-800: #3D2800;
-  --color-brand-900: #221500;
-  --color-brand-950: #100900;
+  --color-brand-25:  #f0fbff;
+  --color-brand-50:  #e0f6fe;
+  --color-brand-100: #b9ecfd;
+  --color-brand-200: #7cddfc;
+  --color-brand-300: #36cffb;
+  --color-brand-400: #0cc4f8;
+  --color-brand-500: #00b8ff;
+  --color-brand-600: #0097d1;
+  --color-brand-700: #0076a4;
+  --color-brand-800: #004f6e;
+  --color-brand-900: #003650;
+  --color-brand-950: #001e30;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -138,20 +138,20 @@ layer(base);
 
   --color-theme-pink-500: #ee46bc;
 
-  --color-theme-gold-500: #FFD300;
+  --color-theme-brand-500: #00b8ff;
 
-  --shadow-theme-md: 0px 4px 10px -2px rgba(255, 211, 0, 0.07),
+  --shadow-theme-md: 0px 4px 10px -2px rgba(0, 184, 255, 0.07),
     0px 2px 4px -2px rgba(16, 24, 40, 0.04);
-  --shadow-theme-lg: 0px 12px 20px -4px rgba(255, 211, 0, 0.08),
+  --shadow-theme-lg: 0px 12px 20px -4px rgba(0, 184, 255, 0.08),
     0px 4px 6px -2px rgba(16, 24, 40, 0.03);
   --shadow-theme-sm: 0px 1px 4px 0px rgba(16, 24, 40, 0.07),
     0px 1px 2px 0px rgba(16, 24, 40, 0.04);
   --shadow-theme-xs: 0px 1px 3px 0px rgba(16, 24, 40, 0.04);
-  --shadow-theme-xl: 0px 20px 28px -4px rgba(255, 211, 0, 0.09),
+  --shadow-theme-xl: 0px 20px 28px -4px rgba(0, 184, 255, 0.09),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #18181B, 5px 0 0 #18181B;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(255, 211, 0, 0.22);
-  --shadow-brand-glow: 0 0 0 1px rgba(255, 211, 0, 0.30), 0 4px 16px rgba(255, 211, 0, 0.40);
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(0, 184, 255, 0.22);
+  --shadow-brand-glow: 0 0 0 1px rgba(0, 184, 255, 0.30), 0 4px 16px rgba(0, 184, 255, 0.40);
   --shadow-slider-navigation: 0px 1px 2px 0px rgba(16, 24, 40, 0.1),
     0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip: 0px 4px 6px -2px rgba(16, 24, 40, 0.05),
@@ -236,12 +236,12 @@ layer(base);
   box-shadow: 4px 4px 0 0 rgba(251, 130, 40, 0.32), 0 6px 20px rgba(251, 130, 40, 0.10);
 }
 
-/* Pending (next) block — amber cube shadow */
+/* Pending (next) block — brand cyan cube shadow */
 .btc-block-3d-pending {
-  box-shadow: 4px 4px 0 0 rgba(217, 119, 6, 0.45), 0 6px 20px rgba(245, 158, 11, 0.08);
+  box-shadow: 4px 4px 0 0 rgba(0, 184, 255, 0.45), 0 6px 20px rgba(0, 184, 255, 0.08);
 }
 .dark .btc-block-3d-pending {
-  box-shadow: 4px 4px 0 0 rgba(217, 119, 6, 0.32), 0 6px 20px rgba(245, 158, 11, 0.08);
+  box-shadow: 4px 4px 0 0 rgba(0, 184, 255, 0.32), 0 6px 20px rgba(0, 184, 255, 0.08);
 }
 
 /*
@@ -291,7 +291,7 @@ layer(base);
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-700 dark:bg-brand-500/[0.12] dark:text-brand-200;
+  @apply bg-brand-50 text-brand-800 dark:bg-brand-500/[0.12] dark:text-brand-200;
 }
 
 @utility menu-item-inactive {
@@ -303,7 +303,7 @@ layer(base);
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-700 dark:text-brand-200;
+  @apply text-brand-800 dark:text-brand-200;
 }
 
 @utility menu-item-icon-size {
@@ -321,7 +321,7 @@ layer(base);
 }
 
 @utility menu-item-arrow-active {
-  @apply rotate-180 text-brand-700 dark:text-brand-200;
+  @apply rotate-180 text-brand-800 dark:text-brand-200;
 }
 
 @utility menu-item-arrow-inactive {
@@ -333,7 +333,7 @@ layer(base);
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-brand-50 text-brand-700 dark:bg-brand-500/[0.12] dark:text-brand-200;
+  @apply bg-brand-50 text-brand-800 dark:bg-brand-500/[0.12] dark:text-brand-200;
 }
 
 @utility menu-dropdown-item-inactive {
@@ -341,7 +341,7 @@ layer(base);
 }
 
 @utility menu-dropdown-badge {
-  @apply block rounded-full px-2.5 py-0.5 text-xs font-medium uppercase text-brand-700 dark:text-brand-200;
+  @apply block rounded-full px-2.5 py-0.5 text-xs font-medium uppercase text-brand-800 dark:text-brand-200;
 }
 
 @utility menu-dropdown-badge-active {
@@ -639,13 +639,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #FFD300;
+  background: #00b8ff;
   @apply !border-brand-500 !bg-brand-500 hover:!border-brand-500 hover:!bg-brand-500;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #FFD300;
+  box-shadow: -10px 0 0 #00b8ff;
 }
 
 .flatpickr-months .flatpickr-prev-month svg,
