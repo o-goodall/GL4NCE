@@ -23,12 +23,17 @@ const ATH_CACHE_TTL      = 86_400_000;      // 24 h
 const WMA_CACHE_KEY      = "btc-200wma";
 const WMA_CACHE_TTL      = 7 * 86_400_000;  // 7 days
 const WMA_PERIOD         = 200;
+const RSI_CACHE_KEY      = "btc-rsi14w";
+const RSI_CACHE_TTL      = 86_400_000;      // 24 h (weekly bar is incomplete until close)
+const RSI_PERIOD         = 14;
 const DCA_SETTINGS_KEY   = "dca-settings";  // user's custom DCA config
 
 // ── Signal thresholds (informational only — do not affect DCA amount) ──────
 const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
+const RSI_OVERSOLD_THRESHOLD = 35;   // weekly RSI ≤ this → Phase 1 bear/accumulation confirmed
+const RSI_RECOVERY_THRESHOLD = 55;   // weekly RSI ≥ this → Phase 2 recovery/bull momentum
 
 // ── Fallbacks while async fetches are in-flight ────────────────────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
@@ -38,23 +43,6 @@ const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
 const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
 const NEXT_HALVING_MS     = new Date("2028-04-19T00:00:00Z").getTime();
 const POST_HALVING_WINDOW = 547 * 86_400_000; // ≈ 18 months after halving
-
-// ── Historical + projected market cycle dates ──────────────────────────────
-// Peaks (market highs) — projected dates based on ~4-year halving cycle rhythm
-const CYCLE_PEAKS_MS: number[] = [
-  new Date("2013-12-04T00:00:00Z").getTime(),
-  new Date("2017-12-16T00:00:00Z").getTime(),
-  new Date("2021-11-18T00:00:00Z").getTime(),
-  new Date("2025-12-06T00:00:00Z").getTime(), // projected
-];
-// Troughs (market lows) — projected dates based on historical cycle patterns
-const CYCLE_TROUGHS_MS: number[] = [
-  new Date("2015-01-14T00:00:00Z").getTime(),
-  new Date("2018-12-15T00:00:00Z").getTime(),
-  new Date("2022-11-21T00:00:00Z").getTime(),
-  new Date("2028-12-15T00:00:00Z").getTime(), // projected
-];
-const CYCLE_ZONE_RADIUS = 90 * 86_400_000; // 90 days either side of peak/trough
 
 // ── Chart style ────────────────────────────────────────────────────────────
 const CHART_FONT     = "Inter, sans-serif";
@@ -148,38 +136,39 @@ function deriveSMA(klines: RawKline[], period: number): number | null {
   return last.reduce((s, v) => s + v, 0) / period;
 }
 
-// ── Cycle phase detection (peak / trough proximity) ────────────────────────
-type CyclePhase = "near-peak" | "near-trough" | "mid-cycle";
-type NearestEvent = "peak" | "trough";
+// ── Derive 14-week RSI using Wilder's smoothed method ────────────────────
+// Phase 1 signal: RSI ≤ 35 (weekly oversold = bear/accumulation confirmed)
+// Phase 2 signal: RSI ≥ 55 (above mid-line = recovery/bull momentum)
+function deriveRSI(klines: RawKline[], period: number): number | null {
+  const closes = klines.map((k) => parseFloat(k[4])).filter((v) => !isNaN(v));
+  if (closes.length < period + 1) return null;
 
-function getCyclePhase(now: number): { phase: CyclePhase; daysAway: number; nearest: NearestEvent; isPast: boolean } {
-  let nearestPeakDist  = Infinity;
-  let nearestPeakMs    = 0;
-  for (const p of CYCLE_PEAKS_MS) {
-    const d = Math.abs(now - p);
-    if (d < nearestPeakDist) { nearestPeakDist = d; nearestPeakMs = p; }
-  }
-  let nearestTroughDist = Infinity;
-  let nearestTroughMs   = 0;
-  for (const t of CYCLE_TROUGHS_MS) {
-    const d = Math.abs(now - t);
-    if (d < nearestTroughDist) { nearestTroughDist = d; nearestTroughMs = t; }
+  const changes: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    changes.push(closes[i] - closes[i - 1]);
   }
 
-  if (nearestPeakDist <= CYCLE_ZONE_RADIUS) {
-    return { phase: "near-peak",   daysAway: Math.round(nearestPeakDist  / 86_400_000), nearest: "peak",   isPast: nearestPeakMs  < now };
+  // Seed: simple average of first `period` gains/losses
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) avgGain += changes[i];
+    else avgLoss += Math.abs(changes[i]);
   }
-  if (nearestTroughDist <= CYCLE_ZONE_RADIUS) {
-    return { phase: "near-trough", daysAway: Math.round(nearestTroughDist / 86_400_000), nearest: "trough", isPast: nearestTroughMs < now };
+  avgGain /= period;
+  avgLoss /= period;
+
+  // Wilder's EMA (smoothing factor = 1/period)
+  for (let i = period; i < changes.length; i++) {
+    const gain = changes[i] > 0 ? changes[i] : 0;
+    const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
-  // Mid-cycle: report distance to the closer event (past or future)
-  const peakCloser = nearestPeakDist < nearestTroughDist;
-  return {
-    phase: "mid-cycle",
-    daysAway: Math.round((peakCloser ? nearestPeakDist : nearestTroughDist) / 86_400_000),
-    nearest:  peakCloser ? "peak" : "trough",
-    isPast:   peakCloser ? nearestPeakMs < now : nearestTroughMs < now,
-  };
+
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
