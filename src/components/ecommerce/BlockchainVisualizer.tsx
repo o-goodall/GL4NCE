@@ -626,7 +626,7 @@ export default function BlockchainVisualizer() {
           pct={halvingPct}
           percentageLabel={halvingPct !== null ? `${halvingPct.toFixed(1)}%` : null}
           right={blocksToHalving !== null ? `${fmtNum(blocksToHalving)} blocks left` : null}
-          gradient="linear-gradient(to right, rgba(245,158,11,0.8), rgba(251,191,36,0.95))"
+          gradient="linear-gradient(to right, rgba(0,184,255,0.8), rgba(0,184,255,0.95))"
           loading={loading}
         />
         <ProgressRow
