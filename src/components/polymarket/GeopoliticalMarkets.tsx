@@ -496,7 +496,7 @@ export default function GeopoliticalMarkets() {
             onClick={() => setCategory(cat.id)}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               category === cat.id
-                ? "bg-brand-500 text-white dark:bg-brand-600"
+                ? "bg-brand-500 text-gray-900 dark:bg-brand-600 dark:text-gray-900"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
             }`}
             aria-pressed={category === cat.id}

@@ -237,7 +237,7 @@ export default function BtcGoldRatio() {
       animations: { enabled: false },
     },
     stroke: { curve: "smooth", width: [2] },
-    colors: ["#FFD300"],
+    colors: ["#00b8ff"],
     dataLabels: { enabled: false },
     markers: { size: 0, hover: { size: 4, sizeOffset: 2 } },
     xaxis: {

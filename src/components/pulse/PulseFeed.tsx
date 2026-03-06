@@ -178,7 +178,7 @@ export default function PulseFeed() {
           onClick={() => handleGroupChange(ALL_GROUP)}
           className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
             activeGroup === ALL_GROUP
-              ? "bg-brand-500 text-white dark:bg-brand-600"
+              ? "bg-brand-500 text-gray-900 dark:bg-brand-600 dark:text-gray-900"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
           }`}
         >
@@ -190,7 +190,7 @@ export default function PulseFeed() {
             onClick={() => handleGroupChange(group.label)}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               activeGroup === group.label
-                ? "bg-brand-500 text-white dark:bg-brand-600"
+                ? "bg-brand-500 text-gray-900 dark:bg-brand-600 dark:text-gray-900"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
             }`}
           >

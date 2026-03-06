@@ -450,7 +450,7 @@ export default function MonthlyTarget() {
   if (isPass) {
     gaugeColor = "#EF4444";
   } else if (inWindow && priceUSD !== null) {
-    gaugeColor = belowWMA ? "#10B981" : "#FFD300";
+    gaugeColor = belowWMA ? "#10B981" : "#00b8ff";
   }
 
   // Subtle scale animation when recommendation changes

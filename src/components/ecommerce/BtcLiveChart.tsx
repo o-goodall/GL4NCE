@@ -389,8 +389,8 @@ export default function BtcLiveChart() {
   const options = useMemo<ApexOptions>(() => {
     // Series colors — sized to the exact number of active series
     const colors = showGold
-      ? (maActive ? ["#10b981", "#FFD300", "#f59e0b"] : ["#10b981", "#FFD300"])
-      : (maActive ? ["#10b981", "#f59e0b"] : ["#10b981"]);
+      ? (maActive ? ["#10b981", "#f59e0b", "#94a3b8"] : ["#10b981", "#f59e0b"])
+      : (maActive ? ["#10b981", "#94a3b8"] : ["#10b981"]);
     const strokeWidths = showGold
       ? (maActive ? [2, 2, 1.5] : [2, 2])
       : (maActive ? [2, 1.5]   : [2]);
@@ -454,8 +454,8 @@ export default function BtcLiveChart() {
 
       const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
         { color: "#10b981", label: "BTC",          fmt: (v) => `$${fmtNum(v)}` },
-        ...(showGold ? [{ color: "#FFD300", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
-        ...(maActive ? [{ color: "#f59e0b", label: "200WMA", fmt: (v: number) => `$${fmtNum(v)}` }] : []),
+        ...(showGold ? [{ color: "#f59e0b", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
+        ...(maActive ? [{ color: "#94a3b8", label: "200WMA", fmt: (v: number) => `$${fmtNum(v)}` }] : []),
       ];
 
       const rows = defs.map((d, i) => {
@@ -526,6 +526,26 @@ export default function BtcLiveChart() {
           ...(ath !== null ? [{
             y:               ath,
             ...(showGold ? { yAxisIndex: 0 } : {}),
+            borderColor:     "#00b8ff",
+            strokeDashArray: 4,
+            borderWidth:     1,
+            label: {
+              text:        "ATH",
+              borderColor: "transparent",
+              position:    "right",
+              offsetX:     -4,
+              offsetY:     -6,
+              style: {
+                color:      "#00b8ff",
+                background: "transparent",
+                fontSize:   "10px",
+                fontFamily: "Inter, sans-serif",
+              },
+            },
+          }] : []),
+          ...(showGold ? [{
+            y:               goldAth.ratio,
+            yAxisIndex:      1,
             borderColor:     "#f59e0b",
             strokeDashArray: 4,
             borderWidth:     1,
@@ -537,26 +557,6 @@ export default function BtcLiveChart() {
               offsetY:     -6,
               style: {
                 color:      "#f59e0b",
-                background: "transparent",
-                fontSize:   "10px",
-                fontFamily: "Inter, sans-serif",
-              },
-            },
-          }] : []),
-          ...(showGold ? [{
-            y:               goldAth.ratio,
-            yAxisIndex:      1,
-            borderColor:     "#FFD300",
-            strokeDashArray: 4,
-            borderWidth:     1,
-            label: {
-              text:        "ATH",
-              borderColor: "transparent",
-              position:    "right",
-              offsetX:     -4,
-              offsetY:     -6,
-              style: {
-                color:      "#FFD300",
                 background: "transparent",
                 fontSize:   "10px",
                 fontFamily: "Inter, sans-serif",
@@ -568,7 +568,7 @@ export default function BtcLiveChart() {
           ...(showWmaAnnotation ? [{
             y:               wmaPrice as number,
             ...(showGold ? { yAxisIndex: 0 } : {}),
-            borderColor:     "#f59e0b",
+            borderColor:     "#94a3b8",
             strokeDashArray: 4,
             borderWidth:     1,
             label: {
@@ -578,7 +578,7 @@ export default function BtcLiveChart() {
               offsetX:     -4,
               offsetY:     -6,
               style: {
-                color:      "#f59e0b",
+                color:      "#94a3b8",
                 background: "transparent",
                 fontSize:   "10px",
                 fontFamily: "Inter, sans-serif",
