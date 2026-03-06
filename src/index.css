@@ -44,6 +44,14 @@ layer(base);
   --color-white: #ffffff;
   --color-black: #121212;
 
+  /* ── Ideal Colour Palette ───────────────────────────────────────
+   *   Primary  (1)   : --color-brand-*   gold/yellow  #FFD300
+   *   Secondary(1)   : --color-secondary-*  deep blue  #2970FF
+   *   Neutral  (2-3) : --color-white / --color-gray-* / --color-black
+   *   Accent   (opt) : --color-accent-*  vivid pink   #EE46BC
+   * ─────────────────────────────────────────────────────────────── */
+
+  /* Primary Color — bold gold, used for buttons, headings, key UI */
   --color-brand-25: #FFFDE7;
   --color-brand-50: #FFF9C4;
   --color-brand-100: #FFF176;
@@ -56,6 +64,36 @@ layer(base);
   --color-brand-800: #3D2800;
   --color-brand-900: #221500;
   --color-brand-950: #100900;
+
+  /* Secondary Color — deep blue, complements gold; subheadings,
+     highlighted sections, secondary buttons                        */
+  --color-secondary-25:  #f5f8ff;
+  --color-secondary-50:  #eff4ff;
+  --color-secondary-100: #d1e0ff;
+  --color-secondary-200: #b2ccff;
+  --color-secondary-300: #84adff;
+  --color-secondary-400: #528bff;
+  --color-secondary-500: #2970ff;
+  --color-secondary-600: #155eef;
+  --color-secondary-700: #004eeb;
+  --color-secondary-800: #0040c1;
+  --color-secondary-900: #00359e;
+  --color-secondary-950: #002266;
+
+  /* Accent Color — vivid pink/magenta, used sparingly for CTAs,
+     alerts, and key information that must stand out               */
+  --color-accent-25:  #fef6fb;
+  --color-accent-50:  #fdf2fa;
+  --color-accent-100: #fce7f6;
+  --color-accent-200: #fcceee;
+  --color-accent-300: #faa7e0;
+  --color-accent-400: #f670c7;
+  --color-accent-500: #ee46bc;
+  --color-accent-600: #dd2590;
+  --color-accent-700: #c11574;
+  --color-accent-800: #9e165f;
+  --color-accent-900: #851651;
+  --color-accent-950: #4e0d30;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -136,9 +174,9 @@ layer(base);
   --color-warning-900: #7a2e0e;
   --color-warning-950: #4e1d09;
 
-  --color-theme-pink-500: #ee46bc;
+  --color-theme-pink-500: var(--color-accent-500);
 
-  --color-theme-gold-500: #FFD300;
+  --color-theme-gold-500: var(--color-brand-500);
 
   --shadow-theme-md: 0px 4px 10px -2px rgba(255, 211, 0, 0.07),
     0px 2px 4px -2px rgba(16, 24, 40, 0.04);
