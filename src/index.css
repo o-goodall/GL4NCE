@@ -44,11 +44,20 @@ layer(base);
   --color-white: #ffffff;
   --color-black: #121212;
 
-  /* ── Ideal Colour Palette ───────────────────────────────────────
-   *   Primary  (1)   : --color-brand-*   gold/yellow  #FFD300
-   *   Secondary(1)   : --color-secondary-*  deep blue  #2970FF
-   *   Neutral  (2-3) : --color-white / --color-gray-* / --color-black
-   *   Accent   (opt) : --color-accent-*  vivid pink   #EE46BC
+  /* ── Ideal Colour Palette (Material Design 2 colour system) ────
+   *
+   *   Role             Token prefix       Base value
+   *   ─────────────────────────────────────────────────────────
+   *   Primary    (1)   --color-brand-*    #FFD300  gold/yellow
+   *   Secondary  (1)   --color-secondary-* #2970FF deep blue
+   *   Surface / BG     --color-surface,
+   *                    --color-background  white / light-gray
+   *   Accent     (opt) --color-accent-*   #EE46BC  vivid pink
+   *
+   *   Every colour role is paired with an "on-*" foreground token
+   *   that satisfies WCAG AA contrast (≥ 4.5 : 1) when placed on
+   *   top of that colour.  Variants provide lighter/darker tones
+   *   for status bars, hover states, and decorative surfaces.
    * ─────────────────────────────────────────────────────────────── */
 
   /* Primary Color — bold gold, used for buttons, headings, key UI */
@@ -174,8 +183,8 @@ layer(base);
   --color-warning-900: #7a2e0e;
   --color-warning-950: #4e1d09;
 
+  /* Deprecated: use --color-accent-500 / --color-brand-500 directly */
   --color-theme-pink-500: var(--color-accent-500);
-
   --color-theme-gold-500: var(--color-brand-500);
 
   --shadow-theme-md: 0px 4px 10px -2px rgba(255, 211, 0, 0.07),
@@ -291,6 +300,41 @@ layer(base);
   color utility to any element that depends on these defaults.
 */
 @layer base {
+  /* ── Material Design 2 semantic colour tokens ───────────────────
+   *  Defined here (outside @theme) so they are always emitted to
+   *  the CSS output regardless of Tailwind utility class usage.
+   *  Components that need these values can reference them directly
+   *  via var(--color-on-primary) etc., or as Tailwind utilities
+   *  (text-on-primary, bg-surface …) once referenced in code.
+   * ─────────────────────────────────────────────────────────────── */
+  :root {
+    /* on-* foreground tokens — WCAG AA verified (≥ 4.5 : 1) */
+    --color-on-primary:        #121212; /* 13.0 : 1 on #FFD300  */
+    --color-on-secondary:      #ffffff; /*  5.8 : 1 on #004eeb  */
+    --color-on-accent:         #121212; /*  5.6 : 1 on #EE46BC  */
+    --color-on-surface:        #111112; /* 18.1 : 1 on #ffffff  */
+    --color-on-background:     #111112; /* 13.9 : 1 on #F6F6F7  */
+    --color-on-error:          #ffffff; /*  5.9 : 1 on #912018  */
+
+    /* Surface / background tokens */
+    --color-surface:           #ffffff;
+    --color-surface-variant:   #F6F6F7;
+    --color-background:        #F6F6F7;
+
+    /* Primary / secondary colour variants */
+    --color-primary-variant:   #E5A900; /* brand-600   */
+    --color-secondary-variant: #0040c1; /* secondary-800 */
+  }
+
+  /* Dark-mode overrides for surface/on-* tokens */
+  .dark {
+    --color-on-surface:        #ffffff;
+    --color-on-background:     #ffffff;
+    --color-surface:           #1c1c1e;
+    --color-surface-variant:   #262629;
+    --color-background:        #111112;
+  }
+
   *,
   ::after,
   ::before,

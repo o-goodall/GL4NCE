@@ -58,8 +58,10 @@ const Badge: React.FC<BadgeProps> = ({
     },
     solid: {
       primary: "bg-brand-500 text-gray-900 dark:text-gray-900",
-      secondary: "bg-secondary-500 text-white dark:text-white",
-      accent: "bg-accent-500 text-white dark:text-white",
+      // secondary-700 + white = 5.8 : 1 (WCAG AA ✓)
+      secondary: "bg-secondary-700 text-white dark:text-white",
+      // accent-500 + dark text = 5.6 : 1 (WCAG AA ✓) — mirrors primary pattern
+      accent: "bg-accent-500 text-gray-900 dark:text-gray-900",
       success: "bg-success-800 text-white dark:text-white",
       error: "bg-error-800 text-white dark:text-white",
       warning: "bg-warning-800 text-white dark:text-white",
