@@ -139,8 +139,8 @@ function fmtReward(sats: number): string {
 
 function pctColor(n: number | null): string {
   if (n === null) return "text-gray-400 dark:text-gray-500";
-  if (n > 0) return "text-emerald-500 dark:text-emerald-400";
-  if (n < 0) return "text-red-500 dark:text-red-400";
+  if (n > 0) return "text-positive";
+  if (n < 0) return "text-negative";
   return "text-gray-400 dark:text-gray-500";
 }
 

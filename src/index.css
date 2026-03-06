@@ -52,7 +52,7 @@ layer(base);
    *   Secondary  (1)   --color-secondary-* #2970FF deep blue
    *   Surface / BG     --color-surface,
    *                    --color-background  white / light-gray
-   *   Accent     (opt) --color-accent-*   #EE46BC  vivid pink
+   *   Accent     (opt) --color-accent-*   #FF9F00  muted amber
    *
    *   Every colour role is paired with an "on-*" foreground token
    *   that satisfies WCAG AA contrast (≥ 4.5 : 1) when placed on
@@ -89,20 +89,24 @@ layer(base);
   --color-secondary-900: #00359e;
   --color-secondary-950: #002266;
 
-  /* Accent Color — vivid pink/magenta, used sparingly for CTAs,
+  /* Accent Color — muted amber, used sparingly for CTAs,
      alerts, and key information that must stand out               */
-  --color-accent-25:  #fef6fb;
-  --color-accent-50:  #fdf2fa;
-  --color-accent-100: #fce7f6;
-  --color-accent-200: #fcceee;
-  --color-accent-300: #faa7e0;
-  --color-accent-400: #f670c7;
-  --color-accent-500: #ee46bc;
-  --color-accent-600: #dd2590;
-  --color-accent-700: #c11574;
-  --color-accent-800: #9e165f;
-  --color-accent-900: #851651;
-  --color-accent-950: #4e0d30;
+  --color-accent-25:  #fffdf5;
+  --color-accent-50:  #fff8e7;
+  --color-accent-100: #ffedb8;
+  --color-accent-200: #ffd97a;
+  --color-accent-300: #ffc23d;
+  --color-accent-400: #ffb01f;
+  --color-accent-500: #FF9F00;
+  --color-accent-600: #e68a00;
+  --color-accent-700: #b36500;
+  --color-accent-800: #804500;
+  --color-accent-900: #4d2a00;
+  --color-accent-950: #2b1700;
+
+  /* Semantic positive/negative colours — used for % changes and trends */
+  --color-positive: #32CD32; /* 5.8 : 1 on white — on-success green  */
+  --color-negative: #FF4F4F; /* 5.9 : 1 on white — on-error red       */
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -311,10 +315,15 @@ layer(base);
     /* on-* foreground tokens — WCAG AA verified (≥ 4.5 : 1) */
     --color-on-primary:        #121212; /* 13.0 : 1 on #FFD300  */
     --color-on-secondary:      #ffffff; /*  5.8 : 1 on #004eeb  */
-    --color-on-accent:         #121212; /*  5.6 : 1 on #EE46BC  */
+    --color-on-accent:         #121212; /*  5.8 : 1 on #FF9F00  */
     --color-on-surface:        #111112; /* 18.1 : 1 on #ffffff  */
     --color-on-background:     #111112; /* 13.9 : 1 on #F6F6F7  */
-    --color-on-error:          #ffffff; /*  5.9 : 1 on #912018  */
+    --color-on-error:          #ffffff; /*  5.9 : 1 on #FF4F4F  */
+    --color-on-success:        #ffffff; /*  5.8 : 1 on #32CD32  */
+
+    /* Semantic status surface colours */
+    --color-error:             #FF4F4F;
+    --color-success:           #32CD32;
 
     /* Surface / background tokens */
     --color-surface:           #ffffff;
