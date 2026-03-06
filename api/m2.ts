@@ -16,13 +16,17 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 //     OECD country codes: EA (Euro area), GBR, JPN, CAN.
 //     OECD MEI returns millions of national currency; multiply by 0.001 → billions.
 //
-// M2 / broad money sources (all via FRED, free tier – API key kept server-side):
-//   US  Fed  – M2SL             (billions USD, monthly, SA)
-//   EU  ECB  – MABMM301EZM189S  (individual EUR, monthly, SA) ← 1e-9
-//   UK  BOE  – MABMM301GBM189S  (individual GBP, monthly, SA) ← 1e-9
-//   JP  BOJ  – MABMM301JPM189S  (individual JPY, monthly, SA) ← 1e-9
-//   CA  BOC  – MABMM301CAM189S  (individual CAD, monthly, SA) ← 1e-9
-//   CN  PBOC – MYAGM2CNM189N    (individual CNY, monthly, NSA) ← 1e-9
+// M2 / broad money sources (primary = FRED, fallback = OECD SDMX for EU/UK/JP/CA):
+//   US  Fed  – FRED M2SL             (billions USD, monthly, SA)
+//   EU  ECB  – FRED MABMM301EZM189S  (individual EUR, monthly, SA) ← 1e-9
+//   UK  BOE  – FRED MABMM301GBM189S  (individual GBP, monthly, SA) ← 1e-9
+//   JP  BOJ  – FRED MABMM301JPM189S  (individual JPY, monthly, SA) ← 1e-9
+//   CA  BOC  – FRED MABMM301CAM189S  (individual CAD, monthly, SA) ← 1e-9
+//   CN  PBOC – FRED MYAGM2CNM189N    (individual CNY, monthly, NSA) ← 1e-9
+//   OECD fallback for EU/UK/JP/CA if FRED returns no data:
+//     MABMM301 series via sdmx.oecd.org; free, no API key.
+//     OECD country codes: EA (Euro area), GBR, JPN, CAN.
+//     OECD MEI returns millions of national currency; multiply by 0.001 → billions.
 //
 // FX conversion (FRED daily rates, most recent observation):
 //   DEXUSEU – USD per EUR  (direct)
@@ -70,9 +74,11 @@ const FX_LIMIT = 10;
 //   80–100 → "Crisis"
 const MONEY_GROWTH_SCALE = 143;
 
-// Scale factor for OECD SDMX M1 data: OECD publishes in millions NCU.
-// Used only when falling back to OECD after a FRED M1 fetch fails.
-const OECD_M1_MILLIONS_TO_BILLIONS = 0.001;
+// Scale factor for OECD SDMX monetary data: OECD MEI_FIN publishes both narrow
+// money (MABMM101 / M1) and broad money (MABMM301 / M2) in millions of national
+// currency.  Multiply by 0.001 to convert to billions of national currency.
+// Used when falling back to OECD after a FRED fetch returns no valid observations.
+const OECD_MILLIONS_TO_BILLIONS = 0.001;
 
 // Minimum M2 MoM growth rate (%) to record a historical "printed" episode in
 // the legacy printedUSD / lastPrintedDate fields.  Kept separate from the
@@ -121,8 +127,9 @@ interface CountryConfig {
                                     //   M1SL (US):    1     (already billions USD)
                                     //   OECD MEI M1:  0.001 (millions NCU → billions)
                                     //   MYAGM1CN:     1e-9  (individual CNY → billions)
-  // ── M2 / broad money (always via FRED) ──────────────────────────────────
-  m2Series:         string;         // FRED series ID for M2
+  // ── M2 / broad money ────────────────────────────────────────────────────
+  m2Series:         string;         // FRED series ID for M2 (primary)
+  m2OecdCode:       string | null;  // OECD country code for M2 fallback; null = no fallback
   localToBillions:  number;         // raw FRED value → billions of local currency
                                     //   M2SL:    1     (already billions USD)
                                     //   MABMM301*: 1e-9 (individual NCU → billions)
@@ -140,41 +147,41 @@ const COUNTRIES: readonly CountryConfig[] = [
   // US: M1 and M2 both from FRED; already in billions USD
   { id: "US", name: "Fed",  flag: "🇺🇸",
     m1Series: "M1SL",              m1OecdCode: null,  m1LocalToBillions: 1,
-    m2Series: "M2SL",              localToBillions: 1,
+    m2Series: "M2SL",              m2OecdCode: null,  localToBillions: 1,
     fxSeries: null,                fxInverted: false,
     debtSeries: "GGGDTAUSA188N" },
   // EU: M1 from FRED (MANMM101EZM189S, individual EUR) with OECD fallback;
-  //     M2 from FRED (MABMM301EZM189S, individual EUR)
+  //     M2 from FRED (MABMM301EZM189S, individual EUR) with OECD fallback (EA)
   { id: "EU", name: "ECB",  flag: "🇪🇺",
     m1Series: "MANMM101EZM189S",   m1OecdCode: "EA",  m1LocalToBillions: 1e-9,
-    m2Series: "MABMM301EZM189S",   localToBillions: 1e-9,
+    m2Series: "MABMM301EZM189S",   m2OecdCode: "EA",  localToBillions: 1e-9,
     fxSeries: "DEXUSEU",           fxInverted: false,
     debtSeries: "GGGDTAEZA188N" },
   // UK: M1 from FRED (MANMM101GBM189S, individual GBP) with OECD fallback;
-  //     M2 from FRED (MABMM301GBM189S, individual GBP)
+  //     M2 from FRED (MABMM301GBM189S, individual GBP) with OECD fallback (GBR)
   { id: "UK", name: "BOE",  flag: "🇬🇧",
     m1Series: "MANMM101GBM189S",   m1OecdCode: "GBR", m1LocalToBillions: 1e-9,
-    m2Series: "MABMM301GBM189S",   localToBillions: 1e-9,
+    m2Series: "MABMM301GBM189S",   m2OecdCode: "GBR", localToBillions: 1e-9,
     fxSeries: "DEXUSUK",           fxInverted: false,
     debtSeries: "GGGDTAGBA188N" },
   // JP: M1 from FRED (MANMM101JPM189S, individual JPY) with OECD fallback;
-  //     M2 from FRED (MABMM301JPM189S, individual JPY)
+  //     M2 from FRED (MABMM301JPM189S, individual JPY) with OECD fallback (JPN)
   { id: "JP", name: "BOJ",  flag: "🇯🇵",
     m1Series: "MANMM101JPM189S",   m1OecdCode: "JPN", m1LocalToBillions: 1e-9,
-    m2Series: "MABMM301JPM189S",   localToBillions: 1e-9,
+    m2Series: "MABMM301JPM189S",   m2OecdCode: "JPN", localToBillions: 1e-9,
     fxSeries: "DEXJPUS",           fxInverted: true,
     debtSeries: "GGGDTAJPA188N" },
   // CA: M1 from FRED (MANMM101CAM189S, individual CAD) with OECD fallback;
-  //     M2 from FRED (MABMM301CAM189S, individual CAD)
+  //     M2 from FRED (MABMM301CAM189S, individual CAD) with OECD fallback (CAN)
   { id: "CA", name: "BOC",  flag: "🇨🇦",
     m1Series: "MANMM101CAM189S",   m1OecdCode: "CAN", m1LocalToBillions: 1e-9,
-    m2Series: "MABMM301CAM189S",   localToBillions: 1e-9,
+    m2Series: "MABMM301CAM189S",   m2OecdCode: "CAN", localToBillions: 1e-9,
     fxSeries: "DEXCAUS",           fxInverted: true,
     debtSeries: "GGGDTACAA188N" },
-  // CN: M1 and M2 both from FRED (individual CNY)
+  // CN: M1 and M2 both from FRED (individual CNY); no OECD fallback (China not in OECD)
   { id: "CN", name: "PBOC", flag: "🇨🇳",
     m1Series: "MYAGM1CNM189N",     m1OecdCode: null,  m1LocalToBillions: 1e-9,
-    m2Series: "MYAGM2CNM189N",     localToBillions: 1e-9,
+    m2Series: "MYAGM2CNM189N",     m2OecdCode: null,  localToBillions: 1e-9,
     fxSeries: "DEXCHUS",           fxInverted: true,
     debtSeries: "GGGDTACNA188N" },
 ];
@@ -206,14 +213,14 @@ function parseObs(obs: FredObs[]): { date: string; value: number }[] {
     .filter((o) => !isNaN(o.value) && o.value > 0);
 }
 
-// ── OECD SDMX helpers (for M1 narrow money fallback) ─────────────────────────
+// ── OECD SDMX helpers (for M1 narrow money and M2 broad money fallbacks) ─────
 //
 // The OECD SDMX REST API (sdmx.oecd.org) is free and requires no API key.
-// It is used as a fallback source for EU/UK/JP/CA M1 if the primary FRED
-// MANMM101* series return no valid observations.
+// It is used as a fallback source for EU/UK/JP/CA M1 and M2 when the primary
+// FRED MANMM101* / MABMM301* series return no valid observations.
 //
 // OECD MEI_FIN monetary data is published in MILLIONS of national currency,
-// so the fallback scale factor is OECD_M1_MILLIONS_TO_BILLIONS = 0.001.
+// so the fallback scale factor is OECD_MILLIONS_TO_BILLIONS = 0.001.
 //
 // OECD country codes used: EA (Euro area), GBR (UK), JPN (Japan), CAN (Canada).
 
@@ -280,11 +287,18 @@ function parseOecdSdmx(body: OecdSdmxBody): OecdObsMap {
   return result;
 }
 
-async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
+// Generic OECD MEI_FIN fetcher used for both narrow money (MABMM101 / M1) and
+// broad money (MABMM301 / M2).  The `indicator` argument is the OECD series
+// code, e.g. "MABMM101" or "MABMM301".  The `label` is used only in error
+// messages to distinguish M1 and M2 failures in logs.
+async function fetchOecdMoney(
+  indicator: string,
+  oecdCodes: string[],
+  label: string,
+): Promise<OecdObsMap> {
   if (oecdCodes.length === 0) return new Map();
-  // SDMX dataflow key: MABMM101 (narrow money indicator) · countries joined
-  // with "+" (multi-value selection) · M (monthly frequency)
-  const key = `MABMM101.${oecdCodes.join("+")}.M`;
+  // SDMX dataflow key: {indicator} · countries joined with "+" · M (monthly)
+  const key = `${indicator}.${oecdCodes.join("+")}.M`;
   const url =
     `${OECD_BASE}/OECD,MEI_FIN,1.0/${encodeURIComponent(key)}` +
     `?lastNObservations=${OBS_LIMIT}&format=jsondata`;
@@ -292,7 +306,7 @@ async function fetchOecdNarrowMoney(oecdCodes: string[]): Promise<OecdObsMap> {
   const res = await fetch(url, {
     headers: { Accept: "application/vnd.sdmx.data+json;version=1.0, application/json" },
   });
-  if (!res.ok) throw new Error(`OECD HTTP ${res.status} for M1`);
+  if (!res.ok) throw new Error(`OECD HTTP ${res.status} for ${label}`);
   return parseOecdSdmx((await res.json()) as OecdSdmxBody);
 }
 
@@ -469,14 +483,19 @@ export default async function handler(
       .map((c) => c.m1OecdCode)
       .filter((code): code is string => code !== null);
 
+    // Collect OECD codes needed for M2 fallback (EU/UK/JP/CA — same set as M1)
+    const oecdM2Codes = COUNTRIES
+      .map((c) => c.m2OecdCode)
+      .filter((code): code is string => code !== null);
+
     // Fetch M1 from FRED (US + CN), M2 from FRED (all 6), FX from FRED,
-    // M1 from OECD (EU/UK/JP/CA), debt-to-GDP from FRED (all 6),
-    // nominal GDP from World Bank (all 6), and Euro Area debt from Eurostat –
-    // all in parallel.
+    // M1 from OECD (EU/UK/JP/CA), M2 from OECD (EU/UK/JP/CA, fallback),
+    // debt-to-GDP from FRED (all 6), nominal GDP from World Bank (all 6),
+    // and Euro Area debt from Eurostat – all in parallel.
     // grossDebtUSD is derived server-side: (debtToGDP / 100) * gdpUSD.
     // For countries that use OECD M1, pass an empty resolved promise as FRED
     // placeholder so the settled array stays index-aligned with COUNTRIES.
-    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, debtSettled, gdpMap, euroAreaDebt] = await Promise.all([
+    const [fredM1Settled, m2Settled, fxSettled, oecdM1Map, oecdM2Map, debtSettled, gdpMap, euroAreaDebt] = await Promise.all([
       Promise.allSettled(
         COUNTRIES.map((c) =>
           c.m1Series ? fetchFredObs(c.m1Series, apiKey, OBS_LIMIT) : Promise.resolve([]),
@@ -488,10 +507,15 @@ export default async function handler(
       Promise.allSettled(
         fxSeriesList.map((s) => fetchFredObs(s, apiKey, FX_LIMIT)),
       ),
-      fetchOecdNarrowMoney(oecdM1Codes)
+      fetchOecdMoney("MABMM101", oecdM1Codes, "M1")
         // OECD M1 failure is intentionally non-fatal: the M1 columns show "—"
         // rather than breaking the whole widget. This covers network issues or
         // OECD API downtime without affecting M2 / printer-status data.
+        .catch((): OecdObsMap => new Map()),
+      fetchOecdMoney("MABMM301", oecdM2Codes, "M2")
+        // OECD M2 failure is intentionally non-fatal: FRED M2 is tried first;
+        // OECD is only used as a fallback when FRED returns no valid observations
+        // (e.g. when a FRED-hosted OECD series is discontinued or lagging).
         .catch((): OecdObsMap => new Map()),
       Promise.allSettled(
         COUNTRIES.map((c) => fetchFredObs(c.debtSeries, apiKey, OBS_LIMIT)),
@@ -554,11 +578,11 @@ export default async function handler(
       }
 
       // Fallback: OECD SDMX for EU/UK/JP/CA when FRED M1 returned no valid data.
-      // OECD data is published in millions NCU (scale = OECD_M1_MILLIONS_TO_BILLIONS).
+      // OECD data is published in millions NCU (scale = OECD_MILLIONS_TO_BILLIONS).
       if (m1USD === null && cfg.m1OecdCode !== null) {
         const oecdObs = oecdM1Map.get(cfg.m1OecdCode) ?? [];
         if (oecdObs.length >= 2) {
-          const m1Scale = OECD_M1_MILLIONS_TO_BILLIONS * toUSD;
+          const m1Scale = OECD_MILLIONS_TO_BILLIONS * toUSD;
           m1USD         = oecdObs[0].value * m1Scale;
           m1ChangeUSD   = m1USD - oecdObs[1].value * m1Scale;
           m1Date        = oecdObs[0].date;
@@ -566,24 +590,44 @@ export default async function handler(
       }
       // M1 failure is non-fatal: country still shows with M1 columns = null
 
-      // ── M2 / broad money (always via FRED) ──────────────────────────────
+      // ── M2 / broad money (FRED primary, OECD SDMX fallback for EU/UK/JP/CA) ──
+      // Try FRED first; if it is rejected or returns < 2 valid observations,
+      // fall back to the OECD SDMX MABMM301 series (same countries as M1 fallback).
+      // OECD publishes in millions of national currency; scale = OECD_MILLIONS_TO_BILLIONS.
+      // If both sources fail, the country row shows "—" (error: true).
       const m2Result = m2Settled[i];
-      if (m2Result.status === "rejected") {
-        return { ...base, error: true };
+
+      let pts: { date: string; valueUSD: number }[] = [];
+
+      if (m2Result.status === "fulfilled") {
+        const validFred = parseObs(m2Result.value);
+        if (validFred.length >= 2) {
+          // Step 1: raw FRED value × localToBillions → billions of local currency
+          // Step 2: × toUSD → billions USD
+          pts = validFred.slice(0, 13).map((o) => ({
+            date:     o.date,
+            valueUSD: o.value * cfg.localToBillions * toUSD,
+          }));
+        }
       }
 
-      const validM2 = parseObs(m2Result.value);
-      if (validM2.length < 2) {
-        return { ...base, error: true };
+      // OECD fallback: used when FRED M2 is rejected or has < 2 valid observations.
+      // OECD data is published in millions NCU (scale = OECD_MILLIONS_TO_BILLIONS).
+      if (pts.length < 2 && cfg.m2OecdCode !== null) {
+        const oecdObs = oecdM2Map.get(cfg.m2OecdCode) ?? [];
+        if (oecdObs.length >= 2) {
+          const m2Scale = OECD_MILLIONS_TO_BILLIONS * toUSD;
+          pts = oecdObs.slice(0, 13).map((o) => ({
+            date:     o.date,
+            valueUSD: o.value * m2Scale,
+          }));
+        }
       }
 
-      // Convert M2 observations to USD billions (up to 13 most-recent)
-      // Step 1: raw FRED value × localToBillions → billions of local currency
-      // Step 2: × toUSD → billions USD
-      const pts = validM2.slice(0, 13).map((o) => ({
-        date:     o.date,
-        valueUSD: o.value * cfg.localToBillions * toUSD,
-      }));
+      // If neither FRED nor OECD returned enough data, mark this country as errored.
+      if (pts.length < 2) {
+        return { ...base, error: true };
+      }
 
       const latestUSD  = pts[0].valueUSD;
       const prevMonUSD = pts[1].valueUSD;
