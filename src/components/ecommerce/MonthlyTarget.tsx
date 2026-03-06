@@ -18,21 +18,40 @@ const WEEKS_PER_YEAR  = 52;
 const DEFAULT_WEEKLY_AUD = 500; // $500/wk → $245/day
 
 // ── Cache config ───────────────────────────────────────────────────────────
-const ATH_CACHE_KEY           = "btc-ath";           // shared with BtcLiveChart
-const ATH_CACHE_TTL           = 86_400_000;          // 24 h
-const WMA_CACHE_KEY           = "btc-200wma";
-const WMA_CACHE_TTL           = 7 * 86_400_000;      // 7 days
-const WMA_PERIOD              = 200;
-const CYCLE_PEAK_CACHE_KEY    = "btc-cycle-peak";    // ms timestamp of live-derived cycle peak
-const CYCLE_TROUGH_CACHE_KEY  = "btc-cycle-trough";  // ms timestamp of live-derived cycle trough
-const CYCLE_CACHE_TTL         = 86_400_000;          // 24 h
-const CYCLE_ZONE_DAYS         = 90;                  // "near" = within 90 days of peak or trough
-const DCA_SETTINGS_KEY        = "dca-settings";      // user's custom DCA config
+const ATH_CACHE_KEY  = "btc-ath";      // shared with BtcLiveChart
+const ATH_CACHE_TTL  = 86_400_000;     // 24 h
+const WMA_CACHE_KEY  = "btc-200wma";
+const WMA_CACHE_TTL  = 7 * 86_400_000; // 7 days
+const WMA_PERIOD     = 200;
+const RSI_CACHE_KEY  = "btc-rsi14w";
+const RSI_CACHE_TTL  = 86_400_000;     // 24 h
+const DCA_SETTINGS_KEY = "dca-settings"; // user's custom DCA config
 
 // ── Signal thresholds (informational only — do not affect DCA amount) ──────
 const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
+const RSI_PERIOD     = 14;   // 14-week Wilder's RSI
+const RSI_OVERSOLD   = 30;   // weekly RSI ≤ 30 → bear-market trough territory confirmed
+const RSI_OVERBOUGHT = 70;   // weekly RSI ≥ 70 → bull-market peak territory confirmed
+const CYCLE_ZONE_DAYS = 90;  // within ±90 days of a known/projected cycle event = "in window"
+
+// ── Confirmed cycle dates + one projected next event per series ────────────
+// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed); Nov 2026 (+4yr projected)
+const CYCLE_TROUGHS_MS: readonly number[] = [
+  new Date("2015-01-14T00:00:00Z").getTime(),
+  new Date("2018-12-15T00:00:00Z").getTime(),
+  new Date("2022-11-21T00:00:00Z").getTime(),
+  new Date("2026-11-21T00:00:00Z").getTime(), // projected
+];
+// Peaks: Dec 2013, Dec 2017, Nov 2021, Oct 2025 (all confirmed); Oct 2029 (+4yr projected)
+const CYCLE_PEAKS_MS: readonly number[] = [
+  new Date("2013-12-04T00:00:00Z").getTime(),
+  new Date("2017-12-16T00:00:00Z").getTime(),
+  new Date("2021-11-08T00:00:00Z").getTime(),
+  new Date("2025-10-06T00:00:00Z").getTime(),
+  new Date("2029-10-06T00:00:00Z").getTime(), // projected
+];
 
 // ── Fallbacks while async fetches are in-flight ────────────────────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
@@ -135,70 +154,49 @@ function deriveSMA(klines: RawKline[], period: number): number | null {
   return last.reduce((s, v) => s + v, 0) / period;
 }
 
-// ── Live cycle-event detection from weekly klines ────────────────────────
-// Finds the most recent cycle peak and subsequent trough algorithmically,
-// so the Near-Trough / Near-Peak signals self-update across future cycles.
-//
-//  Peak  = week whose HIGH is the all-time high within the klines window
-//  Trough = week whose CLOSE is the deepest after the detected peak
-//          (null if the peak is the most-recent bar — trough hasn't formed yet)
-//
-type CyclePhase = "near-peak" | "near-trough" | "mid-cycle";
-type NearestEvent = "peak" | "trough";
+// ── Derive 14-week RSI using Wilder's smoothed method ─────────────────────
+// Used as live confirmation within historical cycle windows:
+//   Phase 1 "Near Trough" active when: in trough window AND RSI ≤ RSI_OVERSOLD
+//   Phase 2 "Near Peak"   active when: in peak window   AND RSI ≥ RSI_OVERBOUGHT
+function deriveRSI(klines: RawKline[], period: number): number | null {
+  const closes = klines.map((k) => parseFloat(k[4])).filter((v) => !isNaN(v));
+  if (closes.length < period + 1) return null;
 
-function detectCycleEvents(klines: RawKline[]): { peakMs: number; troughMs: number | null } | null {
-  if (klines.length < 26) return null; // need at least ~6 months
+  const changes: number[] = [];
+  for (let i = 1; i < closes.length; i++) changes.push(closes[i] - closes[i - 1]);
 
-  // Step 1: find the all-time high week (open-time of that candle = peakMs)
-  let peakIdx   = 0;
-  let peakHigh  = -Infinity;
-  for (let i = 0; i < klines.length; i++) {
-    const high = parseFloat(klines[i][2]);
-    if (!isNaN(high) && high > peakHigh) { peakHigh = high; peakIdx = i; }
+  // Seed: simple average of first `period` moves
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) avgGain += changes[i];
+    else avgLoss += Math.abs(changes[i]);
   }
-  const peakMs = klines[peakIdx][0] as number;
+  avgGain /= period;
+  avgLoss /= period;
 
-  // Step 2: find the deepest weekly close after the peak
-  if (peakIdx >= klines.length - 1) return { peakMs, troughMs: null };
-  let troughIdx   = peakIdx + 1;
-  let troughClose = Infinity;
-  for (let i = peakIdx + 1; i < klines.length; i++) {
-    const close = parseFloat(klines[i][4]);
-    if (!isNaN(close) && close < troughClose) { troughClose = close; troughIdx = i; }
+  // Wilder's smoothing (factor = 1/period)
+  for (let i = period; i < changes.length; i++) {
+    avgGain = (avgGain * (period - 1) + (changes[i] > 0 ? changes[i] : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (changes[i] <= 0 ? Math.abs(changes[i]) : 0)) / period;
   }
-  const troughMs = klines[troughIdx][0] as number;
 
-  return { peakMs, troughMs };
+  if (avgLoss === 0) return 100;
+  return 100 - 100 / (1 + avgGain / avgLoss);
 }
 
-// ── Cycle-phase proximity ─────────────────────────────────────────────────
-function getCyclePhase(
-  now: number,
-  peakMs: number | null,
-  troughMs: number | null,
-): { phase: CyclePhase; daysAway: number; nearest: NearestEvent; isPast: boolean } {
-  const zoneMs = CYCLE_ZONE_DAYS * 86_400_000;
+// ── Nearest date in a cycle series ────────────────────────────────────────
+interface CycleDateInfo { daysAway: number; isPast: boolean }
 
-  if (peakMs !== null) {
-    const d = Math.abs(now - peakMs);
-    if (d <= zoneMs) return { phase: "near-peak",   daysAway: Math.round(d / 86_400_000), nearest: "peak",   isPast: peakMs   < now };
+function nearestCycleDate(now: number, datesMs: readonly number[]): CycleDateInfo | null {
+  if (!datesMs.length) return null;
+  let minDist = Infinity;
+  let nearest = 0;
+  for (const d of datesMs) {
+    const dist = Math.abs(now - d);
+    if (dist < minDist) { minDist = dist; nearest = d; }
   }
-  if (troughMs !== null) {
-    const d = Math.abs(now - troughMs);
-    if (d <= zoneMs) return { phase: "near-trough", daysAway: Math.round(d / 86_400_000), nearest: "trough", isPast: troughMs < now };
-  }
-
-  // Mid-cycle: report distance to whichever event is closer
-  const peakDist   = peakMs   !== null ? Math.abs(now - peakMs)   : Infinity;
-  const troughDist = troughMs !== null ? Math.abs(now - troughMs) : Infinity;
-
-  if (peakMs !== null && peakDist <= troughDist) {
-    return { phase: "mid-cycle", daysAway: Math.round(peakDist   / 86_400_000), nearest: "peak",   isPast: peakMs   < now };
-  }
-  if (troughMs !== null) {
-    return { phase: "mid-cycle", daysAway: Math.round(troughDist / 86_400_000), nearest: "trough", isPast: troughMs < now };
-  }
-  return { phase: "mid-cycle", daysAway: 0, nearest: "peak", isPast: false };
+  return { daysAway: Math.round(minDist / 86_400_000), isPast: nearest < now };
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
@@ -250,9 +248,8 @@ export default function MonthlyTarget() {
   const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
   // Live ATH — PASS threshold (pauses DCA when price ≥ all-time high)
   const [highPriceUSD, setHighPriceUSD] = useState<number>(HIGH_PRICE_USD_FALLBACK);
-  // Live-derived cycle events (peak = ATH week; trough = deepest close after peak)
-  const [cyclePeakMs,   setCyclePeakMs]   = useState<number | null>(null);
-  const [cycleTroughMs, setCycleTroughMs] = useState<number | null>(null);
+  // 14-week RSI — live confirmation for cycle trough/peak windows
+  const [weeklyRSI, setWeeklyRSI] = useState<number | null>(null);
 
   // ── User DCA settings ─────────────────────────────────────────────────
   const [dcaSettings, setDcaSettings] = useState<DcaSettings>(loadDcaSettings);
@@ -304,23 +301,17 @@ export default function MonthlyTarget() {
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Fetch weekly klines (live ATH + 200WMA + cycle events) ─────────────
+  // ── Fetch weekly klines (live ATH + 200WMA + 14-week RSI) ──────────────
   useEffect(() => {
-    const cachedATH      = getCachedNumber(ATH_CACHE_KEY,           ATH_CACHE_TTL);
-    const cachedWMA      = getCachedNumber(WMA_CACHE_KEY,           WMA_CACHE_TTL);
-    const cachedPeakMs   = getCachedNumber(CYCLE_PEAK_CACHE_KEY,    CYCLE_CACHE_TTL);
-    // Trough cache: positive = valid timestamp; -1 = checked, no trough yet; null = not checked
-    const rawTroughCache = getCachedNumber(CYCLE_TROUGH_CACHE_KEY,  CYCLE_CACHE_TTL);
-    const cachedTroughMs = rawTroughCache !== null && rawTroughCache > 0 ? rawTroughCache : null;
-    const troughChecked  = rawTroughCache !== null; // true when we've completed a cycle detection pass
+    const cachedATH = getCachedNumber(ATH_CACHE_KEY, ATH_CACHE_TTL);
+    const cachedWMA = getCachedNumber(WMA_CACHE_KEY, WMA_CACHE_TTL);
+    const cachedRSI = getCachedNumber(RSI_CACHE_KEY, RSI_CACHE_TTL);
 
-    if (cachedATH      !== null) setHighPriceUSD(cachedATH);
-    if (cachedWMA      !== null) setLowPriceUSD(cachedWMA);
-    if (cachedPeakMs   !== null) setCyclePeakMs(cachedPeakMs);
-    if (cachedTroughMs !== null) setCycleTroughMs(cachedTroughMs);
+    if (cachedATH !== null) setHighPriceUSD(cachedATH);
+    if (cachedWMA !== null) setLowPriceUSD(cachedWMA);
+    if (cachedRSI !== null) setWeeklyRSI(cachedRSI);
 
-    // All values fresh — no network fetch needed
-    if (cachedATH !== null && cachedWMA !== null && cachedPeakMs !== null && troughChecked) return;
+    if (cachedATH !== null && cachedWMA !== null && cachedRSI !== null) return;
 
     const ctrl = new AbortController();
     fetchWeeklyKlines(ctrl.signal)
@@ -339,15 +330,11 @@ export default function MonthlyTarget() {
             setLowPriceUSD(wma);
           }
         }
-        if (cachedPeakMs === null || !troughChecked) {
-          const events = detectCycleEvents(klines);
-          if (events !== null) {
-            setCachedNumber(CYCLE_PEAK_CACHE_KEY, events.peakMs);
-            setCyclePeakMs(events.peakMs);
-            // Store -1 as sentinel when no trough has formed yet, so next load
-            // knows we've checked (and the skip condition fires correctly)
-            setCachedNumber(CYCLE_TROUGH_CACHE_KEY, events.troughMs ?? -1);
-            if (events.troughMs !== null) setCycleTroughMs(events.troughMs);
+        if (cachedRSI === null) {
+          const rsi = deriveRSI(klines, RSI_PERIOD);
+          if (rsi !== null && isFinite(rsi)) {
+            setCachedNumber(RSI_CACHE_KEY, rsi);
+            setWeeklyRSI(rsi);
           }
         }
       })
@@ -433,14 +420,18 @@ export default function MonthlyTarget() {
   const daysSinceHalving  = Math.max(0, Math.floor(msSinceHalving / 86_400_000));
   const postHalvingActive = msSinceHalving > 0 && msSinceHalving <= POST_HALVING_WINDOW;
 
-  // Cycle peak/trough proximity — derived live from weekly klines
-  const { phase: cyclePhase, daysAway: cycleDaysAway, nearest: cycleNearest, isPast: cycleIsPast } =
-    getCyclePhase(Date.now(), cyclePeakMs, cycleTroughMs);
-  const nearPeak   = cyclePhase === "near-peak";
-  const nearTrough = cyclePhase === "near-trough";
+  // Hybrid cycle signals: historical window (hardcoded accurate dates) + live RSI confirmation.
+  // nearTroughActive = within ±90 days of a confirmed/projected trough AND RSI ≤ 30 (oversold)
+  // nearPeakActive   = within ±90 days of a confirmed/projected peak   AND RSI ≥ 70 (overbought)
+  const now           = Date.now();
+  const nearestTrough = nearestCycleDate(now, CYCLE_TROUGHS_MS);
+  const nearestPeak   = nearestCycleDate(now, CYCLE_PEAKS_MS);
+  const inTroughWindow  = nearestTrough !== null && nearestTrough.daysAway <= CYCLE_ZONE_DAYS;
+  const inPeakWindow    = nearestPeak   !== null && nearestPeak.daysAway   <= CYCLE_ZONE_DAYS;
+  const nearTroughActive = inTroughWindow && weeklyRSI !== null && weeklyRSI <= RSI_OVERSOLD;
+  const nearPeakActive   = inPeakWindow   && weeklyRSI !== null && weeklyRSI >= RSI_OVERBOUGHT;
 
   // ── DCA window ─────────────────────────────────────────────────────────
-  const now        = Date.now();
   const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
   const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
 
@@ -650,14 +641,14 @@ export default function MonthlyTarget() {
               sub={fmtK(lowPriceUSD)}
             />
             <SignalItem
-              active={nearTrough}
-              label={nearTrough ? "Near Trough" : "Mid-Cycle"}
+              active={nearTroughActive}
+              label={inTroughWindow ? "Near Trough" : "Cycle Trough"}
               sub={
-                nearTrough
-                  ? cycleIsPast ? `${cycleDaysAway}d ago` : `in ${cycleDaysAway}d`
-                  : cycleIsPast
-                    ? `${cycleNearest} ${cycleDaysAway}d ago`
-                    : `${cycleDaysAway}d to ${cycleNearest}`
+                inTroughWindow
+                  ? weeklyRSI !== null ? `RSI ${Math.round(weeklyRSI)}` : "—"
+                  : nearestTrough !== null
+                    ? nearestTrough.isPast ? `${nearestTrough.daysAway}d ago` : `in ${nearestTrough.daysAway}d`
+                    : "—"
               }
             />
           </>
@@ -681,14 +672,14 @@ export default function MonthlyTarget() {
               sub={fmtK(lowPriceUSD)}
             />
             <SignalItem
-              active={nearPeak}
-              label={nearPeak ? "Near Peak" : "Mid-Cycle"}
+              active={nearPeakActive}
+              label={inPeakWindow ? "Near Peak" : "Cycle Peak"}
               sub={
-                nearPeak
-                  ? cycleIsPast ? `${cycleDaysAway}d ago` : `in ${cycleDaysAway}d`
-                  : cycleIsPast
-                    ? `${cycleNearest} ${cycleDaysAway}d ago`
-                    : `${cycleDaysAway}d to ${cycleNearest}`
+                inPeakWindow
+                  ? weeklyRSI !== null ? `RSI ${Math.round(weeklyRSI)}` : "—"
+                  : nearestPeak !== null
+                    ? nearestPeak.isPast ? `${nearestPeak.daysAway}d ago` : `in ${nearestPeak.daysAway}d`
+                    : "—"
               }
             />
             <SignalItem
