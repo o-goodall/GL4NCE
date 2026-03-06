@@ -520,6 +520,7 @@ export default function BtcLiveChart() {
           x: goldHighPoint[0],
           y: goldHighPoint[1],
           seriesIndex: 1,
+          yAxisIndex: 1,
           marker: { size: 4, fillColor: "#32CD32", strokeColor: "#fff", strokeWidth: 1.5 },
           label: {
             text: `${goldHighPoint[1].toFixed(2)} oz`,
@@ -543,6 +544,7 @@ export default function BtcLiveChart() {
           x: goldLowPoint[0],
           y: goldLowPoint[1],
           seriesIndex: 1,
+          yAxisIndex: 1,
           marker: { size: 4, fillColor: "#FF4F4F", strokeColor: "#fff", strokeWidth: 1.5 },
           label: {
             text: `${goldLowPoint[1].toFixed(2)} oz`,

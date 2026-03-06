@@ -4,7 +4,7 @@ import { parse } from "node:url";
 // Yahoo Finance GC=F (Gold Futures — USD/troy oz) historical data
 const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF";
 
-const ALLOWED_RANGES    = new Set(["1mo", "3mo", "1y", "5y", "max"]);
+const ALLOWED_RANGES    = new Set(["1mo", "3mo", "6mo", "1y", "5y", "max"]);
 const ALLOWED_INTERVALS = new Set(["1d", "1wk"]);
 
 interface YahooChartResponse {
