@@ -2,33 +2,25 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useEffect, useRef, useState } from "react";
 
-// ── Fallback constants (used while async fetches are in-flight) ────────────
-const LOW_PRICE_USD_FALLBACK  = 55_000;
-const HIGH_PRICE_USD_FALLBACK = 126_200;
-// $104,000 AUD over 4 years ÷ 423-day PoC period = $245/day (rounded down)
-const MAX_DCA_AUD             = 245;
+// ── DCA window ─────────────────────────────────────────────────────────────
+// Day 1 = 3 Apr 2026; Day 423 = 30 May 2027 ($245/day × 423d = $103,935 total)
+const DCA_START_MS       = new Date("2026-04-03T00:00:00Z").getTime();
+const DCA_END_MS         = DCA_START_MS + (423 - 1) * 86_400_000;
+const PASS_THRESHOLD_USD = 126_200; // previous cycle ATH — pause DCA above this
+const DCA_DAILY_AUD      = 245;     // fixed daily buy amount throughout window
 
 // ── Cache config ───────────────────────────────────────────────────────────
-const ATH_CACHE_KEY = "btc-ath";       // shared with BtcLiveChart
-const ATH_CACHE_TTL = 86_400_000;      // 24 h
 const WMA_CACHE_KEY = "btc-200wma";
 const WMA_CACHE_TTL = 7 * 86_400_000;  // 7 days
 const WMA_PERIOD    = 200;
 
-// ── Signal thresholds ──────────────────────────────────────────────────────
+// ── Signal thresholds (informational only — do not affect DCA amount) ──────
 const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
 
-// ── Boost percentages per signal ───────────────────────────────────────────
-const BOOST_FEAR_EXTREME = 20;
-const BOOST_FEAR_ACTIVE  = 10;
-const BOOST_DIFF_DROP    = 10;
-const BOOST_HALVING      = 10;
-const BOOST_POST_HALVING = 10; // post-halving accumulation phase (BSP cycle insight)
-const BOOST_BELOW_WMA    = 25; // price below 200WMA = historically rare extreme buy zone
-const BOOST_NEAR_TROUGH  = 15; // near projected cycle trough = historically best accumulation
-const DAMPEN_NEAR_PEAK   = -10; // near projected cycle peak = reduce exposure
+// ── Fallback for 200WMA while async fetch is in-flight ────────────────────
+const LOW_PRICE_USD_FALLBACK = 55_000;
 
 // ── Halving cycle ──────────────────────────────────────────────────────────
 const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
@@ -57,10 +49,6 @@ const CHART_FONT     = "Inter, sans-serif";
 const CHART_TRACK_BG = "#E5E5E7";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function roundToNearest5(n: number): number {
-  return Math.round(n / 5) * 5;
-}
-
 function fmtAUD(n: number): string {
   return n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
@@ -97,17 +85,6 @@ async function fetchWeeklyKlines(signal: AbortSignal): Promise<RawKline[]> {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as RawKline[];
-}
-
-// ── Derive ATH from klines (all-time high across weekly highs) ────────────
-function deriveATH(klines: RawKline[]): number | null {
-  if (!klines.length) return null;
-  let max = -Infinity;
-  for (const k of klines) {
-    const high = parseFloat(k[2]);
-    if (!isNaN(high) && high > max) max = high;
-  }
-  return isFinite(max) ? max : null;
 }
 
 // ── Generic SMA of the last `period` closes ────────────────────────────────
@@ -194,38 +171,26 @@ export default function MonthlyTarget() {
   const [fearGreed,  setFearGreed]  = useState<number | null>(null);
   const [diffChange, setDiffChange] = useState<number | null>(null);
 
-  // Dynamic price boundaries
-  const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
-  const [highPriceUSD, setHighPriceUSD] = useState<number>(HIGH_PRICE_USD_FALLBACK);
+  // 200-week moving average (for Below-WMA signal)
+  const [lowPriceUSD, setLowPriceUSD] = useState<number>(LOW_PRICE_USD_FALLBACK);
 
   const prevBuy   = useRef<number | "PASS" | null>(null);
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Fetch weekly klines (ATH + 200WMA) ──────────────────────────────────
+  // ── Fetch weekly klines (200WMA) ────────────────────────────────────────
   useEffect(() => {
-    const cachedATH = getCachedNumber(ATH_CACHE_KEY, ATH_CACHE_TTL);
     const cachedWMA = getCachedNumber(WMA_CACHE_KEY, WMA_CACHE_TTL);
-    if (cachedATH !== null) setHighPriceUSD(cachedATH);
     if (cachedWMA !== null) setLowPriceUSD(cachedWMA);
-    if (cachedATH !== null && cachedWMA !== null) return;
+    if (cachedWMA !== null) return;
 
     const ctrl = new AbortController();
     fetchWeeklyKlines(ctrl.signal)
       .then((klines) => {
-        if (cachedATH === null) {
-          const ath = deriveATH(klines);
-          if (ath !== null && ath > 0) {
-            setCachedNumber(ATH_CACHE_KEY, ath);
-            setHighPriceUSD(ath);
-          }
-        }
-        if (cachedWMA === null) {
-          const wma = deriveSMA(klines, WMA_PERIOD);
-          if (wma !== null && wma > 0) {
-            setCachedNumber(WMA_CACHE_KEY, wma);
-            setLowPriceUSD(wma);
-          }
+        const wma = deriveSMA(klines, WMA_PERIOD);
+        if (wma !== null && wma > 0) {
+          setCachedNumber(WMA_CACHE_KEY, wma);
+          setLowPriceUSD(wma);
         }
       })
       .catch(() => { /* keep fallback values */ });
@@ -271,14 +236,6 @@ export default function MonthlyTarget() {
           const price = parseFloat(raw);
           if (!isNaN(price)) {
             setPriceUSD(price);
-            // Update ATH if live price exceeds stored value
-            setHighPriceUSD((prev) => {
-              if (price > prev) {
-                setCachedNumber(ATH_CACHE_KEY, price);
-                return price;
-              }
-              return prev;
-            });
           }
         }
       } catch { /* ignore malformed frames */ }
@@ -314,56 +271,27 @@ export default function MonthlyTarget() {
   const nearPeak   = cyclePhase === "near-peak";
   const nearTrough = cyclePhase === "near-trough";
 
-  // ── Boost ──────────────────────────────────────────────────────────────
-  let totalBoost = 0;
-  if (fearExtreme)     totalBoost += BOOST_FEAR_EXTREME;
-  else if (fearActive) totalBoost += BOOST_FEAR_ACTIVE;
-  if (diffActive)      totalBoost += BOOST_DIFF_DROP;
-  // Post-halving and pre-halving are mutually exclusive phases of the same
-  // 4-year cycle, so only one boost can apply at a time.
-  if (halvingActive)   totalBoost += BOOST_HALVING;
-  else if (postHalvingActive) totalBoost += BOOST_POST_HALVING;
-  if (belowWMA)        totalBoost += BOOST_BELOW_WMA;
-  // Cycle peak/trough: dampen near peaks, boost near troughs
-  if (nearPeak)        totalBoost += DAMPEN_NEAR_PEAK;
-  else if (nearTrough) totalBoost += BOOST_NEAR_TROUGH;
+  // ── DCA window ─────────────────────────────────────────────────────────
+  const now        = Date.now();
+  const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
+  const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
 
-  // ── DCA calculation ────────────────────────────────────────────────────
+  // ── DCA recommendation — fixed $245/day; PASS above previous-cycle ATH ──
   let recommendedBuy: number | "PASS" | null = null;
-  let allocationPct = 0;
-
-  if (priceUSD !== null) {
-    if (priceUSD > highPriceUSD) {
-      recommendedBuy = "PASS";
-    } else {
-      allocationPct = Math.max(
-        0,
-        Math.min(
-          1,
-          1 - (priceUSD - lowPriceUSD) / (highPriceUSD - lowPriceUSD)
-        )
-      );
-      const rawBuy = MAX_DCA_AUD * allocationPct * (1 + totalBoost / 100);
-      recommendedBuy = roundToNearest5(Math.min(rawBuy, MAX_DCA_AUD));
-    }
+  if (priceUSD !== null && inWindow) {
+    recommendedBuy = priceUSD >= PASS_THRESHOLD_USD ? "PASS" : DCA_DAILY_AUD;
   }
 
   // ── Gauge colour ──────────────────────────────────────────────────────
   let gaugeColor = "#98a2b3";
-
-  if (priceUSD !== null) {
-    if (priceUSD > highPriceUSD) {
-      gaugeColor    = "#EF4444";
-    } else if (belowWMA || (allocationPct >= 0.85 && totalBoost >= 20)) {
-      gaugeColor    = "#10B981";
-    } else if (allocationPct >= 0.45 || totalBoost >= 10) {
-      gaugeColor    = "#FFD300";
-    } else {
-      gaugeColor    = "#F59E0B";
-    }
+  const isPass = recommendedBuy === "PASS";
+  if (isPass) {
+    gaugeColor = "#EF4444";
+  } else if (inWindow && priceUSD !== null) {
+    gaugeColor = belowWMA ? "#10B981" : "#FFD300";
   }
 
-  // Subtle scale animation when buy amount changes
+  // Subtle scale animation when recommendation changes
   useEffect(() => {
     if (recommendedBuy !== null && recommendedBuy !== prevBuy.current) {
       if (prevBuy.current !== null) {
@@ -379,16 +307,13 @@ export default function MonthlyTarget() {
   }, [recommendedBuy]);
 
   // ── Display helpers ────────────────────────────────────────────────────
-  const isPass    = recommendedBuy === "PASS";
-  const isLoading = recommendedBuy === null;
-
-  const buyRatio   = isPass || isLoading ? 0 : (recommendedBuy as number) / MAX_DCA_AUD;
-  const chartValue = isPass || isLoading ? 0 : Math.round(buyRatio * 100);
-  const centerLabel = isLoading
-    ? "—"
-    : isPass
-    ? "PASS"
-    : `$${fmtAUD(recommendedBuy as number)}`;
+  const chartValue = recommendedBuy === DCA_DAILY_AUD ? 100 : 0;
+  const centerLabel =
+    now < DCA_START_MS ? `${daysToStart}d`
+    : now > DCA_END_MS  ? "Done"
+    : priceUSD === null  ? "—"
+    : isPass             ? "PASS"
+    :                      `$${fmtAUD(DCA_DAILY_AUD)}`;
 
   // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
