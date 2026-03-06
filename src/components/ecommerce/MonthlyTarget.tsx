@@ -3,13 +3,14 @@ import { ApexOptions } from "apexcharts";
 import { useEffect, useRef, useState } from "react";
 
 // ── DCA window ─────────────────────────────────────────────────────────────
-// Day 1 = 3 Apr 2026; Day 423 = 30 May 2027 ($245/day × 423d = $103,935 total)
-const DCA_START_MS       = new Date("2026-04-03T00:00:00Z").getTime();
-const DCA_END_MS         = DCA_START_MS + (423 - 1) * 86_400_000;
-const PASS_THRESHOLD_USD = 126_200; // previous cycle ATH — pause DCA above this
-const DCA_DAILY_AUD      = 245;     // fixed daily buy amount throughout window
+// Day 1 = 6 March 2026; Day 423 = 2 May 2027 ($245/day × 423d = $103,935 total)
+const DCA_START_MS  = new Date("2026-03-06T00:00:00Z").getTime();
+const DCA_END_MS    = DCA_START_MS + (423 - 1) * 86_400_000;
+const DCA_DAILY_AUD = 245; // fixed daily buy amount throughout window
 
 // ── Cache config ───────────────────────────────────────────────────────────
+const ATH_CACHE_KEY = "btc-ath";       // shared with BtcLiveChart
+const ATH_CACHE_TTL = 86_400_000;      // 24 h
 const WMA_CACHE_KEY = "btc-200wma";
 const WMA_CACHE_TTL = 7 * 86_400_000;  // 7 days
 const WMA_PERIOD    = 200;
@@ -19,8 +20,9 @@ const FEAR_EXTREME_THRESHOLD = 20;
 const FEAR_ACTIVE_THRESHOLD  = 40;
 const DIFF_DROP_THRESHOLD    = -5;
 
-// ── Fallback for 200WMA while async fetch is in-flight ────────────────────
-const LOW_PRICE_USD_FALLBACK = 55_000;
+// ── Fallbacks while async fetches are in-flight ────────────────────────────
+const LOW_PRICE_USD_FALLBACK  = 55_000;
+const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
 
 // ── Halving cycle ──────────────────────────────────────────────────────────
 const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
@@ -85,6 +87,17 @@ async function fetchWeeklyKlines(signal: AbortSignal): Promise<RawKline[]> {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as RawKline[];
+}
+
+// ── Derive ATH from klines (all-time high across weekly highs) ────────────
+function deriveATH(klines: RawKline[]): number | null {
+  if (!klines.length) return null;
+  let max = -Infinity;
+  for (const k of klines) {
+    const high = parseFloat(k[2]);
+    if (!isNaN(high) && high > max) max = high;
+  }
+  return isFinite(max) ? max : null;
 }
 
 // ── Generic SMA of the last `period` closes ────────────────────────────────
@@ -172,25 +185,38 @@ export default function MonthlyTarget() {
   const [diffChange, setDiffChange] = useState<number | null>(null);
 
   // 200-week moving average (for Below-WMA signal)
-  const [lowPriceUSD, setLowPriceUSD] = useState<number>(LOW_PRICE_USD_FALLBACK);
+  const [lowPriceUSD,  setLowPriceUSD]  = useState<number>(LOW_PRICE_USD_FALLBACK);
+  // Live ATH — PASS threshold (pauses DCA when price ≥ all-time high)
+  const [highPriceUSD, setHighPriceUSD] = useState<number>(HIGH_PRICE_USD_FALLBACK);
 
   const prevBuy   = useRef<number | "PASS" | null>(null);
   const [animate, setAnimate] = useState(false);
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Fetch weekly klines (200WMA) ────────────────────────────────────────
+  // ── Fetch weekly klines (live ATH + 200WMA) ─────────────────────────────
   useEffect(() => {
+    const cachedATH = getCachedNumber(ATH_CACHE_KEY, ATH_CACHE_TTL);
     const cachedWMA = getCachedNumber(WMA_CACHE_KEY, WMA_CACHE_TTL);
+    if (cachedATH !== null) setHighPriceUSD(cachedATH);
     if (cachedWMA !== null) setLowPriceUSD(cachedWMA);
-    if (cachedWMA !== null) return;
+    if (cachedATH !== null && cachedWMA !== null) return;
 
     const ctrl = new AbortController();
     fetchWeeklyKlines(ctrl.signal)
       .then((klines) => {
-        const wma = deriveSMA(klines, WMA_PERIOD);
-        if (wma !== null && wma > 0) {
-          setCachedNumber(WMA_CACHE_KEY, wma);
-          setLowPriceUSD(wma);
+        if (cachedATH === null) {
+          const ath = deriveATH(klines);
+          if (ath !== null && ath > 0) {
+            setCachedNumber(ATH_CACHE_KEY, ath);
+            setHighPriceUSD(ath);
+          }
+        }
+        if (cachedWMA === null) {
+          const wma = deriveSMA(klines, WMA_PERIOD);
+          if (wma !== null && wma > 0) {
+            setCachedNumber(WMA_CACHE_KEY, wma);
+            setLowPriceUSD(wma);
+          }
         }
       })
       .catch(() => { /* keep fallback values */ });
@@ -236,6 +262,14 @@ export default function MonthlyTarget() {
           const price = parseFloat(raw);
           if (!isNaN(price)) {
             setPriceUSD(price);
+            // Keep ATH up-to-date as BTC makes new highs (future-proofing)
+            setHighPriceUSD((prev) => {
+              if (price > prev) {
+                setCachedNumber(ATH_CACHE_KEY, price);
+                return price;
+              }
+              return prev;
+            });
           }
         }
       } catch { /* ignore malformed frames */ }
@@ -276,10 +310,10 @@ export default function MonthlyTarget() {
   const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
   const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
 
-  // ── DCA recommendation — fixed $245/day; PASS above previous-cycle ATH ──
+  // ── DCA recommendation — fixed $245/day; PASS when price ≥ live ATH ──────
   let recommendedBuy: number | "PASS" | null = null;
   if (priceUSD !== null && inWindow) {
-    recommendedBuy = priceUSD >= PASS_THRESHOLD_USD ? "PASS" : DCA_DAILY_AUD;
+    recommendedBuy = priceUSD >= highPriceUSD ? "PASS" : DCA_DAILY_AUD;
   }
 
   // ── Gauge colour ──────────────────────────────────────────────────────
@@ -406,8 +440,8 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* Signals footer — 5 signals */}
-      <div className="grid grid-cols-5 divide-x divide-gray-200 dark:divide-gray-800">
+      {/* Signals footer — 6 signals */}
+      <div className="grid grid-cols-6 divide-x divide-gray-200 dark:divide-gray-800">
         <SignalItem
           active={fearActive}
           label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
@@ -446,6 +480,11 @@ export default function MonthlyTarget() {
           active={belowWMA}
           label="Below WMA"
           sub={fmtK(lowPriceUSD)}
+        />
+        <SignalItem
+          active={isPass}
+          label="At ATH"
+          sub={fmtK(highPriceUSD)}
         />
       </div>
     </div>
