@@ -28,13 +28,22 @@ type NavItem = {
 const navItems: NavItem[] = [
   {
     icon: <GridIcon />,
-    name: "Dashboard",
-    subItems: [
-      { name: "Signal", path: "/", pro: false },
-      { name: "Portfolio", path: "/portfolio", pro: false },
-      { name: "Intel", path: "/intel", pro: false },
-    ],
+    name: "Signal",
+    path: "/",
   },
+  {
+    icon: <PieChartIcon />,
+    name: "Portfolio",
+    path: "/portfolio",
+  },
+  {
+    icon: <BoxCubeIcon />,
+    name: "Intel",
+    path: "/intel",
+  },
+];
+
+const othersItems: NavItem[] = [
   {
     icon: <CalenderIcon />,
     name: "Calendar",
@@ -61,29 +70,6 @@ const navItems: NavItem[] = [
     subItems: [
       { name: "Blank Page", path: "/blank", pro: false },
       { name: "404 Error", path: "/error-404", pro: false },
-    ],
-  },
-];
-
-const othersItems: NavItem[] = [
-  {
-    icon: <PieChartIcon />,
-    name: "Charts",
-    subItems: [
-      { name: "Line Chart", path: "/line-chart", pro: false },
-      { name: "Bar Chart", path: "/bar-chart", pro: false },
-    ],
-  },
-  {
-    icon: <BoxCubeIcon />,
-    name: "UI Elements",
-    subItems: [
-      { name: "Alerts", path: "/alerts", pro: false },
-      { name: "Avatar", path: "/avatars", pro: false },
-      { name: "Badge", path: "/badge", pro: false },
-      { name: "Buttons", path: "/buttons", pro: false },
-      { name: "Images", path: "/images", pro: false },
-      { name: "Videos", path: "/videos", pro: false },
     ],
   },
   {

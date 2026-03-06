@@ -1,9 +1,9 @@
 import { lazy, Suspense } from "react";
-import GeopoliticalMarkets from "../../components/polymarket/GeopoliticalMarkets";
-import PageMeta from "../../components/common/PageMeta";
+import GeopoliticalMarkets from "../components/polymarket/GeopoliticalMarkets";
+import PageMeta from "../components/common/PageMeta";
 
-const NewsMapWidget = lazy(() => import("../../components/news-map/NewsMapWidget"));
-const PulseFeed = lazy(() => import("../../components/pulse/PulseFeed"));
+const NewsMapWidget = lazy(() => import("../components/news-map/NewsMapWidget"));
+const PulseFeed = lazy(() => import("../components/pulse/PulseFeed"));
 
 export default function Intel() {
   return (
