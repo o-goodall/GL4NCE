@@ -152,30 +152,33 @@ function deriveSMA(klines: RawKline[], period: number): number | null {
 type CyclePhase = "near-peak" | "near-trough" | "mid-cycle";
 type NearestEvent = "peak" | "trough";
 
-function getCyclePhase(now: number): { phase: CyclePhase; daysAway: number; nearest: NearestEvent } {
-  let nearestPeakDist = Infinity;
+function getCyclePhase(now: number): { phase: CyclePhase; daysAway: number; nearest: NearestEvent; isPast: boolean } {
+  let nearestPeakDist  = Infinity;
+  let nearestPeakMs    = 0;
   for (const p of CYCLE_PEAKS_MS) {
     const d = Math.abs(now - p);
-    if (d < nearestPeakDist) nearestPeakDist = d;
+    if (d < nearestPeakDist) { nearestPeakDist = d; nearestPeakMs = p; }
   }
   let nearestTroughDist = Infinity;
+  let nearestTroughMs   = 0;
   for (const t of CYCLE_TROUGHS_MS) {
     const d = Math.abs(now - t);
-    if (d < nearestTroughDist) nearestTroughDist = d;
+    if (d < nearestTroughDist) { nearestTroughDist = d; nearestTroughMs = t; }
   }
 
   if (nearestPeakDist <= CYCLE_ZONE_RADIUS) {
-    return { phase: "near-peak", daysAway: Math.round(nearestPeakDist / 86_400_000), nearest: "peak" };
+    return { phase: "near-peak",   daysAway: Math.round(nearestPeakDist  / 86_400_000), nearest: "peak",   isPast: nearestPeakMs  < now };
   }
   if (nearestTroughDist <= CYCLE_ZONE_RADIUS) {
-    return { phase: "near-trough", daysAway: Math.round(nearestTroughDist / 86_400_000), nearest: "trough" };
+    return { phase: "near-trough", daysAway: Math.round(nearestTroughDist / 86_400_000), nearest: "trough", isPast: nearestTroughMs < now };
   }
-  // Mid-cycle: report distance to the closer upcoming event
+  // Mid-cycle: report distance to the closer event (past or future)
   const peakCloser = nearestPeakDist < nearestTroughDist;
   return {
     phase: "mid-cycle",
     daysAway: Math.round((peakCloser ? nearestPeakDist : nearestTroughDist) / 86_400_000),
-    nearest: peakCloser ? "peak" : "trough",
+    nearest:  peakCloser ? "peak" : "trough",
+    isPast:   peakCloser ? nearestPeakMs < now : nearestTroughMs < now,
   };
 }
 
@@ -387,7 +390,7 @@ export default function MonthlyTarget() {
   const postHalvingActive = msSinceHalving > 0 && msSinceHalving <= POST_HALVING_WINDOW;
 
   // Cycle peak/trough proximity (historical + projected cycle dates)
-  const { phase: cyclePhase, daysAway: cycleDaysAway, nearest: cycleNearest } = getCyclePhase(Date.now());
+  const { phase: cyclePhase, daysAway: cycleDaysAway, nearest: cycleNearest, isPast: cycleIsPast } = getCyclePhase(Date.now());
   const nearPeak   = cyclePhase === "near-peak";
   const nearTrough = cyclePhase === "near-trough";
 
@@ -600,8 +603,10 @@ export default function MonthlyTarget() {
           }
           sub={
             nearPeak || nearTrough
-              ? `${cycleDaysAway}d`
-              : `${cycleNearest} ${cycleDaysAway}d`
+              ? cycleIsPast ? `${cycleDaysAway}d ago` : `in ${cycleDaysAway}d`
+              : cycleIsPast
+                ? `${cycleNearest} ${cycleDaysAway}d ago`
+                : `${cycleDaysAway}d to ${cycleNearest}`
           }
         />
         <SignalItem
