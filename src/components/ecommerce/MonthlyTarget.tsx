@@ -379,6 +379,7 @@ export default function MonthlyTarget() {
   const fearActive  = fearGreed !== null && fearGreed <= FEAR_ACTIVE_THRESHOLD;
   const diffActive  = diffChange !== null && diffChange < DIFF_DROP_THRESHOLD;
   const belowWMA    = priceUSD !== null && priceUSD < lowPriceUSD;
+  const aboveWMA    = priceUSD !== null && priceUSD >= lowPriceUSD;
 
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
@@ -398,6 +399,9 @@ export default function MonthlyTarget() {
   const now        = Date.now();
   const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
   const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
+
+  // Phase 1 = accumulation window (bear / accumulate); Phase 2 = recovery / bull
+  const isPhase1 = now <= DCA_END_MS;
 
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
@@ -571,54 +575,85 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* Signals footer — 6 signals */}
-      <div className="grid grid-cols-6 divide-x divide-gray-200 dark:divide-gray-800">
-        <SignalItem
-          active={fearActive}
-          label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
-          sub={fearGreed !== null ? String(fearGreed) : "—"}
-        />
-        <SignalItem
-          active={diffActive}
-          label="Diff Drop"
-          sub={diffChange !== null ? `${diffChange.toFixed(1)}%` : "—"}
-        />
-        <SignalItem
-          active={halvingActive || postHalvingActive}
-          label={
-            postHalvingActive  ? "Post-Halv"
-            : halvingActive    ? "Pre-Halving"
-            :                    "Halving"
-          }
-          sub={
-            postHalvingActive ? `${daysSinceHalving}d ago` : `${daysToHalving}d`
-          }
-        />
-        <SignalItem
-          active={nearPeak || nearTrough}
-          label={
-            nearPeak    ? "Near Peak"
-            : nearTrough ? "Near Trough"
-            :              "Mid-Cycle"
-          }
-          sub={
-            nearPeak || nearTrough
-              ? cycleIsPast ? `${cycleDaysAway}d ago` : `in ${cycleDaysAway}d`
-              : cycleIsPast
-                ? `${cycleNearest} ${cycleDaysAway}d ago`
-                : `${cycleDaysAway}d to ${cycleNearest}`
-          }
-        />
-        <SignalItem
-          active={belowWMA}
-          label="Below WMA"
-          sub={fmtK(lowPriceUSD)}
-        />
-        <SignalItem
-          active={isPass}
-          label="At ATH"
-          sub={fmtK(highPriceUSD)}
-        />
+      {/* Phase label + signals footer */}
+      <div className={`flex items-center justify-center gap-1.5 px-4 py-1.5 border-t border-gray-200 dark:border-gray-800 ${
+        isPhase1 ? "bg-amber-50/60 dark:bg-amber-900/10" : "bg-emerald-50/60 dark:bg-emerald-900/10"
+      }`}>
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPhase1 ? "bg-amber-400" : "bg-emerald-400"}`} />
+        <span className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">
+          {isPhase1 ? "Phase 1 · Accumulation" : "Phase 2 · Recovery / Bull"}
+        </span>
+      </div>
+
+      {/* Signals grid — 4 contextual tiles per phase */}
+      <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
+        {isPhase1 ? (
+          <>
+            {/* Phase 1: bear/accumulation signals */}
+            <SignalItem
+              active={fearActive}
+              label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
+              sub={fearGreed !== null ? String(fearGreed) : "—"}
+            />
+            <SignalItem
+              active={diffActive}
+              label="Diff Drop"
+              sub={diffChange !== null ? `${diffChange.toFixed(1)}%` : "—"}
+            />
+            <SignalItem
+              active={belowWMA}
+              label="Below WMA"
+              sub={fmtK(lowPriceUSD)}
+            />
+            <SignalItem
+              active={nearTrough}
+              label={nearTrough ? "Near Trough" : "Mid-Cycle"}
+              sub={
+                nearTrough
+                  ? cycleIsPast ? `${cycleDaysAway}d ago` : `in ${cycleDaysAway}d`
+                  : cycleIsPast
+                    ? `${cycleNearest} ${cycleDaysAway}d ago`
+                    : `${cycleDaysAway}d to ${cycleNearest}`
+              }
+            />
+          </>
+        ) : (
+          <>
+            {/* Phase 2: recovery/bull signals */}
+            <SignalItem
+              active={halvingActive || postHalvingActive}
+              label={
+                postHalvingActive ? "Post-Halv"
+                : halvingActive   ? "Pre-Halving"
+                :                   "Halving"
+              }
+              sub={
+                postHalvingActive ? `${daysSinceHalving}d ago` : `${daysToHalving}d`
+              }
+            />
+            <SignalItem
+              active={aboveWMA}
+              label="Above WMA"
+              sub={fmtK(lowPriceUSD)}
+            />
+            <SignalItem
+              active={nearPeak}
+              label={nearPeak ? "Near Peak" : "Mid-Cycle"}
+              sub={
+                nearPeak
+                  ? cycleIsPast ? `${cycleDaysAway}d ago` : `in ${cycleDaysAway}d`
+                  : cycleIsPast
+                    ? `${cycleNearest} ${cycleDaysAway}d ago`
+                    : `${cycleDaysAway}d to ${cycleNearest}`
+              }
+            />
+            <SignalItem
+              active={isPass}
+              label="At ATH"
+              sub={fmtK(highPriceUSD)}
+            />
+          </>
+        )}
       </div>
     </div>
 
