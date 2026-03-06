@@ -20,8 +20,6 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
 };
 
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "6M", "1Y", "ALL"];
-const ATH_CACHE_KEY = "btc-ath";
-const ATH_CACHE_TTL = 86_400_000; // 24 hours
 const CHART_UPDATE_THROTTLE_MS = 1_000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -50,22 +48,6 @@ function getCachedPrices(tf: Timeframe): PricePoint[] | null {
 function setCachedPrices(tf: Timeframe, data: PricePoint[]): void {
   try {
     localStorage.setItem(`btc-ohlc-${tf}`, JSON.stringify({ data, fetchedAt: Date.now() }));
-  } catch { /* ignore storage quota errors */ }
-}
-
-function getCachedATH(): number | null {
-  try {
-    const raw = localStorage.getItem(ATH_CACHE_KEY);
-    if (!raw) return null;
-    const entry = JSON.parse(raw) as { price: number; fetchedAt: number };
-    if (Date.now() - entry.fetchedAt > ATH_CACHE_TTL) return null;
-    return entry.price;
-  } catch { return null; }
-}
-
-function setCachedATH(price: number): void {
-  try {
-    localStorage.setItem(ATH_CACHE_KEY, JSON.stringify({ price, fetchedAt: Date.now() }));
   } catch { /* ignore storage quota errors */ }
 }
 
@@ -191,27 +173,9 @@ export default function BtcLiveChart() {
   const [livePrice,  setLivePrice]  = useState<number | null>(null);
   const [change24h,  setChange24h]  = useState<number | null>(null);
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
-  const [ath,        setATH]        = useState<number | null>(null);
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [goldAth,    setGoldAth]    = useState(GOLD_RATIO_ATH_FALLBACK);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
-
-  // ── ATH fetch on mount ───────────────────────────────────────────────────────
-  useEffect(() => {
-    const cachedATH = getCachedATH();
-    if (cachedATH !== null) { setATH(cachedATH); return; }
-    const ctrl = new AbortController();
-    fetchKlines("ALL", ctrl.signal)
-      .then((raw) => {
-        const maxHigh = raw.reduce((m, k) => {
-          const h = parseFloat(k[2]);
-          return h > m ? h : m;
-        }, -Infinity);
-        if (isFinite(maxHigh)) { setCachedATH(maxHigh); setATH(maxHigh); }
-      })
-      .catch(() => { /* non-critical — ATH annotation simply won't render */ });
-    return () => ctrl.abort();
-  }, []);
 
   // ── Gold ATH — load from localStorage cache on mount ─────────────────────────
   useEffect(() => {
@@ -609,11 +573,6 @@ export default function BtcLiveChart() {
                   </Badge>
                 )}
               </div>
-              {ath !== null && (
-                <span className="text-xs font-medium text-amber-500 tabular-nums">
-                  ATH ${fmtNum(ath)}
-                </span>
-              )}
               {(highPoint || lowPoint) && (
                 <span className="flex items-center gap-2 text-xs tabular-nums">
                   {highPoint && (
@@ -730,9 +689,6 @@ export default function BtcLiveChart() {
         />
       </div>
 
-      <p className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-600 select-none">
-        Drag to zoom · Scroll / pinch to zoom
-      </p>
     </div>
   );
 }
