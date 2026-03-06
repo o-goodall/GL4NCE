@@ -361,20 +361,20 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         isNew ? `animate-[btc-block-enter_${BLOCK_ENTER_DURATION}_ease-out_both]` : ""
       } ${
         isLatest
-          ? `bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
+          ? `bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
           : "bg-white border-gray-100 dark:bg-white/[0.025] dark:border-gray-800"
       }`}
     >
       {/* Height */}
       <div className={`text-sm font-bold tabular-nums leading-tight ${
-        isLatest ? "text-orange-800 dark:text-orange-200" : "text-gray-700 dark:text-gray-200"
+        isLatest ? "text-brand-800 dark:text-brand-200" : "text-gray-700 dark:text-gray-200"
       }`}>
         #{fmtNum(block.height)}
       </div>
 
       {/* Time */}
       <div className={`text-[9px] mt-0.5 leading-none ${
-        isLatest ? "text-orange-700 dark:text-orange-300" : "text-gray-400 dark:text-gray-500"
+        isLatest ? "text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-gray-500"
       }`}>
         {timeAgo(block.timestamp)} ago
       </div>
@@ -404,7 +404,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         {pool && (
           <div
             className={`text-[8px] truncate leading-none mt-0.5 ${
-              isLatest ? "text-orange-700 dark:text-orange-300" : "text-gray-400 dark:text-gray-500"
+              isLatest ? "text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-gray-500"
             }`}
             title={pool}
           >
@@ -421,13 +421,13 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
             style={{
               width: `${fullness}%`,
               background: isLatest
-                ? "linear-gradient(to right, rgba(251,146,60,0.8), rgba(245,158,11,0.95))"
+                ? "linear-gradient(to right, rgba(0,184,255,0.8), rgba(0,184,255,0.95))"
                 : "rgba(156,163,175,0.6)",
             }}
           />
         </div>
         <div className={`text-[8px] tabular-nums mt-0.5 text-right leading-none ${
-          isLatest ? "text-orange-700 dark:text-orange-300" : "text-gray-400 dark:text-gray-500"
+          isLatest ? "text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-gray-500"
         }`}>
           {fullness}%
         </div>
@@ -634,7 +634,7 @@ export default function BlockchainVisualizer() {
           pct={epochProgress}
           percentageLabel={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : null}
           right={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : null}
-          gradient="linear-gradient(to right, rgba(251,146,60,0.8), rgba(239,68,68,0.7))"
+          gradient="linear-gradient(to right, rgba(0,184,255,0.7), rgba(0,151,209,0.9))"
           loading={loading}
         />
       </div>
