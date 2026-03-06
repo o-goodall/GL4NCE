@@ -303,7 +303,6 @@ export default function MonthlyTarget() {
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
   const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
-  const daysToWindow  = Math.max(0, Math.ceil((msToHalving - 365 * 86_400_000) / 86_400_000));
 
   // Post-halving accumulation phase (BSP cycle-awareness)
   const msSinceHalving    = Date.now() - PREV_HALVING_MS;
@@ -477,21 +476,6 @@ export default function MonthlyTarget() {
               >
                 {centerLabel}
               </span>
-              {!isLoading && !isPass && (
-                <div
-                  style={{
-                    color: gaugeColor,
-                    fontSize: "clamp(11px, 2.5vw, 14px)",
-                    fontWeight: 500,
-                    fontFamily: CHART_FONT,
-                    opacity: 0.75,
-                    lineHeight: 1.2,
-                    transition: "color 0.3s ease",
-                  }}
-                >
-                  / day
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -517,9 +501,7 @@ export default function MonthlyTarget() {
             :                    "Halving"
           }
           sub={
-            postHalvingActive  ? `${daysSinceHalving}d ago`
-            : halvingActive    ? `${daysToHalving}d`
-            :                    `in ${daysToWindow}d`
+            postHalvingActive ? `${daysSinceHalving}d ago` : `${daysToHalving}d`
           }
         />
         <SignalItem
