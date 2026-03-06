@@ -63,7 +63,7 @@ const DropzoneComponent: React.FC = () => {
               Drag and drop your PNG, JPG, WebP, SVG images here or browse
             </span>
 
-            <span className="font-medium underline text-theme-sm text-brand-500">
+            <span className="font-medium underline text-theme-sm text-brand-800 dark:text-brand-200">
               Browse File
             </span>
           </div>

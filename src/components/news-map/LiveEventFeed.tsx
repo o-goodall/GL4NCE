@@ -42,19 +42,19 @@ const SEVERITY_DOT: Record<EventSeverity, string> = {
 const CATEGORY_BADGE: Record<EventCategory, string> = {
   violent:        "text-error-600   dark:text-error-400",
   terrorism:      "text-error-700   dark:text-error-300",
-  military:       "text-orange-700  dark:text-orange-300",
-  escalation:     "text-orange-600  dark:text-orange-400",
-  diplomatic:     "text-brand-600   dark:text-brand-400",
-  extremism:      "text-brand-600   dark:text-brand-300",
-  economic:       "text-brand-600   dark:text-brand-400",
-  commodities:    "text-brand-600   dark:text-brand-400",
-  cyber:          "text-brand-600   dark:text-brand-400",
-  health:         "text-brand-600   dark:text-brand-400",
-  environmental:  "text-brand-600   dark:text-brand-400",
-  disaster:       "text-brand-600   dark:text-brand-400",
-  infrastructure: "text-brand-600   dark:text-brand-400",
-  crime:          "text-orange-600  dark:text-orange-400",
-  piracy:         "text-orange-600  dark:text-orange-400",
+  military:       "text-orange-800  dark:text-orange-200",
+  escalation:     "text-orange-800  dark:text-orange-200",
+  diplomatic:     "text-brand-800   dark:text-brand-200",
+  extremism:      "text-brand-800   dark:text-brand-200",
+  economic:       "text-brand-800   dark:text-brand-200",
+  commodities:    "text-brand-800   dark:text-brand-200",
+  cyber:          "text-brand-800   dark:text-brand-200",
+  health:         "text-brand-800   dark:text-brand-200",
+  environmental:  "text-brand-800   dark:text-brand-200",
+  disaster:       "text-brand-800   dark:text-brand-200",
+  infrastructure: "text-brand-800   dark:text-brand-200",
+  crime:          "text-orange-800  dark:text-orange-200",
+  piracy:         "text-orange-800  dark:text-orange-200",
   protest:        "text-warning-600 dark:text-warning-400",
   minor:          "text-warning-600 dark:text-warning-400",
 };
@@ -63,7 +63,7 @@ const CATEGORY_BADGE: Record<EventCategory, string> = {
 const ALERT_LEVEL_BADGE: Record<AlertLevel, string> = {
   critical: "bg-error-100 text-error-800 dark:bg-error-900/30 dark:text-error-300",
   high:     "bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400",
-  medium:   "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300",
+  medium:   "bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200",
   watch:    "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
 };
 
@@ -112,7 +112,7 @@ const EventDetailRow = memo(function EventDetailRow({ event }: { event: NewsEven
               href={event.link}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+              className="ml-auto shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-800 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-200 dark:hover:bg-brand-900/40"
               aria-label={`Read: ${event.title}`}
             >
               Read ↗
@@ -230,7 +230,7 @@ const FeedRow = memo(function FeedRow({
             href={event.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/40"
+            className="ml-auto shrink-0 inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-medium text-brand-800 transition-colors hover:bg-brand-100 dark:border-brand-700/50 dark:bg-brand-900/20 dark:text-brand-200 dark:hover:bg-brand-900/40"
             onClick={(e) => e.stopPropagation()}
             aria-label={`Read article: ${event.title}`}
           >
@@ -404,7 +404,7 @@ export default function LiveEventFeed({
       {(canExpand || expanded) && !search.trim() && (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="mt-1.5 w-full text-center text-[10px] font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 transition-colors py-0.5"
+          className="mt-1.5 w-full text-center text-[10px] font-medium text-brand-800 hover:text-brand-700 dark:text-brand-200 dark:hover:text-brand-300 transition-colors py-0.5"
         >
           {expanded
             ? "Show less ↑"

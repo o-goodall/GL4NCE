@@ -228,7 +228,7 @@ function SignalItem({ active, label, sub }: SignalItemProps) {
       <span
         className={`text-[10px] tabular-nums transition-colors duration-300 ${
           active
-            ? "text-brand-500 dark:text-brand-400"
+            ? "text-brand-800 dark:text-brand-200"
             : "text-gray-400 dark:text-gray-500"
         }`}
       >
@@ -727,7 +727,7 @@ export default function MonthlyTarget() {
             {preview1 !== null && (
               <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                 <div>
-                  <span className="font-semibold text-brand-600 dark:text-brand-400 text-sm">${fmtAUD(preview1)}/day</span>
+                  <span className="font-semibold text-brand-800 dark:text-brand-200 text-sm">${fmtAUD(preview1)}/day</span>
                   {" "}× 423 days
                 </div>
                 <div>= ${fmtAUD(preview1 * DCA_WINDOW_DAYS)} total over {YEARS_IN_CYCLE} years</div>
@@ -764,7 +764,7 @@ export default function MonthlyTarget() {
               {preview2 !== null && (
                 <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                   <div>
-                    <span className="font-semibold text-brand-600 dark:text-brand-400 text-sm">${fmtAUD(preview2)}/day</span>
+                    <span className="font-semibold text-brand-800 dark:text-brand-200 text-sm">${fmtAUD(preview2)}/day</span>
                     {" "}× 423 days
                   </div>
                   <div>= ${fmtAUD(preview2 * DCA_WINDOW_DAYS)} total over {YEARS_IN_CYCLE} years</div>

@@ -57,9 +57,9 @@ interface RegimeConfig {
 function regimeCfg(regime: string): RegimeConfig {
   switch (regime) {
     case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
-    case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Warming": return { color: "text-brand-500 dark:text-brand-400", bg: "bg-brand-500"    };
-    default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
+    case "Alert":   return { color: "text-orange-800 dark:text-orange-200", bg: "bg-orange-500"    };
+    case "Warming": return { color: "text-brand-800 dark:text-brand-200", bg: "bg-brand-500"    };
+    default:        return { color: "text-success-700 dark:text-success-400", bg: "bg-success-500" };
   }
 }
 
@@ -77,11 +77,11 @@ const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
     dot:   "bg-red-500 dark:bg-red-400",
   },
   Alert: {
-    badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
+    badge: "bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-200",
     dot:   "bg-orange-500 dark:bg-orange-400",
   },
   Warming: {
-    badge: "bg-brand-50 border-brand-200 text-brand-700 dark:bg-brand-500/10 dark:border-brand-500/30 dark:text-brand-300",
+    badge: "bg-brand-50 border-brand-200 text-brand-800 dark:bg-brand-500/10 dark:border-brand-500/30 dark:text-brand-200",
     dot:   "bg-brand-500 dark:bg-brand-400",
   },
   Normal: {
@@ -212,7 +212,7 @@ export default function MoneyPrinter() {
               key={ind.label}
               className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
                 ind.elevated
-                  ? "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400"
+                  ? "bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-200"
                   : "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400"
               }`}
             >
@@ -252,7 +252,7 @@ export default function MoneyPrinter() {
                     : c.debtToGDP > 90
                       ? "text-red-500 dark:text-red-400"
                       : c.debtToGDP > 60
-                        ? "text-brand-500 dark:text-brand-300"
+                        ? "text-brand-800 dark:text-brand-200"
                         : "text-emerald-500 dark:text-emerald-400";
 
                   return (

@@ -261,7 +261,7 @@ function PendingBlock({
             style={{
               height: `${fillPct}%`,
               background:
-                "linear-gradient(to top, rgba(255,211,0,0.28) 0%, rgba(255,211,0,0.10) 70%, transparent 100%)",
+                "linear-gradient(to top, rgba(0,184,255,0.28) 0%, rgba(0,184,255,0.10) 70%, transparent 100%)",
             }}
           />
         )}
@@ -286,7 +286,7 @@ function PendingBlock({
         <div className="relative z-10 p-2.5">
           {/* Header */}
           <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[9px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-widest leading-none">
+            <span className="text-[9px] font-bold text-brand-800 dark:text-brand-200 uppercase tracking-widest leading-none">
               Next
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-brand-500 dark:bg-brand-400 animate-pulse shrink-0" />
@@ -318,7 +318,7 @@ function PendingBlock({
           {fillPct !== null && (
             <div className="mt-2.5">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[9px] text-brand-600 dark:text-brand-400 font-semibold leading-none">
+                <span className="text-[9px] text-brand-800 dark:text-brand-200 font-semibold leading-none">
                   {fillPct >= 100 ? "Full" : `${fillPct}%`}
                 </span>
                 <span className="text-[8px] text-gray-400 dark:text-gray-500 leading-none">fill</span>
@@ -328,7 +328,7 @@ function PendingBlock({
                   className="h-full rounded-full transition-all duration-[1200ms]"
                   style={{
                     width: `${fillPct}%`,
-                    background: "linear-gradient(to right, rgba(255,211,0,0.85), rgba(255,211,0,0.95))",
+                    background: "linear-gradient(to right, rgba(0,184,255,0.85), rgba(0,184,255,0.95))",
                   }}
                 />
               </div>
@@ -367,14 +367,14 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
     >
       {/* Height */}
       <div className={`text-sm font-bold tabular-nums leading-tight ${
-        isLatest ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
+        isLatest ? "text-orange-800 dark:text-orange-200" : "text-gray-700 dark:text-gray-200"
       }`}>
         #{fmtNum(block.height)}
       </div>
 
       {/* Time */}
       <div className={`text-[9px] mt-0.5 leading-none ${
-        isLatest ? "text-orange-400/80 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
+        isLatest ? "text-orange-700 dark:text-orange-300" : "text-gray-400 dark:text-gray-500"
       }`}>
         {timeAgo(block.timestamp)} ago
       </div>
@@ -396,7 +396,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         {reward != null && (
           <div className="flex items-center justify-between gap-1">
             <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">Reward</span>
-            <span className="text-[9px] tabular-nums text-brand-500 dark:text-brand-400 leading-none">
+            <span className="text-[9px] tabular-nums text-brand-800 dark:text-brand-200 leading-none">
               {fmtReward(reward)}
             </span>
           </div>
@@ -404,7 +404,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
         {pool && (
           <div
             className={`text-[8px] truncate leading-none mt-0.5 ${
-              isLatest ? "text-orange-400/70 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
+              isLatest ? "text-orange-700 dark:text-orange-300" : "text-gray-400 dark:text-gray-500"
             }`}
             title={pool}
           >
@@ -427,7 +427,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
           />
         </div>
         <div className={`text-[8px] tabular-nums mt-0.5 text-right leading-none ${
-          isLatest ? "text-orange-400/70 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
+          isLatest ? "text-orange-700 dark:text-orange-300" : "text-gray-400 dark:text-gray-500"
         }`}>
           {fullness}%
         </div>

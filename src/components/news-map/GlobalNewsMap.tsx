@@ -82,7 +82,7 @@ function CountryRow({ country }: { country: CountryNewsData }) {
             {country.name}
           </span>
           {country.trending && (
-            <span className="shrink-0 text-[10px] font-semibold text-brand-500 dark:text-brand-400">
+            <span className="shrink-0 text-[10px] font-semibold text-brand-800 dark:text-brand-200">
               ▲
             </span>
           )}
