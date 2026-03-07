@@ -9,13 +9,13 @@ import Label from "../form/Label";
 import Checkbox from "../form/input/Checkbox";
 
 // ── DCA window ─────────────────────────────────────────────────────────────
-// Day 1 = 4 March 2026 (projected cycle bottom); Day 421 = 28 Apr 2027 ($247/day × 421d ≈ $104k)
+// Day 1 = 4 March 2026 (DCA start); Day 421 = 28 Apr 2027 ($250/day × 421d = $105,250 total)
 const DCA_START_MS   = new Date("2026-03-04T00:00:00Z").getTime();
 const DCA_END_MS     = DCA_START_MS + (421 - 1) * 86_400_000;
 const DCA_WINDOW_DAYS = 421;
 const YEARS_IN_CYCLE  = 4;
 const WEEKS_PER_YEAR  = 52;
-const DEFAULT_WEEKLY_AUD = 500; // $500/wk → $247/day
+const DEFAULT_WEEKLY_AUD = 500; // $500/wk → $250/day
 
 // ── Cache config ───────────────────────────────────────────────────────────
 const ATH_CACHE_KEY  = "btc-ath";      // shared with BtcLiveChart
@@ -37,13 +37,13 @@ const RSI_OVERBOUGHT = 70;   // weekly RSI ≥ 70 → bull-market peak territory
 const CYCLE_ZONE_DAYS = 90;  // within ±90 days of a known/projected cycle event = "in window"
 
 // ── Confirmed cycle dates + one projected next event per series ────────────
-// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed); Mar 2026 (projected ~4/03/2026); Mar 2030 (+4yr)
+// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed); Nov 2026 projected (~12m after Oct 2025 peak); Nov 2030 (+4yr)
 const CYCLE_TROUGHS_MS: readonly number[] = [
   new Date("2015-01-14T00:00:00Z").getTime(),
   new Date("2018-12-15T00:00:00Z").getTime(),
   new Date("2022-11-21T00:00:00Z").getTime(),
-  new Date("2026-03-04T00:00:00Z").getTime(), // projected — aligns with DCA window start
-  new Date("2030-03-04T00:00:00Z").getTime(), // projected (+4yr)
+  new Date("2026-11-21T00:00:00Z").getTime(), // projected — later half of DCA window (day 262/421)
+  new Date("2030-11-21T00:00:00Z").getTime(), // projected (+4yr)
 ];
 // Peaks: Dec 2013, Dec 2017, Nov 2021, Oct 2025 (all confirmed); Oct 2029 (+4yr projected)
 const CYCLE_PEAKS_MS: readonly number[] = [
@@ -76,10 +76,10 @@ interface DcaSettings {
   slot2?: DcaSlot;
 }
 
-/** $X/week → daily buy within the 421-day window (floor = conservative) */
+/** $X/week → daily buy within the 421-day window, rounded up to nearest $5 */
 function calcDailyAmt(weeklyAmtAUD: number): number {
   const total = weeklyAmtAUD * WEEKS_PER_YEAR * YEARS_IN_CYCLE;
-  return Math.floor(total / DCA_WINDOW_DAYS);
+  return Math.ceil(total / DCA_WINDOW_DAYS / 5) * 5;
 }
 
 function loadDcaSettings(): DcaSettings {
