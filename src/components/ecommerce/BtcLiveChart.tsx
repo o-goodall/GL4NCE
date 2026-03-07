@@ -780,12 +780,12 @@ export default function BtcLiveChart() {
           type="line"
           height={300}
         />
-        {/* Hold-dim / pulse-reveal gradient overlay — mix-blend-mode:color desaturates the line only */}
+        {/* Hold-dim / pulse-reveal gradient overlay — mix-blend-mode:saturation desaturates the line only */}
         {chartOverlayBg && (
           <div
             aria-hidden="true"
             className="absolute inset-0 pointer-events-none"
-            style={{ background: chartOverlayBg, mixBlendMode: "color" }}
+            style={{ background: chartOverlayBg, mixBlendMode: "saturation" }}
           />
         )}
         {/* Ping circle + price key (only while holding) */}
