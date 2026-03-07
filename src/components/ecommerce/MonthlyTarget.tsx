@@ -51,6 +51,13 @@ const CYCLE_PEAKS_MS: readonly number[] = [
   new Date("2029-10-06T00:00:00Z").getTime(), // projected
 ];
 
+// ── 3-phase strategy durations (derived from cycle constants, not hardcoded) ─
+// Reserve: confirmed Oct 2025 cycle peak → DCA window open  ≈ 149 d
+// Buy:     DCA deployment window                             = 421 d (DCA_WINDOW_DAYS)
+// Hold:    DCA window close → projected Oct 2029 cycle peak ≈ 891 d
+const RESERVE_WINDOW_DAYS = Math.round((DCA_START_MS - CYCLE_PEAKS_MS[3]) / 86_400_000);
+const HOLD_WINDOW_DAYS    = Math.round((CYCLE_PEAKS_MS[4] - DCA_END_MS)    / 86_400_000);
+
 // ── Fallbacks while async fetches are in-flight ────────────────────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
 const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
@@ -100,6 +107,7 @@ function fmtAUD(n: number): string {
 function fmtK(n: number): string {
   return `$${Math.round(n / 1_000)}K`;
 }
+
 
 // ── Cache helpers ──────────────────────────────────────────────────────────
 function getCachedNumber(key: string, ttl: number): number | null {
@@ -414,10 +422,25 @@ export default function MonthlyTarget() {
   // Derived from DCA_START_MS / DCA_END_MS — no hardcoded calendar dates here.
   const phase       = getDcaPhase(now);
   const isHoldPhase = phase === "hold";   // capital deployed; show hold signals
-  const phaseLabel  =
-    phase === "save" ? "Phase 1 · Save"
-    : phase === "dca"  ? "Phase 2 · DCA"
-    :                    "Phase 3 · Hold";
+
+  // DCA progress within the buy window (used by dotPct calculation)
+  const dcaElapsedDays   = Math.max(0, Math.floor((now - DCA_START_MS) / 86_400_000));
+
+  // Thermometer proportions for the 3-phase timeline (Reserve : Buy : Hold)
+  const thermometerTotal   = RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + HOLD_WINDOW_DAYS;
+  const reservePct = (RESERVE_WINDOW_DAYS / thermometerTotal) * 100;
+  const buyPct     = (DCA_WINDOW_DAYS     / thermometerTotal) * 100;
+  const holdPct    = (HOLD_WINDOW_DAYS    / thermometerTotal) * 100;
+
+  // Dot position on the single track (% from left edge, clamped 1–99)
+  const elapsedReserveDays = Math.min(RESERVE_WINDOW_DAYS, Math.max(0, RESERVE_WINDOW_DAYS - daysToStart));
+  const holdElapsedDays    = Math.min(HOLD_WINDOW_DAYS,    Math.max(0, Math.floor((now - DCA_END_MS) / 86_400_000)));
+  const dotElapsedDays =
+    phase === "save" ? elapsedReserveDays :
+    phase === "dca"  ? RESERVE_WINDOW_DAYS + dcaElapsedDays :
+                       RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + holdElapsedDays;
+  // Clamp 1–99 so the dot circle is never clipped by the track's rounded caps
+  const dotPct = Math.min(99, Math.max(1, (dotElapsedDays / thermometerTotal) * 100));
 
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
@@ -543,20 +566,53 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* Phase label + signals footer */}
-      <div className={`flex items-center justify-center gap-1.5 px-4 py-1.5 border-t border-gray-200 dark:border-gray-800 ${
-        phase === "save" ? "bg-amber-50/60 dark:bg-amber-900/10"
-        : phase === "dca"  ? "bg-emerald-50/60 dark:bg-emerald-900/10"
-        :                    "bg-sky-50/60 dark:bg-sky-900/10"
-      }`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-          phase === "save" ? "bg-amber-400"
-          : phase === "dca"  ? "bg-emerald-400"
-          :                    "bg-sky-400"
-        }`} />
-        <span className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">
-          {phaseLabel}
-        </span>
+      {/* 3-phase strategy thermometer */}
+      <div className="border-t border-gray-200 dark:border-gray-800 px-3 pt-2 pb-3">
+
+        {/* Section labels — ON (bright yellow) when dot is in that section, OFF (faded) otherwise */}
+        <div className="flex text-[9px] leading-none mb-2">
+
+          {/* Reserve */}
+          <div style={{ width: `${reservePct}%` }} className="transition-colors">
+            <span className={`font-semibold tracking-wide ${
+              phase === "save" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
+            }`}>
+              {phase === "save" ? `Reserve · Day ${elapsedReserveDays + 1}/${RESERVE_WINDOW_DAYS}` : "Reserve"}
+            </span>
+          </div>
+
+          {/* Buy */}
+          <div style={{ width: `${buyPct}%` }} className="flex justify-center transition-colors">
+            <span className={`font-semibold tracking-wide ${
+              phase === "dca" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
+            }`}>
+              {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS}` : "Buy"}
+            </span>
+          </div>
+
+          {/* Hold */}
+          <div style={{ width: `${holdPct}%` }} className="flex justify-end transition-colors">
+            <span className={`font-semibold tracking-wide ${
+              phase === "hold" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
+            }`}>
+              {phase === "hold" ? `Hold · Day ${holdElapsedDays + 1}/${HOLD_WINDOW_DAYS}` : "Hold"}
+            </span>
+          </div>
+
+        </div>
+
+        {/* Single continuous track + position dot */}
+        <div className="relative h-1.5 rounded-full bg-brand-500/15 dark:bg-brand-500/10">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-brand-500/50 dark:bg-brand-400/50 transition-all"
+            style={{ width: `${dotPct}%` }}
+          />
+          <div
+            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-brand-500 dark:bg-brand-400 shadow-sm transition-all"
+            style={{ left: `${dotPct}%` }}
+          />
+        </div>
+
       </div>
 
       {/* Signals grid — 4 contextual tiles per phase */}
