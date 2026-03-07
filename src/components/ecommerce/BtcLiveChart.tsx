@@ -21,6 +21,8 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
 
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "6M", "1Y", "ALL"];
 const CHART_UPDATE_THROTTLE_MS = 1_000;
+const LONG_PRESS_DELAY_MS = 500;
+const LABEL_FLIP_THRESHOLD = 0.8;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string {
@@ -164,7 +166,7 @@ export default function BtcLiveChart() {
   const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChartUpdateRef = useRef<number>(0);
 
-  const [timeframe,  setTimeframe]  = useState<Timeframe>("ALL");
+  const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
   const [showGold,   setShowGold]   = useState(false);
   const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -175,11 +177,15 @@ export default function BtcLiveChart() {
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
   // ── Hover / pulse-reveal overlay state ───────────────────────────────────────
-  const chartWrapRef  = useRef<HTMLDivElement>(null);
-  const pulseAnimFrameRef = useRef<number | null>(null);
-  const hoverPctRef   = useRef<number>(0);
-  const [hoverPct,     setHoverPct]     = useState<number | null>(null);
-  const [pulseOverlay, setPulseOverlay] = useState<{ from: number; pos: number } | null>(null);
+  const chartWrapRef       = useRef<HTMLDivElement>(null);
+  const pulseAnimFrameRef  = useRef<number | null>(null);
+  const hoverPctRef        = useRef<number>(0);
+  const isPointerActiveRef = useRef(false);
+  const longPressTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressPosRef    = useRef<number>(0);
+  const [isInteracting,  setIsInteracting]  = useState(false);
+  const [hoverPct,       setHoverPct]       = useState<number | null>(null);
+  const [pulseOverlay,   setPulseOverlay]   = useState<{ from: number; pos: number } | null>(null);
 
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
@@ -280,8 +286,11 @@ export default function BtcLiveChart() {
     };
   }, []);
 
-  // Cancel any in-flight pulse animation on unmount
-  useEffect(() => () => { if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current); }, []);
+  // Cancel any in-flight pulse animation / long-press timer on unmount
+  useEffect(() => () => {
+    if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+  }, []);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
@@ -364,49 +373,6 @@ export default function BtcLiveChart() {
           axisBorder: { show: false },
           axisTicks: { show: false },
         };
-
-    // Custom tooltip — better spacing than the default shared tooltip
-    const tooltipCustom = ({
-      series,
-      dataPointIndex,
-      w,
-    }: {
-      series: number[][];
-      dataPointIndex: number;
-      w: { globals: { seriesX: number[][] } };
-    }): string => {
-      const ts = w.globals.seriesX[0]?.[dataPointIndex];
-      const dateStr = ts
-        ? new Date(ts).toLocaleString("en-GB", {
-            day: "numeric", month: "short",
-            hour: "2-digit", minute: "2-digit",
-          })
-        : "";
-
-      const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
-        { color: "#FFD300", label: "BTC",      fmt: (v) => `$${fmtNum(v)}` },
-        ...(showGold ? [{ color: "#10b981", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
-      ];
-
-      const rows = defs.map((d, i) => {
-        const val = series[i]?.[dataPointIndex];
-        if (val == null) return "";
-        return (
-          `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">` +
-          `<span style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0"></span>` +
-          `<span style="color:#9ca3af;flex:1">${d.label}</span>` +
-          `<span style="color:#f9fafb;font-weight:600">${d.fmt(val)}</span>` +
-          `</div>`
-        );
-      }).join("");
-
-      return (
-        `<div style="padding:8px 12px;font-family:Inter,sans-serif;font-size:12px;min-width:170px">` +
-        `<div style="color:#6b7280;font-size:11px;margin-bottom:5px">${dateStr}</div>` +
-        rows +
-        `</div>`
-      );
-    };
 
     // ── High / low point annotations — text labels along x-axis, no dots ─────────
     const pointAnnotations: NonNullable<ApexOptions["annotations"]>["points"] = [];
@@ -518,13 +484,13 @@ export default function BtcLiveChart() {
       stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
       colors,
       dataLabels: { enabled: false },
-      markers: { size: 0, hover: { size: 4, sizeOffset: 2 } },
+      markers: { size: 0, hover: { size: 0 } },
       xaxis: {
         type: "datetime",
         axisBorder: { show: false },
         axisTicks:  { show: false },
         labels: { show: false },
-        crosshairs: { show: true },
+        crosshairs: { show: false },
         tooltip:    { enabled: false },
       },
       yaxis: yaxisConfig,
@@ -533,10 +499,7 @@ export default function BtcLiveChart() {
         padding: { left: 8, right: 8, top: 28, bottom: 36 },
       },
       tooltip: {
-        enabled: true,
-        shared:  true,
-        theme:   "dark",
-        custom:  tooltipCustom,
+        enabled: false,
       },
       annotations: {
         points: pointAnnotations,
@@ -573,7 +536,18 @@ export default function BtcLiveChart() {
     return ((last - first) / first) * 100;
   }, [showGold, ratioData, liveRatio]);
 
-  // ── Chart hover/touch interaction helpers ───────────────────────────────────
+  // Memoized price range for ping Y-axis calculation
+  const { minPrice, maxPrice } = useMemo<{ minPrice: number; maxPrice: number }>(() => {
+    if (!closeData.length) return { minPrice: 0, maxPrice: 1 };
+    let lo = closeData[0][1], hi = closeData[0][1];
+    for (let i = 1; i < closeData.length; i++) {
+      if (closeData[i][1] < lo) lo = closeData[i][1];
+      if (closeData[i][1] > hi) hi = closeData[i][1];
+    }
+    return { minPrice: lo, maxPrice: hi };
+  }, [closeData]);
+
+  // ── Chart interaction helpers ────────────────────────────────────────────────
   function getChartFraction(clientX: number): number {
     if (!chartWrapRef.current) return 0;
     const r = chartWrapRef.current.getBoundingClientRect();
@@ -583,10 +557,10 @@ export default function BtcLiveChart() {
   function startPulseFrom(from: number): void {
     if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
     const t0 = performance.now();
-    const DURATION = 750; // ms
+    const DURATION = 750;
     function tick(now: number) {
       const t = Math.min(1, (now - t0) / DURATION);
-      const eased = 1 - (1 - t) ** 2; // ease-out quadratic
+      const eased = 1 - (1 - t) ** 2;
       const pos = from + eased * (1 - from);
       setPulseOverlay({ from, pos });
       if (t < 1) { pulseAnimFrameRef.current = requestAnimationFrame(tick); }
@@ -595,28 +569,94 @@ export default function BtcLiveChart() {
     pulseAnimFrameRef.current = requestAnimationFrame(tick);
   }
 
-  function onChartPointerMove(clientX: number): void {
+  function activateAt(clientX: number): void {
+    if (pulseAnimFrameRef.current) { cancelAnimationFrame(pulseAnimFrameRef.current); setPulseOverlay(null); }
     const f = getChartFraction(clientX);
     hoverPctRef.current = f;
+    isPointerActiveRef.current = true;
+    setIsInteracting(true);
     setHoverPct(f);
   }
 
-  function onChartPointerLeave(): void {
+  function deactivate(): void {
+    if (!isPointerActiveRef.current) return;
+    isPointerActiveRef.current = false;
     const from = hoverPctRef.current;
+    setIsInteracting(false);
     setHoverPct(null);
     startPulseFrom(from);
   }
 
-  // ── Overlay gradient (hover dim OR colour-restore sweep) ────────────────────
+  // Desktop
+  function onMouseDown(e: { clientX: number }): void { activateAt(e.clientX); }
+
+  function onMouseMove(e: { clientX: number }): void {
+    if (!isPointerActiveRef.current) return;
+    const f = getChartFraction(e.clientX);
+    hoverPctRef.current = f;
+    setHoverPct(f);
+  }
+
+  function onMouseUp(): void { deactivate(); }
+
+  function onMouseLeave(): void {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    deactivate();
+  }
+
+  // Mobile — long-press (~500 ms) to activate
+  function onTouchStart(e: { touches: { clientX: number }[] }): void {
+    const touch = e.touches[0];
+    if (!touch) return;
+    longPressPosRef.current = touch.clientX;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      activateAt(longPressPosRef.current);
+    }, LONG_PRESS_DELAY_MS);
+  }
+
+  function onTouchMove(e: { touches: { clientX: number }[] }): void {
+    const touch = e.touches[0];
+    if (!touch) return;
+    longPressPosRef.current = touch.clientX;
+    if (isPointerActiveRef.current) {
+      const f = getChartFraction(touch.clientX);
+      hoverPctRef.current = f;
+      setHoverPct(f);
+    }
+  }
+
+  function onTouchEnd(): void {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    deactivate();
+  }
+
+  // ── Overlay gradient (hold-dim OR colour-restore sweep) ────────────────────
+  // Uses mix-blend-mode:color so only the coloured line is dulled, not the background
   let chartOverlayBg: string | undefined;
-  if (hoverPct !== null) {
-    // Dim everything to the right of the cursor
+  if (hoverPct !== null && isInteracting) {
     const p = (hoverPct * 100).toFixed(1);
-    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
+    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgb(128,128,128) ${p}%)`;
   } else if (pulseOverlay !== null) {
-    // The dim boundary sweeps right from the release point — colour rushes back
     const p = (pulseOverlay.pos * 100).toFixed(1);
-    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
+    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgb(128,128,128) ${p}%)`;
+  }
+
+  // ── Compute ping + price-key position ────────────────────────────────────────
+  const PLOT_PAD_L = 8, PLOT_PAD_R = 8, PLOT_PAD_T = 28, PLOT_PAD_B = 36;
+  const CHART_H = 300;
+  let pingX = 0, pingY = 0, pingPrice: number | null = null, pingWrapW = 400;
+  if (hoverPct !== null && isInteracting && closeData.length >= 2) {
+    pingWrapW = chartWrapRef.current?.getBoundingClientRect().width ?? 400;
+    const plotWidth  = pingWrapW - PLOT_PAD_L - PLOT_PAD_R;
+    const plotHeight = CHART_H  - PLOT_PAD_T  - PLOT_PAD_B;
+    const plotFrac   = Math.max(0, Math.min(1, (hoverPct * pingWrapW - PLOT_PAD_L) / plotWidth));
+    const dataIdx    = Math.round(plotFrac * (closeData.length - 1));
+    pingPrice = closeData[dataIdx][1];
+    pingX     = PLOT_PAD_L + plotFrac * plotWidth;
+    const pFrac  = maxPrice > minPrice ? ((pingPrice as number) - minPrice) / (maxPrice - minPrice) : 0.5;
+    pingY = PLOT_PAD_T + (1 - pFrac) * plotHeight;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -722,10 +762,14 @@ export default function BtcLiveChart() {
         ref={chartWrapRef}
         className="relative -mx-3 overflow-hidden"
         aria-label="Bitcoin price chart"
-        onMouseMove={(e) => onChartPointerMove(e.clientX)}
-        onMouseLeave={() => onChartPointerLeave()}
-        onTouchMove={(e) => { const touch = e.touches[0]; if (touch) onChartPointerMove(touch.clientX); }}
-        onTouchEnd={() => onChartPointerLeave()}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseLeave}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{ cursor: isInteracting ? "crosshair" : "default", userSelect: "none" }}
       >
         {loading && (
           <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
@@ -736,13 +780,34 @@ export default function BtcLiveChart() {
           type="line"
           height={300}
         />
-        {/* Hover-dim / pulse-reveal gradient overlay */}
+        {/* Hold-dim / pulse-reveal gradient overlay — mix-blend-mode:color desaturates the line only */}
         {chartOverlayBg && (
           <div
             aria-hidden="true"
             className="absolute inset-0 pointer-events-none"
-            style={{ background: chartOverlayBg }}
+            style={{ background: chartOverlayBg, mixBlendMode: "color" }}
           />
+        )}
+        {/* Ping circle + price key (only while holding) */}
+        {pingPrice !== null && isInteracting && (
+          <>
+            <div
+              aria-hidden="true"
+              className="absolute z-20 pointer-events-none rounded-full bg-[#FFD300] border-2 border-white dark:border-gray-900 shadow"
+              style={{ width: 12, height: 12, left: pingX - 6, top: pingY - 6 }}
+            />
+            <div
+              aria-hidden="true"
+              className="absolute z-20 pointer-events-none px-2 py-0.5 rounded text-xs font-semibold bg-gray-900 text-white dark:bg-white dark:text-gray-900 shadow whitespace-nowrap"
+              style={
+                pingX > pingWrapW * LABEL_FLIP_THRESHOLD
+                  ? { left: pingX - 10, top: pingY - 14, transform: "translateX(-100%)" }
+                  : { left: pingX + 10, top: pingY - 14 }
+              }
+            >
+              ${fmtNum(pingPrice)}
+            </div>
+          </>
         )}
       </div>
 
