@@ -426,6 +426,13 @@ export default function MonthlyTarget() {
   // DCA progress within the 421-day window (0–100 %)
   const dcaElapsedDays   = Math.max(0, Math.floor((now - DCA_START_MS) / 86_400_000));
   const dcaProgressPct   = Math.min(100, Math.round((dcaElapsedDays / DCA_WINDOW_DAYS) * 100));
+
+  // Thermometer proportions for the 3-phase timeline (Reserve : Buy : Hold)
+  const thermometerTotal   = RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + HOLD_WINDOW_DAYS;
+  const reservePct = (RESERVE_WINDOW_DAYS / thermometerTotal) * 100;
+  const buyPct     = (DCA_WINDOW_DAYS     / thermometerTotal) * 100;
+  const holdPct    = (HOLD_WINDOW_DAYS    / thermometerTotal) * 100;
+
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
   if (priceUSD !== null && inWindow) {
@@ -552,67 +559,59 @@ export default function MonthlyTarget() {
 
       {/* 3-phase strategy thermometer */}
       <div className="border-t border-gray-200 dark:border-gray-800 px-3 pt-2 pb-2">
-        {(() => {
-          const totalDays = RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + HOLD_WINDOW_DAYS;
-          const rPct = (RESERVE_WINDOW_DAYS / totalDays) * 100;
-          const bPct = (DCA_WINDOW_DAYS      / totalDays) * 100;
-          const hPct = (HOLD_WINDOW_DAYS     / totalDays) * 100;
-          return (
-            <div className="flex rounded overflow-hidden text-[9px] leading-none">
+        <div className="flex rounded overflow-hidden text-[9px] leading-none">
 
-              {/* Reserve */}
-              <div style={{ width: `${rPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-                phase === "save" ? "bg-accent-500" : "bg-accent-50 dark:bg-accent-500/[0.08]"
-              }`}>
-                <span className={`font-semibold tracking-wide ${
-                  phase === "save" ? "text-gray-900" : "text-accent-600 dark:text-accent-400"
-                }`}>
-                  {phase === "save" ? "Reserve ●" : "Reserve"}
-                </span>
-                <span className={`text-[8px] ${
-                  phase === "save" ? "text-gray-700" : "text-gray-400 dark:text-gray-500"
-                }`}>
-                  {phase === "save" ? `${daysToStart}d left` : `${RESERVE_WINDOW_DAYS}d`}
-                </span>
+          {/* Reserve */}
+          <div style={{ width: `${reservePct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
+            phase === "save" ? "bg-accent-500" : "bg-accent-50 dark:bg-accent-500/[0.08]"
+          }`}>
+            <span className={`font-semibold tracking-wide ${
+              phase === "save" ? "text-gray-900" : "text-accent-600 dark:text-accent-400"
+            }`}>
+              {phase === "save" ? "Reserve ●" : "Reserve"}
+            </span>
+            <span className={`text-[8px] ${
+              phase === "save" ? "text-gray-700" : "text-gray-400 dark:text-gray-500"
+            }`}>
+              {phase === "save" ? `${daysToStart}d left` : `${RESERVE_WINDOW_DAYS}d`}
+            </span>
+          </div>
+
+          {/* Buy */}
+          <div style={{ width: `${buyPct}%` }} className={`flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
+            phase === "dca" ? "bg-brand-500" : "bg-brand-50 dark:bg-brand-500/[0.08]"
+          }`}>
+            <span className={`font-semibold tracking-wide ${
+              phase === "dca" ? "text-gray-900" : "text-brand-600 dark:text-brand-400"
+            }`}>
+              {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "Buy"}
+            </span>
+            {phase === "dca" ? (
+              <div className="w-full h-0.5 bg-gray-900/15 rounded-full overflow-hidden">
+                <div className="h-full bg-gray-900/50 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
               </div>
+            ) : (
+              <span className="text-[8px] text-gray-400 dark:text-gray-500">{DCA_WINDOW_DAYS}d</span>
+            )}
+          </div>
 
-              {/* Buy */}
-              <div style={{ width: `${bPct}%` }} className={`flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
-                phase === "dca" ? "bg-brand-500" : "bg-brand-50 dark:bg-brand-500/[0.08]"
-              }`}>
-                <span className={`font-semibold tracking-wide ${
-                  phase === "dca" ? "text-gray-900" : "text-brand-600 dark:text-brand-400"
-                }`}>
-                  {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "Buy"}
-                </span>
-                {phase === "dca" ? (
-                  <div className="w-full h-0.5 bg-gray-900/15 rounded-full overflow-hidden">
-                    <div className="h-full bg-gray-900/50 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
-                  </div>
-                ) : (
-                  <span className="text-[8px] text-gray-400 dark:text-gray-500">{DCA_WINDOW_DAYS}d</span>
-                )}
-              </div>
+          {/* Hold */}
+          <div style={{ width: `${holdPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
+            phase === "hold" ? "bg-secondary-700" : "bg-secondary-50 dark:bg-secondary-500/[0.08]"
+          }`}>
+            <span className={`font-semibold tracking-wide ${
+              phase === "hold" ? "text-white" : "text-secondary-700 dark:text-secondary-400"
+            }`}>
+              {phase === "hold" ? "Hold ●" : "Hold"}
+            </span>
+            <span className={`text-[8px] ${
+              phase === "hold" ? "text-white/70" : "text-gray-400 dark:text-gray-500"
+            }`}>
+              {HOLD_WINDOW_DAYS}d
+            </span>
+          </div>
 
-              {/* Hold */}
-              <div style={{ width: `${hPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-                phase === "hold" ? "bg-secondary-700" : "bg-secondary-50 dark:bg-secondary-500/[0.08]"
-              }`}>
-                <span className={`font-semibold tracking-wide ${
-                  phase === "hold" ? "text-white" : "text-secondary-700 dark:text-secondary-400"
-                }`}>
-                  {phase === "hold" ? "Hold ●" : "Hold"}
-                </span>
-                <span className={`text-[8px] ${
-                  phase === "hold" ? "text-white/70" : "text-gray-400 dark:text-gray-500"
-                }`}>
-                  {HOLD_WINDOW_DAYS}d
-                </span>
-              </div>
-
-            </div>
-          );
-        })()}
+        </div>
       </div>
 
       {/* Signals grid — 4 contextual tiles per phase */}
