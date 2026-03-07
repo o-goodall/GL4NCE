@@ -445,7 +445,7 @@ export default function BtcLiveChart() {
             borderColor: "transparent",
             borderWidth: 0,
             borderRadius: 0,
-            offsetY: 10,
+            offsetY: 24,
             offsetX: getOffsetX(lowIdx, closeData.length),
             style: labelStyle,
           },
@@ -482,7 +482,7 @@ export default function BtcLiveChart() {
             borderColor: "transparent",
             borderWidth: 0,
             borderRadius: 0,
-            offsetY: 10,
+            offsetY: 24,
             offsetX: getOffsetX(goldLowIdx, ratioData.length),
             style: labelStyle,
           },
@@ -519,7 +519,7 @@ export default function BtcLiveChart() {
       yaxis: yaxisConfig,
       grid: {
         show: false,
-        padding: { left: 8, right: 8, top: 28, bottom: 28 },
+        padding: { left: 8, right: 8, top: 28, bottom: 36 },
       },
       tooltip: {
         enabled: true,
