@@ -426,8 +426,6 @@ export default function MonthlyTarget() {
   // DCA progress within the 421-day window (0–100 %)
   const dcaElapsedDays   = Math.max(0, Math.floor((now - DCA_START_MS) / 86_400_000));
   const dcaProgressPct   = Math.min(100, Math.round((dcaElapsedDays / DCA_WINDOW_DAYS) * 100));
-  const daysRemainingDca = Math.max(0, Math.ceil((DCA_END_MS - now) / 86_400_000));
-
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
   if (priceUSD !== null && inWindow) {
