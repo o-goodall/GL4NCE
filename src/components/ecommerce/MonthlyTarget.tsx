@@ -65,6 +65,7 @@ const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
 const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
 const NEXT_HALVING_MS     = new Date("2028-04-19T00:00:00Z").getTime();
 const POST_HALVING_WINDOW = 547 * 86_400_000; // ≈ 18 months after halving
+const PRE_HALVING_WINDOW  = 365 * 86_400_000; // ≤ 12 months before next halving
 
 // ── Chart style ────────────────────────────────────────────────────────────
 const CHART_FONT     = "Inter, sans-serif";
@@ -201,6 +202,48 @@ function nearestCycleDate(now: number, datesMs: readonly number[]): CycleDateInf
     if (dist < minDist) { minDist = dist; nearest = d; }
   }
   return { daysAway: Math.round(minDist / 86_400_000), isPast: nearest < now };
+}
+
+// ── 5-phase Bitcoin cycle system (from DCA_STRATEGY_ANALYSIS.md) ──────────
+// Phases (priority order, most specific first):
+//   1. pre-halving     — ≤12 months before next halving (recovery / anticipation)
+//   2. cycle-trough    — ±90 days of projected trough   (capitulation / bottom)
+//   3. cycle-peak      — ±90 days of projected peak     (euphoria / blow-off top)
+//   4. post-halving    — 0–18 months after halving      (supply shock / accumulation)
+//   5. markdown        — default bear                   (post-peak correction)
+type CyclePhaseKey = "post-halving" | "cycle-peak" | "markdown" | "cycle-trough" | "pre-halving";
+
+interface CyclePhaseInfo { label: string; isBearPhase: boolean }
+
+const PHASE_INFO: Record<CyclePhaseKey, CyclePhaseInfo> = {
+  "post-halving": { label: "Post-Halving · Accumulation", isBearPhase: false },
+  "cycle-peak":   { label: "Cycle Peak · Distribution",   isBearPhase: false },
+  "markdown":     { label: "Post-Peak · Markdown",        isBearPhase: true  },
+  "cycle-trough": { label: "Cycle Trough · Accumulate",   isBearPhase: true  },
+  "pre-halving":  { label: "Pre-Halving · Recovery",      isBearPhase: false },
+};
+
+function deriveCyclePhase(
+  now: number,
+  nearestTrough: CycleDateInfo | null,
+  nearestPeak: CycleDateInfo | null,
+): CyclePhaseKey {
+  // 1. Pre-halving window (≤12 months before next halving)
+  const msToNextHalving = NEXT_HALVING_MS - now;
+  if (msToNextHalving > 0 && msToNextHalving <= PRE_HALVING_WINDOW) return "pre-halving";
+
+  // 2. Cycle trough zone (±90 days of projected/confirmed trough)
+  if (nearestTrough !== null && nearestTrough.daysAway <= CYCLE_ZONE_DAYS) return "cycle-trough";
+
+  // 3. Cycle peak zone (±90 days of projected/confirmed peak)
+  if (nearestPeak !== null && nearestPeak.daysAway <= CYCLE_ZONE_DAYS) return "cycle-peak";
+
+  // 4. Post-halving accumulation (0–18 months after last halving)
+  const msSincePrevHalving = now - PREV_HALVING_MS;
+  if (msSincePrevHalving >= 0 && msSincePrevHalving <= POST_HALVING_WINDOW) return "post-halving";
+
+  // 5. Default: post-peak markdown (bear market / correction phase)
+  return "markdown";
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
@@ -439,8 +482,9 @@ export default function MonthlyTarget() {
   const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
   const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
 
-  // Phase 1 = accumulation window (bear / accumulate); Phase 2 = recovery / bull
-  const isPhase1 = now <= DCA_END_MS;
+  // ── Cycle phase (5-phase cheat sheet) ──────────────────────────────────
+  const cyclePhase = deriveCyclePhase(now, nearestTrough, nearestPeak);
+  const { label: phaseLabel, isBearPhase } = PHASE_INFO[cyclePhase];
 
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
@@ -616,17 +660,17 @@ export default function MonthlyTarget() {
 
       {/* Phase label + signals footer */}
       <div className={`flex items-center justify-center gap-1.5 px-4 py-1.5 border-t border-gray-200 dark:border-gray-800 ${
-        isPhase1 ? "bg-amber-50/60 dark:bg-amber-900/10" : "bg-emerald-50/60 dark:bg-emerald-900/10"
+        isBearPhase ? "bg-amber-50/60 dark:bg-amber-900/10" : "bg-emerald-50/60 dark:bg-emerald-900/10"
       }`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPhase1 ? "bg-amber-400" : "bg-emerald-400"}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isBearPhase ? "bg-amber-400" : "bg-emerald-400"}`} />
         <span className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">
-          {isPhase1 ? "Phase 1 · Accumulation" : "Phase 2 · Recovery / Bull"}
+          {phaseLabel}
         </span>
       </div>
 
       {/* Signals grid — 4 contextual tiles per phase */}
       <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
-        {isPhase1 ? (
+        {isBearPhase ? (
           <>
             {/* Phase 1: bear/accumulation signals */}
             <SignalItem
