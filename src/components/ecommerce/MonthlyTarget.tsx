@@ -423,15 +423,24 @@ export default function MonthlyTarget() {
   const phase       = getDcaPhase(now);
   const isHoldPhase = phase === "hold";   // capital deployed; show hold signals
 
-  // DCA progress within the 421-day window (0–100 %)
+  // DCA progress within the buy window (used by dotPct calculation)
   const dcaElapsedDays   = Math.max(0, Math.floor((now - DCA_START_MS) / 86_400_000));
-  const dcaProgressPct   = Math.min(100, Math.round((dcaElapsedDays / DCA_WINDOW_DAYS) * 100));
 
   // Thermometer proportions for the 3-phase timeline (Reserve : Buy : Hold)
   const thermometerTotal   = RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + HOLD_WINDOW_DAYS;
   const reservePct = (RESERVE_WINDOW_DAYS / thermometerTotal) * 100;
   const buyPct     = (DCA_WINDOW_DAYS     / thermometerTotal) * 100;
   const holdPct    = (HOLD_WINDOW_DAYS    / thermometerTotal) * 100;
+
+  // Dot position on the single track (% from left edge, clamped 1–99)
+  const elapsedReserveDays = Math.min(RESERVE_WINDOW_DAYS, Math.max(0, RESERVE_WINDOW_DAYS - daysToStart));
+  const holdElapsedDays    = Math.min(HOLD_WINDOW_DAYS,    Math.max(0, Math.floor((now - DCA_END_MS) / 86_400_000)));
+  const dotElapsedDays =
+    phase === "save" ? elapsedReserveDays :
+    phase === "dca"  ? RESERVE_WINDOW_DAYS + dcaElapsedDays :
+                       RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + holdElapsedDays;
+  // Clamp 1–99 so the dot circle is never clipped by the track's rounded caps
+  const dotPct = Math.min(99, Math.max(1, (dotElapsedDays / thermometerTotal) * 100));
 
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
@@ -558,56 +567,55 @@ export default function MonthlyTarget() {
       </div>
 
       {/* 3-phase strategy thermometer */}
-      <div className="border-t border-gray-200 dark:border-gray-800 px-3 pt-2 pb-2">
-        <div className="flex rounded overflow-hidden text-[9px] leading-none">
+      <div className="border-t border-gray-200 dark:border-gray-800 px-3 pt-2 pb-3">
+
+        {/* Section labels — ON (bright yellow) when dot is in that section, OFF (faded) otherwise */}
+        <div className="flex text-[9px] leading-none mb-2">
 
           {/* Reserve */}
-          <div style={{ width: `${reservePct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-            phase === "save" ? "bg-gray-100 dark:bg-gray-800" : "bg-brand-50 dark:bg-brand-500/[0.08]"
-          }`}>
+          <div style={{ width: `${reservePct}%` }} className="flex flex-col gap-0.5 transition-colors">
             <span className={`font-semibold tracking-wide ${
-              phase === "save" ? "text-gray-400 dark:text-gray-500" : "text-brand-600 dark:text-brand-400"
-            }`}>
-              {phase === "save" ? "Reserve ●" : "Reserve"}
-            </span>
-            <span className="text-[8px] text-gray-400 dark:text-gray-500">
-              {phase === "save" ? `${daysToStart}d left` : `${RESERVE_WINDOW_DAYS}d`}
-            </span>
+              phase === "save" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
+            }`}>Reserve</span>
+            <span className={`text-[8px] ${
+              phase === "save" ? "text-brand-500/70 dark:text-brand-400/70" : "text-brand-500/20 dark:text-brand-400/20"
+            }`}>{phase === "save" ? `${daysToStart}d` : `${RESERVE_WINDOW_DAYS}d`}</span>
           </div>
 
           {/* Buy */}
-          <div style={{ width: `${buyPct}%` }} className={`flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
-            phase === "dca" ? "bg-gray-100 dark:bg-gray-800" : "bg-brand-50 dark:bg-brand-500/[0.08]"
-          }`}>
+          <div style={{ width: `${buyPct}%` }} className="flex flex-col items-center gap-0.5 transition-colors">
             <span className={`font-semibold tracking-wide ${
-              phase === "dca" ? "text-gray-400 dark:text-gray-500" : "text-brand-600 dark:text-brand-400"
-            }`}>
-              {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "Buy"}
-            </span>
-            {phase === "dca" ? (
-              <div className="w-full h-0.5 bg-gray-300/50 dark:bg-gray-600/50 rounded-full overflow-hidden">
-                <div className="h-full bg-gray-400 dark:bg-gray-500 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
-              </div>
-            ) : (
-              <span className="text-[8px] text-gray-400 dark:text-gray-500">{DCA_WINDOW_DAYS}d</span>
-            )}
+              phase === "dca" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
+            }`}>{phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS}` : "Buy"}</span>
+            <span className={`text-[8px] ${
+              phase === "dca" ? "text-brand-500/70 dark:text-brand-400/70" : "text-brand-500/20 dark:text-brand-400/20"
+            }`}>{DCA_WINDOW_DAYS}d</span>
           </div>
 
           {/* Hold */}
-          <div style={{ width: `${holdPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-            phase === "hold" ? "bg-gray-100 dark:bg-gray-800" : "bg-brand-50 dark:bg-brand-500/[0.08]"
-          }`}>
+          <div style={{ width: `${holdPct}%` }} className="flex flex-col items-end gap-0.5 transition-colors">
             <span className={`font-semibold tracking-wide ${
-              phase === "hold" ? "text-gray-400 dark:text-gray-500" : "text-brand-600 dark:text-brand-400"
-            }`}>
-              {phase === "hold" ? "Hold ●" : "Hold"}
-            </span>
-            <span className="text-[8px] text-gray-400 dark:text-gray-500">
-              {HOLD_WINDOW_DAYS}d
-            </span>
+              phase === "hold" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
+            }`}>Hold</span>
+            <span className={`text-[8px] ${
+              phase === "hold" ? "text-brand-500/70 dark:text-brand-400/70" : "text-brand-500/20 dark:text-brand-400/20"
+            }`}>{HOLD_WINDOW_DAYS}d</span>
           </div>
 
         </div>
+
+        {/* Single continuous track + position dot */}
+        <div className="relative h-1.5 rounded-full bg-brand-500/15 dark:bg-brand-500/10">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-brand-500/50 dark:bg-brand-400/50 transition-all"
+            style={{ width: `${dotPct}%` }}
+          />
+          <div
+            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-brand-500 dark:bg-brand-400 shadow-sm transition-all"
+            style={{ left: `${dotPct}%` }}
+          />
+        </div>
+
       </div>
 
       {/* Signals grid — 4 contextual tiles per phase */}
