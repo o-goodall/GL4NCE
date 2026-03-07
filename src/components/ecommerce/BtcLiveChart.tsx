@@ -607,24 +607,16 @@ export default function BtcLiveChart() {
     startPulseFrom(from);
   }
 
-  // ── Overlay gradient (hover dim OR pulse-reveal crest) ───────────────────────
+  // ── Overlay gradient (hover dim OR colour-restore sweep) ────────────────────
   let chartOverlayBg: string | undefined;
   if (hoverPct !== null) {
     // Dim everything to the right of the cursor
     const p = (hoverPct * 100).toFixed(1);
     chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
   } else if (pulseOverlay !== null) {
-    // Bright crest at pos, dim still covering pos→right
-    const CREST = 0.05;
-    const p2   = pulseOverlay.pos * 100;
-    const p1   = Math.max(0, pulseOverlay.pos - CREST) * 100;
-    const mid  = (p1 + p2) / 2;
-    chartOverlayBg =
-      `linear-gradient(to right,` +
-      ` transparent ${p1.toFixed(1)}%,` +
-      ` rgba(255,211,0,0.5) ${mid.toFixed(1)}%,` +
-      ` rgba(255,211,0,0.15) ${p2.toFixed(1)}%,` +
-      ` rgba(10,10,15,0.5) ${(p2 + 0.3).toFixed(1)}%)`;
+    // The dim boundary sweeps right from the release point — colour rushes back
+    const p = (pulseOverlay.pos * 100).toFixed(1);
+    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
