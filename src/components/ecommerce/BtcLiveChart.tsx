@@ -922,27 +922,15 @@ export default function BtcLiveChart() {
         {/* Animated live end-point dot — inspired by react-native-simple-line-chart's
             endPointConfig.animated; shows the latest price position at rest */}
         {showLiveDot && (
-          <>
-            <span
-              aria-hidden="true"
-              className="absolute pointer-events-none z-10 rounded-full animate-ping"
-              style={{
-                width: 16, height: 16,
-                left: liveDotX - 8, top: liveDotY - 8,
-                backgroundColor: BRAND_COLOR,
-                opacity: 0.35,
-              }}
-            />
-            <span
-              aria-hidden="true"
-              className="absolute pointer-events-none z-10 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"
-              style={{
-                width: 10, height: 10,
-                left: liveDotX - 5, top: liveDotY - 5,
-                backgroundColor: BRAND_COLOR,
-              }}
-            />
-          </>
+          <span
+            aria-hidden="true"
+            className="absolute pointer-events-none z-10 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"
+            style={{
+              width: 10, height: 10,
+              left: liveDotX - 5, top: liveDotY - 5,
+              backgroundColor: BRAND_COLOR,
+            }}
+          />
         )}
       </div>
 
