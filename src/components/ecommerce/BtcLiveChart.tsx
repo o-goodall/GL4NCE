@@ -174,6 +174,13 @@ export default function BtcLiveChart() {
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
+  // ── Hover / pulse-reveal overlay state ───────────────────────────────────────
+  const chartWrapRef  = useRef<HTMLDivElement>(null);
+  const pulseAnimFrameRef = useRef<number | null>(null);
+  const hoverPctRef   = useRef<number>(0);
+  const [hoverPct,     setHoverPct]     = useState<number | null>(null);
+  const [pulseOverlay, setPulseOverlay] = useState<{ from: number; pos: number } | null>(null);
+
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
     if (!showGold) { setGoldPriceHistory([]); return; }
@@ -272,6 +279,9 @@ export default function BtcLiveChart() {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
+
+  // Cancel any in-flight pulse animation on unmount
+  useEffect(() => () => { if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current); }, []);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
@@ -563,6 +573,60 @@ export default function BtcLiveChart() {
     return ((last - first) / first) * 100;
   }, [showGold, ratioData, liveRatio]);
 
+  // ── Chart hover/touch interaction helpers ───────────────────────────────────
+  function getChartFraction(clientX: number): number {
+    if (!chartWrapRef.current) return 0;
+    const r = chartWrapRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  }
+
+  function startPulseFrom(from: number): void {
+    if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
+    const t0 = performance.now();
+    const DURATION = 750; // ms
+    function tick(now: number) {
+      const t = Math.min(1, (now - t0) / DURATION);
+      const eased = 1 - (1 - t) ** 2; // ease-out quadratic
+      const pos = from + eased * (1 - from);
+      setPulseOverlay({ from, pos });
+      if (t < 1) { pulseAnimFrameRef.current = requestAnimationFrame(tick); }
+      else        { setPulseOverlay(null); }
+    }
+    pulseAnimFrameRef.current = requestAnimationFrame(tick);
+  }
+
+  function onChartPointerMove(clientX: number): void {
+    const f = getChartFraction(clientX);
+    hoverPctRef.current = f;
+    setHoverPct(f);
+  }
+
+  function onChartPointerLeave(): void {
+    const from = hoverPctRef.current;
+    setHoverPct(null);
+    startPulseFrom(from);
+  }
+
+  // ── Overlay gradient (hover dim OR pulse-reveal crest) ───────────────────────
+  let chartOverlayBg: string | undefined;
+  if (hoverPct !== null) {
+    // Dim everything to the right of the cursor
+    const p = (hoverPct * 100).toFixed(1);
+    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
+  } else if (pulseOverlay !== null) {
+    // Bright crest at pos, dim still covering pos→right
+    const CREST = 0.05;
+    const p2   = pulseOverlay.pos * 100;
+    const p1   = Math.max(0, pulseOverlay.pos - CREST) * 100;
+    const mid  = (p1 + p2) / 2;
+    chartOverlayBg =
+      `linear-gradient(to right,` +
+      ` transparent ${p1.toFixed(1)}%,` +
+      ` rgba(255,211,0,0.5) ${mid.toFixed(1)}%,` +
+      ` rgba(255,211,0,0.15) ${p2.toFixed(1)}%,` +
+      ` rgba(10,10,15,0.5) ${(p2 + 0.3).toFixed(1)}%)`;
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
@@ -663,8 +727,13 @@ export default function BtcLiveChart() {
 
       {/* Chart area */}
       <div
-        className="relative -mx-3"
+        ref={chartWrapRef}
+        className="relative -mx-3 overflow-hidden"
         aria-label="Bitcoin price chart"
+        onMouseMove={(e) => onChartPointerMove(e.clientX)}
+        onMouseLeave={() => onChartPointerLeave()}
+        onTouchMove={(e) => { const touch = e.touches[0]; if (touch) onChartPointerMove(touch.clientX); }}
+        onTouchEnd={() => onChartPointerLeave()}
       >
         {loading && (
           <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
@@ -675,6 +744,14 @@ export default function BtcLiveChart() {
           type="line"
           height={300}
         />
+        {/* Hover-dim / pulse-reveal gradient overlay */}
+        {chartOverlayBg && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: chartOverlayBg }}
+          />
+        )}
       </div>
 
     </div>
