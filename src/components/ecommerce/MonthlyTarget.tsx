@@ -573,33 +573,30 @@ export default function MonthlyTarget() {
         <div className="flex text-[9px] leading-none mb-2">
 
           {/* Reserve */}
-          <div style={{ width: `${reservePct}%` }} className="flex flex-col gap-0.5 transition-colors">
+          <div style={{ width: `${reservePct}%` }} className="transition-colors">
             <span className={`font-semibold tracking-wide ${
               phase === "save" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
-            }`}>Reserve</span>
-            <span className={`text-[8px] ${
-              phase === "save" ? "text-brand-500/70 dark:text-brand-400/70" : "text-brand-500/20 dark:text-brand-400/20"
-            }`}>{phase === "save" ? `${daysToStart}d` : `${RESERVE_WINDOW_DAYS}d`}</span>
+            }`}>
+              {phase === "save" ? `Reserve · Day ${elapsedReserveDays + 1}/${RESERVE_WINDOW_DAYS}` : "Reserve"}
+            </span>
           </div>
 
           {/* Buy */}
-          <div style={{ width: `${buyPct}%` }} className="flex flex-col items-center gap-0.5 transition-colors">
+          <div style={{ width: `${buyPct}%` }} className="flex justify-center transition-colors">
             <span className={`font-semibold tracking-wide ${
               phase === "dca" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
-            }`}>{phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS}` : "Buy"}</span>
-            <span className={`text-[8px] ${
-              phase === "dca" ? "text-brand-500/70 dark:text-brand-400/70" : "text-brand-500/20 dark:text-brand-400/20"
-            }`}>{DCA_WINDOW_DAYS}d</span>
+            }`}>
+              {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS}` : "Buy"}
+            </span>
           </div>
 
           {/* Hold */}
-          <div style={{ width: `${holdPct}%` }} className="flex flex-col items-end gap-0.5 transition-colors">
+          <div style={{ width: `${holdPct}%` }} className="flex justify-end transition-colors">
             <span className={`font-semibold tracking-wide ${
               phase === "hold" ? "text-brand-500 dark:text-brand-400" : "text-brand-500/30 dark:text-brand-400/30"
-            }`}>Hold</span>
-            <span className={`text-[8px] ${
-              phase === "hold" ? "text-brand-500/70 dark:text-brand-400/70" : "text-brand-500/20 dark:text-brand-400/20"
-            }`}>{HOLD_WINDOW_DAYS}d</span>
+            }`}>
+              {phase === "hold" ? `Hold · Day ${holdElapsedDays + 1}/${HOLD_WINDOW_DAYS}` : "Hold"}
+            </span>
           </div>
 
         </div>
