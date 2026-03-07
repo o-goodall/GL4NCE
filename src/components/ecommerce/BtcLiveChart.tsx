@@ -31,6 +31,17 @@ function fmtNum(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function fmtDate(ts: number, tf: Timeframe): string {
+  const d = new Date(ts);
+  if (tf === "1D" || tf === "1W" || tf === "1M") {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  if (tf === "ALL") {
+    return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  }
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 
 // ── Cache helpers ──────────────────────────────────────────────────────────────
 function getCachedPrices(tf: Timeframe): PricePoint[] | null {
@@ -620,15 +631,18 @@ export default function BtcLiveChart() {
   // ── Compute ping + price-key position ────────────────────────────────────────
   const PLOT_PAD_L = 8, PLOT_PAD_R = 8, PLOT_PAD_T = 28, PLOT_PAD_B = 36;
   const CHART_H = 300;
-  let pingX = 0, pingY = 0, pingPrice: number | null = null, pingWrapW = 400;
+  let pingX = 0, pingY = 0, pingPrice: number | null = null, pingTimestamp: number | null = null, pingWrapW = 400;
   if (hoverPct !== null && isInteracting && closeData.length >= 2) {
     pingWrapW = chartWrapRef.current?.getBoundingClientRect().width ?? 400;
     const plotWidth  = pingWrapW - PLOT_PAD_L - PLOT_PAD_R;
     const plotHeight = CHART_H  - PLOT_PAD_T  - PLOT_PAD_B;
     const plotFrac   = Math.max(0, Math.min(1, (hoverPct * pingWrapW - PLOT_PAD_L) / plotWidth));
     const dataIdx    = Math.round(plotFrac * (closeData.length - 1));
-    pingPrice = closeData[dataIdx][1];
-    pingX     = PLOT_PAD_L + plotFrac * plotWidth;
+    pingPrice     = closeData[dataIdx][1];
+    pingTimestamp = closeData[dataIdx][0];
+    // Snap pingX to the exact data-point column (not the raw cursor fraction)
+    const snappedFrac = dataIdx / (closeData.length - 1);
+    pingX = PLOT_PAD_L + snappedFrac * plotWidth;
     // Use the same padded Y-axis bounds set on the chart so the dot snaps to the line
     const pFrac = yAxisMax > yAxisMin ? ((pingPrice as number) - yAxisMin) / (yAxisMax - yAxisMin) : 0.5;
     pingY = PLOT_PAD_T + (1 - pFrac) * plotHeight;
@@ -780,14 +794,23 @@ export default function BtcLiveChart() {
             />
             <div
               aria-hidden="true"
-              className="absolute z-20 pointer-events-none px-2 py-0.5 rounded text-xs font-semibold bg-gray-900 text-white dark:bg-white dark:text-gray-900 shadow whitespace-nowrap"
+              className={[
+                "absolute z-20 pointer-events-none",
+                "px-2 py-1 rounded shadow whitespace-nowrap",
+                "flex flex-col items-start gap-0.5",
+                "text-xs font-semibold",
+                "bg-gray-900 text-white dark:bg-white dark:text-gray-900",
+              ].join(" ")}
               style={
                 pingX > pingWrapW * LABEL_FLIP_THRESHOLD
-                  ? { left: pingX - 10, top: pingY - 14, transform: "translateX(-100%)" }
-                  : { left: pingX + 10, top: pingY - 14 }
+                  ? { left: pingX - 10, top: pingY - 22, transform: "translateX(-100%)" }
+                  : { left: pingX + 10, top: pingY - 22 }
               }
             >
-              ${fmtNum(pingPrice)}
+              {pingTimestamp !== null && (
+                <span className="text-[10px] font-normal opacity-70">{fmtDate(pingTimestamp, timeframe)}</span>
+              )}
+              <span>${fmtNum(pingPrice)}</span>
             </div>
           </>
         )}
