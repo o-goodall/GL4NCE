@@ -27,6 +27,24 @@ function fmtNum(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+/** Centered moving average applied to price series to smooth the line. */
+const TF_SMOOTH_WINDOW: Record<Timeframe, number> = {
+  "1D": 1, "1W": 3, "1M": 3, "6M": 5, "1Y": 7, "ALL": 8,
+};
+
+function smoothPrices(pts: PricePoint[], tf: Timeframe): PricePoint[] {
+  const w = TF_SMOOTH_WINDOW[tf];
+  if (w <= 1 || pts.length < w) return pts;
+  const half = Math.floor(w / 2);
+  return pts.map(([ts], i) => {
+    const start = Math.max(0, i - half);
+    const end   = Math.min(pts.length, i + Math.ceil(w / 2) + 1);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += pts[j][1];
+    return [ts, sum / (end - start)] as PricePoint;
+  });
+}
+
 // ── Cache helpers ──────────────────────────────────────────────────────────────
 function getCachedPrices(tf: Timeframe): PricePoint[] | null {
   try {
@@ -163,7 +181,7 @@ export default function BtcLiveChart() {
   const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChartUpdateRef = useRef<number>(0);
 
-  const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
+  const [timeframe,  setTimeframe]  = useState<Timeframe>("ALL");
   const [showGold,   setShowGold]   = useState(false);
   const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -280,14 +298,15 @@ export default function BtcLiveChart() {
   }, [showGold, closeData, goldPriceHistory]);
 
   const series = useMemo(() => {
+    const smoothed = smoothPrices(closeData, timeframe);
     const result: { name: string; data: PricePoint[] }[] = [
-      { name: "BTC/USD", data: closeData },
+      { name: "BTC/USD", data: smoothed },
     ];
     if (showGold && ratioData.length > 0) {
       result.push({ name: "BTC/Gold (oz)", data: ratioData });
     }
     return result;
-  }, [closeData, showGold, ratioData]);
+  }, [closeData, showGold, ratioData, timeframe]);
 
   // ── High / Low for the selected timeframe ─────────────────────────────────────
   const { highPoint, highIdx, lowPoint, lowIdx } = useMemo<{
@@ -325,9 +344,9 @@ export default function BtcLiveChart() {
 
   // ── Chart options ─────────────────────────────────────────────────────────────
   const options = useMemo<ApexOptions>(() => {
-    // Series colors
-    const colors = showGold ? ["#10b981", "#FFD300"] : ["#10b981"];
-    const strokeWidths = showGold ? [2, 2] : [2];
+    // Series colors — BTC/USD = brand yellow, Gold overlay = emerald green
+    const colors = showGold ? ["#FFD300", "#10b981"] : ["#FFD300"];
+    const strokeWidths = showGold ? [2.5, 2] : [2.5];
     const strokeDashes = showGold ? [0, 0] : [0];
 
     // Y-axis — hidden (we show high/low as point annotations instead)
@@ -373,8 +392,8 @@ export default function BtcLiveChart() {
         : "";
 
       const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
-        { color: "#10b981", label: "BTC",      fmt: (v) => `$${fmtNum(v)}` },
-        ...(showGold ? [{ color: "#FFD300", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
+        { color: "#FFD300", label: "BTC",      fmt: (v) => `$${fmtNum(v)}` },
+        ...(showGold ? [{ color: "#10b981", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
       ];
 
       const rows = defs.map((d, i) => {
