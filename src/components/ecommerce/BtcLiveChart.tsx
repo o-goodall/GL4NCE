@@ -27,6 +27,7 @@ function fmtNum(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+
 // ── Cache helpers ──────────────────────────────────────────────────────────────
 function getCachedPrices(tf: Timeframe): PricePoint[] | null {
   try {
@@ -163,7 +164,7 @@ export default function BtcLiveChart() {
   const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChartUpdateRef = useRef<number>(0);
 
-  const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
+  const [timeframe,  setTimeframe]  = useState<Timeframe>("ALL");
   const [showGold,   setShowGold]   = useState(false);
   const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -172,6 +173,13 @@ export default function BtcLiveChart() {
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
+
+  // ── Hover / pulse-reveal overlay state ───────────────────────────────────────
+  const chartWrapRef  = useRef<HTMLDivElement>(null);
+  const pulseAnimFrameRef = useRef<number | null>(null);
+  const hoverPctRef   = useRef<number>(0);
+  const [hoverPct,     setHoverPct]     = useState<number | null>(null);
+  const [pulseOverlay, setPulseOverlay] = useState<{ from: number; pos: number } | null>(null);
 
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
@@ -272,6 +280,9 @@ export default function BtcLiveChart() {
     };
   }, []);
 
+  // Cancel any in-flight pulse animation on unmount
+  useEffect(() => () => { if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current); }, []);
+
   // ── Build ApexCharts series ───────────────────────────────────────────────────
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
   const ratioData = useMemo<PricePoint[]>(() => {
@@ -290,40 +301,44 @@ export default function BtcLiveChart() {
   }, [closeData, showGold, ratioData]);
 
   // ── High / Low for the selected timeframe ─────────────────────────────────────
-  const { highPoint, lowPoint } = useMemo<{
+  const { highPoint, highIdx, lowPoint, lowIdx } = useMemo<{
     highPoint: PricePoint | null;
+    highIdx:   number;
     lowPoint:  PricePoint | null;
+    lowIdx:    number;
   }>(() => {
-    if (!closeData.length) return { highPoint: null, lowPoint: null };
-    let hi = closeData[0], lo = closeData[0];
+    if (!closeData.length) return { highPoint: null, highIdx: 0, lowPoint: null, lowIdx: 0 };
+    let hi = closeData[0], lo = closeData[0], hiIdx = 0, loIdx = 0;
     for (let i = 1; i < closeData.length; i++) {
-      if (closeData[i][1] > hi[1]) hi = closeData[i];
-      if (closeData[i][1] < lo[1]) lo = closeData[i];
+      if (closeData[i][1] > hi[1]) { hi = closeData[i]; hiIdx = i; }
+      if (closeData[i][1] < lo[1]) { lo = closeData[i]; loIdx = i; }
     }
-    return { highPoint: hi, lowPoint: lo };
+    return { highPoint: hi, highIdx: hiIdx, lowPoint: lo, lowIdx: loIdx };
   }, [closeData]);
 
   // ── High / Low for the BTC/Gold ratio series ──────────────────────────────────
-  const { goldHighPoint, goldLowPoint } = useMemo<{
+  const { goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx } = useMemo<{
     goldHighPoint: PricePoint | null;
+    goldHighIdx:   number;
     goldLowPoint:  PricePoint | null;
+    goldLowIdx:    number;
   }>(() => {
     if (!showGold || !ratioData.length) {
-      return { goldHighPoint: null, goldLowPoint: null };
+      return { goldHighPoint: null, goldHighIdx: 0, goldLowPoint: null, goldLowIdx: 0 };
     }
-    let hi = ratioData[0], lo = ratioData[0];
+    let hi = ratioData[0], lo = ratioData[0], hiIdx = 0, loIdx = 0;
     for (let i = 1; i < ratioData.length; i++) {
-      if (ratioData[i][1] > hi[1]) hi = ratioData[i];
-      if (ratioData[i][1] < lo[1]) lo = ratioData[i];
+      if (ratioData[i][1] > hi[1]) { hi = ratioData[i]; hiIdx = i; }
+      if (ratioData[i][1] < lo[1]) { lo = ratioData[i]; loIdx = i; }
     }
-    return { goldHighPoint: hi, goldLowPoint: lo };
+    return { goldHighPoint: hi, goldHighIdx: hiIdx, goldLowPoint: lo, goldLowIdx: loIdx };
   }, [showGold, ratioData]);
 
   // ── Chart options ─────────────────────────────────────────────────────────────
   const options = useMemo<ApexOptions>(() => {
-    // Series colors
-    const colors = showGold ? ["#10b981", "#FFD300"] : ["#10b981"];
-    const strokeWidths = showGold ? [2, 2] : [2];
+    // Series colors — BTC/USD = brand yellow, Gold overlay = emerald green
+    const colors = showGold ? ["#FFD300", "#10b981"] : ["#FFD300"];
+    const strokeWidths = showGold ? [2.5, 2] : [2.5];
     const strokeDashes = showGold ? [0, 0] : [0];
 
     // Y-axis — hidden (we show high/low as point annotations instead)
@@ -369,8 +384,8 @@ export default function BtcLiveChart() {
         : "";
 
       const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
-        { color: "#10b981", label: "BTC",      fmt: (v) => `$${fmtNum(v)}` },
-        ...(showGold ? [{ color: "#FFD300", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
+        { color: "#FFD300", label: "BTC",      fmt: (v) => `$${fmtNum(v)}` },
+        ...(showGold ? [{ color: "#10b981", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
       ];
 
       const rows = defs.map((d, i) => {
@@ -393,8 +408,24 @@ export default function BtcLiveChart() {
       );
     };
 
-    // ── High / low point annotations — dots only, values shown in header ─────────
+    // ── High / low point annotations — text labels along x-axis, no dots ─────────
     const pointAnnotations: NonNullable<ApexOptions["annotations"]>["points"] = [];
+
+    const labelStyle = {
+      background: "transparent",
+      color: "#9ca3af",
+      fontSize: "11px",
+      fontWeight: "500",
+      padding: { top: 0, bottom: 0, left: 2, right: 2 },
+    };
+
+    const getOffsetX = (idx: number, total: number): number => {
+      if (total < 2) return 0;
+      const ratio = idx / (total - 1);
+      if (ratio < 0.1) return 30;
+      if (ratio > 0.9) return -30;
+      return 0;
+    };
 
     if (!showGold) {
       if (highPoint) {
@@ -402,7 +433,16 @@ export default function BtcLiveChart() {
           x: highPoint[0],
           y: highPoint[1],
           seriesIndex: 0,
-          marker: { size: 5, fillColor: "#32CD32", strokeColor: "#fff", strokeWidth: 1.5 },
+          marker: { size: 0 },
+          label: {
+            text: `$${fmtNum(highPoint[1])}`,
+            borderColor: "transparent",
+            borderWidth: 0,
+            borderRadius: 0,
+            offsetY: -10,
+            offsetX: getOffsetX(highIdx, closeData.length),
+            style: labelStyle,
+          },
         });
       }
       if (lowPoint) {
@@ -410,7 +450,16 @@ export default function BtcLiveChart() {
           x: lowPoint[0],
           y: lowPoint[1],
           seriesIndex: 0,
-          marker: { size: 5, fillColor: "#FF4F4F", strokeColor: "#fff", strokeWidth: 1.5 },
+          marker: { size: 0 },
+          label: {
+            text: `$${fmtNum(lowPoint[1])}`,
+            borderColor: "transparent",
+            borderWidth: 0,
+            borderRadius: 0,
+            offsetY: 24,
+            offsetX: getOffsetX(lowIdx, closeData.length),
+            style: labelStyle,
+          },
         });
       }
     } else {
@@ -420,7 +469,16 @@ export default function BtcLiveChart() {
           y: goldHighPoint[1],
           seriesIndex: 1,
           yAxisIndex: 1,
-          marker: { size: 5, fillColor: "#32CD32", strokeColor: "#fff", strokeWidth: 1.5 },
+          marker: { size: 0 },
+          label: {
+            text: `${goldHighPoint[1].toFixed(2)} oz`,
+            borderColor: "transparent",
+            borderWidth: 0,
+            borderRadius: 0,
+            offsetY: -10,
+            offsetX: getOffsetX(goldHighIdx, ratioData.length),
+            style: labelStyle,
+          },
         });
       }
       if (goldLowPoint) {
@@ -429,7 +487,16 @@ export default function BtcLiveChart() {
           y: goldLowPoint[1],
           seriesIndex: 1,
           yAxisIndex: 1,
-          marker: { size: 5, fillColor: "#FF4F4F", strokeColor: "#fff", strokeWidth: 1.5 },
+          marker: { size: 0 },
+          label: {
+            text: `${goldLowPoint[1].toFixed(2)} oz`,
+            borderColor: "transparent",
+            borderWidth: 0,
+            borderRadius: 0,
+            offsetY: 24,
+            offsetX: getOffsetX(goldLowIdx, ratioData.length),
+            style: labelStyle,
+          },
         });
       }
     }
@@ -440,7 +507,7 @@ export default function BtcLiveChart() {
         type: "line",
         toolbar: { show: false },
         background: "transparent",
-        zoom: { enabled: true, type: "x", autoScaleYaxis: !showGold },
+        zoom: { enabled: false },
         animations: {
           enabled: true,
           speed: 200,
@@ -448,7 +515,7 @@ export default function BtcLiveChart() {
           animateGradually: { enabled: false },
         },
       },
-      stroke: { curve: "smooth", width: strokeWidths, dashArray: strokeDashes },
+      stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
       colors,
       dataLabels: { enabled: false },
       markers: { size: 0, hover: { size: 4, sizeOffset: 2 } },
@@ -463,7 +530,7 @@ export default function BtcLiveChart() {
       yaxis: yaxisConfig,
       grid: {
         show: false,
-        padding: { left: 8, right: 8, top: 16, bottom: 16 },
+        padding: { left: 8, right: 8, top: 28, bottom: 36 },
       },
       tooltip: {
         enabled: true,
@@ -476,7 +543,7 @@ export default function BtcLiveChart() {
       },
       legend: { show: false },
     };
-  }, [showGold, highPoint, lowPoint, goldHighPoint, goldLowPoint]);
+  }, [showGold, highPoint, highIdx, lowPoint, lowIdx, goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx, closeData.length, ratioData.length]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
@@ -506,28 +573,65 @@ export default function BtcLiveChart() {
     return ((last - first) / first) * 100;
   }, [showGold, ratioData, liveRatio]);
 
+  // ── Chart hover/touch interaction helpers ───────────────────────────────────
+  function getChartFraction(clientX: number): number {
+    if (!chartWrapRef.current) return 0;
+    const r = chartWrapRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  }
+
+  function startPulseFrom(from: number): void {
+    if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
+    const t0 = performance.now();
+    const DURATION = 750; // ms
+    function tick(now: number) {
+      const t = Math.min(1, (now - t0) / DURATION);
+      const eased = 1 - (1 - t) ** 2; // ease-out quadratic
+      const pos = from + eased * (1 - from);
+      setPulseOverlay({ from, pos });
+      if (t < 1) { pulseAnimFrameRef.current = requestAnimationFrame(tick); }
+      else        { setPulseOverlay(null); }
+    }
+    pulseAnimFrameRef.current = requestAnimationFrame(tick);
+  }
+
+  function onChartPointerMove(clientX: number): void {
+    const f = getChartFraction(clientX);
+    hoverPctRef.current = f;
+    setHoverPct(f);
+  }
+
+  function onChartPointerLeave(): void {
+    const from = hoverPctRef.current;
+    setHoverPct(null);
+    startPulseFrom(from);
+  }
+
+  // ── Overlay gradient (hover dim OR colour-restore sweep) ────────────────────
+  let chartOverlayBg: string | undefined;
+  if (hoverPct !== null) {
+    // Dim everything to the right of the cursor
+    const p = (hoverPct * 100).toFixed(1);
+    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
+  } else if (pulseOverlay !== null) {
+    // The dim boundary sweeps right from the release point — colour rushes back
+    const p = (pulseOverlay.pos * 100).toFixed(1);
+    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-      {/* Header row: title + price + controls */}
+      {/* Header row: price + controls */}
       <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:items-start sm:justify-between">
-        {/* Left: tile badge + title + live price */}
+        {/* Left: live price */}
         <div>
-          <div className="flex items-center gap-2">
-            <span
-              className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-500 leading-none"
-              aria-label="Bitcoin"
-            >
-              ₿
-            </span>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Bitcoin</h3>
-          </div>
           {/* Price columns: BTC USD | BTC/Gold oz (side-by-side when gold active) */}
-          <div className="mt-1 ml-8 flex items-start gap-4">
+          <div className="mt-1 flex items-start gap-4">
 
             {/* ── USD column ── */}
             <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-baseline gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
                   aria-live="polite"
@@ -548,22 +652,6 @@ export default function BtcLiveChart() {
                   </Badge>
                 )}
               </div>
-              {(highPoint || lowPoint) && (
-                <span className="flex items-center gap-2 text-xs tabular-nums">
-                  {highPoint && (
-                    <span className="flex items-center gap-1 text-[#32CD32]">
-                      <span className="text-[8px] leading-none">●</span>
-                      ${fmtNum(highPoint[1])}
-                    </span>
-                  )}
-                  {lowPoint && (
-                    <span className="flex items-center gap-1 text-[#FF4F4F]">
-                      <span className="text-[8px] leading-none">●</span>
-                      ${fmtNum(lowPoint[1])}
-                    </span>
-                  )}
-                </span>
-              )}
             </div>
 
             {/* ── Gold oz column (only when overlay active) ── */}
@@ -571,7 +659,7 @@ export default function BtcLiveChart() {
               <>
                 <div className="w-px self-stretch bg-gray-200 dark:bg-gray-700" />
                 <div className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-baseline gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-2xl font-bold tabular-nums text-yellow-400">
                       {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
                     </span>
@@ -582,22 +670,6 @@ export default function BtcLiveChart() {
                       </Badge>
                     )}
                   </div>
-                  {(goldHighPoint || goldLowPoint) && (
-                    <span className="flex items-center gap-2 text-xs tabular-nums">
-                      {goldHighPoint && (
-                        <span className="flex items-center gap-1 text-[#32CD32]">
-                          <span className="text-[8px] leading-none">●</span>
-                          {goldHighPoint[1].toFixed(2)} oz
-                        </span>
-                      )}
-                      {goldLowPoint && (
-                        <span className="flex items-center gap-1 text-[#FF4F4F]">
-                          <span className="text-[8px] leading-none">●</span>
-                          {goldLowPoint[1].toFixed(2)} oz
-                        </span>
-                      )}
-                    </span>
-                  )}
                 </div>
               </>
             )}
@@ -647,8 +719,13 @@ export default function BtcLiveChart() {
 
       {/* Chart area */}
       <div
-        className="relative -mx-3"
+        ref={chartWrapRef}
+        className="relative -mx-3 overflow-hidden"
         aria-label="Bitcoin price chart"
+        onMouseMove={(e) => onChartPointerMove(e.clientX)}
+        onMouseLeave={() => onChartPointerLeave()}
+        onTouchMove={(e) => { const touch = e.touches[0]; if (touch) onChartPointerMove(touch.clientX); }}
+        onTouchEnd={() => onChartPointerLeave()}
       >
         {loading && (
           <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
@@ -659,6 +736,14 @@ export default function BtcLiveChart() {
           type="line"
           height={300}
         />
+        {/* Hover-dim / pulse-reveal gradient overlay */}
+        {chartOverlayBg && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: chartOverlayBg }}
+          />
+        )}
       </div>
 
     </div>
