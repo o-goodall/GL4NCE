@@ -95,9 +95,6 @@ const GOLD_TF_CONFIG: Record<GoldTF, { goldRange: string; goldInterval: string; 
   "ALL": { goldRange: "max", goldInterval: "1wk", cacheTTL:  86_400_000 },
 };
 
-const GOLD_RATIO_ATH_FALLBACK = { ratio: 38.51, date: "17 Dec 2024" };
-const GOLD_ATH_CACHE_KEY = "btc-gold-ath";
-const GOLD_ATH_CACHE_TTL = 86_400_000;
 const GOLD_POLL_MS = 10 * 60 * 1_000; // 10 minutes
 
 // ── Generic localStorage cache helpers (for gold overlay) ─────────────────────
@@ -174,14 +171,7 @@ export default function BtcLiveChart() {
   const [change24h,  setChange24h]  = useState<number | null>(null);
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
-  const [goldAth,    setGoldAth]    = useState(GOLD_RATIO_ATH_FALLBACK);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
-
-  // ── Gold ATH — load from localStorage cache on mount ─────────────────────────
-  useEffect(() => {
-    const cached = getCache<{ ratio: number; date: string }>(GOLD_ATH_CACHE_KEY, GOLD_ATH_CACHE_TTL);
-    if (cached && cached.ratio > 0) setGoldAth(cached);
-  }, []);
 
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
@@ -288,21 +278,6 @@ export default function BtcLiveChart() {
     if (!showGold || !closeData.length || !goldPriceHistory.length) return [];
     return computeRatioSeries(closeData, goldPriceHistory);
   }, [showGold, closeData, goldPriceHistory]);
-
-  // ── Keep goldAth in sync with actual ratio series ─────────────────────────────
-  useEffect(() => {
-    if (!ratioData.length) return;
-    const maxPoint = ratioData.reduce((m: PricePoint, p: PricePoint) => (p[1] > m[1] ? p : m), ratioData[0]);
-    setGoldAth((prev: { ratio: number; date: string }) => {
-      if (maxPoint[1] <= prev.ratio) return prev;
-      const date = new Date(maxPoint[0]).toLocaleDateString("en-GB", {
-        day: "numeric", month: "short", year: "numeric",
-      });
-      const entry = { ratio: maxPoint[1], date };
-      setCache(GOLD_ATH_CACHE_KEY, entry);
-      return entry;
-    });
-  }, [ratioData]);
 
   const series = useMemo(() => {
     const result: { name: string; data: PricePoint[] }[] = [
@@ -607,9 +582,6 @@ export default function BtcLiveChart() {
                       </Badge>
                     )}
                   </div>
-                  <span className="text-xs font-medium text-yellow-400/70 tabular-nums">
-                    ATH {goldAth.ratio.toFixed(2)} oz
-                  </span>
                   {(goldHighPoint || goldLowPoint) && (
                     <span className="flex items-center gap-2 text-xs tabular-nums">
                       {goldHighPoint && (
