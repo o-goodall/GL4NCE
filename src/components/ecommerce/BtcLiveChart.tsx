@@ -27,23 +27,6 @@ function fmtNum(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-/** Centered moving average applied to price series to smooth the line. */
-const TF_SMOOTH_WINDOW: Record<Timeframe, number> = {
-  "1D": 1, "1W": 3, "1M": 3, "6M": 5, "1Y": 7, "ALL": 8,
-};
-
-function smoothPrices(pts: PricePoint[], tf: Timeframe): PricePoint[] {
-  const w = TF_SMOOTH_WINDOW[tf];
-  if (w <= 1 || pts.length < w) return pts;
-  const half = Math.floor(w / 2);
-  return pts.map(([ts], i) => {
-    const start = Math.max(0, i - half);
-    const end   = Math.min(pts.length, i + Math.ceil(w / 2) + 1);
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += pts[j][1];
-    return [ts, sum / (end - start)] as PricePoint;
-  });
-}
 
 // ── Cache helpers ──────────────────────────────────────────────────────────────
 function getCachedPrices(tf: Timeframe): PricePoint[] | null {
@@ -298,15 +281,14 @@ export default function BtcLiveChart() {
   }, [showGold, closeData, goldPriceHistory]);
 
   const series = useMemo(() => {
-    const smoothed = smoothPrices(closeData, timeframe);
     const result: { name: string; data: PricePoint[] }[] = [
-      { name: "BTC/USD", data: smoothed },
+      { name: "BTC/USD", data: closeData },
     ];
     if (showGold && ratioData.length > 0) {
       result.push({ name: "BTC/Gold (oz)", data: ratioData });
     }
     return result;
-  }, [closeData, showGold, ratioData, timeframe]);
+  }, [closeData, showGold, ratioData]);
 
   // ── High / Low for the selected timeframe ─────────────────────────────────────
   const { highPoint, highIdx, lowPoint, lowIdx } = useMemo<{
