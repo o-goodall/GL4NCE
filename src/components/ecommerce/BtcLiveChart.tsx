@@ -21,8 +21,11 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
 
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "6M", "1Y", "ALL"];
 const CHART_UPDATE_THROTTLE_MS = 1_000;
-const LONG_PRESS_DELAY_MS = 500;
+/** Minimum pixels of horizontal finger movement before touch scrubbing activates (directional lock) */
+const TOUCH_SLOP = 5;
 const LABEL_FLIP_THRESHOLD = 0.8;
+/** Brand yellow — the chart line colour (constant; no dynamic direction colouring) */
+const BRAND_COLOR = "#FFD300";
 /** Fractional Y-axis padding added to chart min/max so the dot calc matches ApexCharts' rendering */
 const Y_AXIS_PAD = 0.05;
 /** Fallback plot-area insets used only before the SVG bounds are read from the DOM */
@@ -192,17 +195,18 @@ export default function BtcLiveChart() {
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
-  // ── Hover state ──────────────────────────────────────────────────────────────
+  // ── Hover / scrub state ──────────────────────────────────────────────────────
   const chartWrapRef       = useRef<HTMLDivElement>(null);
   const hoverPctRef        = useRef<number>(0);
   const isPointerActiveRef = useRef(false);
-  const longPressTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressPosRef    = useRef<number>(0);
   const [isInteracting,  setIsInteracting]  = useState(false);
   const [hoverPct,       setHoverPct]       = useState<number | null>(null);
 
   /** Actual SVG plot-area bounds read from the rendered DOM after each chart render. */
   const svgPlotRef = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
+  /** State copy of svgPlotRef — triggers a React re-render when plot bounds are first populated
+   *  (needed for the animated live end-point dot to appear on first load). */
+  const [plotBounds, setPlotBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
@@ -303,17 +307,12 @@ export default function BtcLiveChart() {
     };
   }, []);
 
-  // Cancel any in-flight long-press timer on unmount
-  useEffect(() => () => {
-    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-  }, []);
-
   // ── Read actual ApexCharts plot-area bounds from the rendered SVG ─────────────
   // ApexCharts' inner group translateY and gridRect height are the ground truth for
-  // converting price→pixel. We re-read them whenever the data changes (timeframe
-  // switch, data load) so the dot always snaps correctly.
+  // converting price→pixel. We re-read after every data change AND whenever the
+  // element resizes (responsive layout) so the dot always snaps correctly.
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
+    const readBounds = () => {
       if (!chartWrapRef.current) return;
       const inner    = chartWrapRef.current.querySelector<SVGGElement>(".apexcharts-inner");
       const gridRect = chartWrapRef.current.querySelector<SVGRectElement>(".apexcharts-gridRect");
@@ -325,9 +324,25 @@ export default function BtcLiveChart() {
       const top  = m ? parseFloat(m[2]) : PLOT_PAD_T;
       const w = parseFloat(gridRect.getAttribute("width")  ?? "0");
       const h = parseFloat(gridRect.getAttribute("height") ?? "0");
-      if (w > 0 && h > 0) svgPlotRef.current = { left, top, width: w, height: h };
+      if (w > 0 && h > 0) {
+        svgPlotRef.current = { left, top, width: w, height: h };
+        setPlotBounds({ left, top, width: w, height: h });
+      }
+    };
+
+    const raf = requestAnimationFrame(readBounds);
+
+    // Re-read whenever the chart container resizes (handles responsive layout changes).
+    // Track the pending RAF id to avoid queuing multiple redundant callbacks during
+    // rapid resize bursts (e.g., window drag-resize).
+    let resizeRaf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(readBounds);
     });
-    return () => cancelAnimationFrame(raf);
+    if (chartWrapRef.current) ro.observe(chartWrapRef.current);
+
+    return () => { cancelAnimationFrame(raf); cancelAnimationFrame(resizeRaf); ro.disconnect(); };
   }, [closeData, showGold]);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
@@ -396,7 +411,7 @@ export default function BtcLiveChart() {
   // ── Chart options ─────────────────────────────────────────────────────────────
   const options = useMemo<ApexOptions>(() => {
     // Series colors — BTC/USD = brand yellow, Gold overlay = emerald green
-    const colors = showGold ? ["#FFD300", "#10b981"] : ["#FFD300"];
+    const colors = showGold ? [BRAND_COLOR, "#10b981"] : [BRAND_COLOR];
     const strokeWidths = showGold ? [2.5, 2] : [2.5];
     const strokeDashes = showGold ? [0, 0] : [0];
 
@@ -525,7 +540,7 @@ export default function BtcLiveChart() {
     return {
       chart: {
         fontFamily: "Inter, sans-serif",
-        type: "line",
+        type: "area",
         toolbar: { show: false },
         background: "transparent",
         zoom: { enabled: false },
@@ -537,6 +552,19 @@ export default function BtcLiveChart() {
         },
       },
       stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
+      // Gradient area fill — inspired by react-native-simple-line-chart's area chart presentation.
+      // Disabled in gold-overlay mode to avoid visual clutter from two filled series.
+      fill: showGold
+        ? { type: "solid", opacity: 0 }
+        : {
+            type: "gradient",
+            gradient: {
+              shadeIntensity: 1,
+              opacityFrom: 0.25,
+              opacityTo: 0,
+              stops: [0, 100],
+            },
+          },
       colors,
       dataLabels: { enabled: false },
       markers: { size: 0, hover: { size: 0 } },
@@ -592,71 +620,106 @@ export default function BtcLiveChart() {
   }, [showGold, ratioData, liveRatio]);
 
   // ── Chart interaction helpers ─────────────────────────────────────────────────
+  /** Converts a client-X pixel position into a [0,1] fraction across the chart wrapper. */
   function getChartFraction(clientX: number): number {
     if (!chartWrapRef.current) return 0;
     const r = chartWrapRef.current.getBoundingClientRect();
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
   }
 
-  function activateAt(clientX: number): void {
-    const f = getChartFraction(clientX);
-    hoverPctRef.current = f;
-    isPointerActiveRef.current = true;
-    setIsInteracting(true);
-    setHoverPct(f);
-  }
-
   function deactivate(): void {
-    if (!isPointerActiveRef.current) return;
     isPointerActiveRef.current = false;
     setIsInteracting(false);
     setHoverPct(null);
   }
 
-  // Desktop
-  function onMouseDown(e: { clientX: number }): void { activateAt(e.clientX); }
-
-  function onMouseMove(e: { clientX: number }): void {
-    if (!isPointerActiveRef.current) return;
+  // ── Mouse: crosshair appears on hover (no click-hold required) ───────────────
+  // Inspired by react-native-simple-line-chart's immediate gesture activation —
+  // the active point is shown as soon as the pointer enters the chart area.
+  function onMouseMove(e: React.MouseEvent): void {
     const f = getChartFraction(e.clientX);
     hoverPctRef.current = f;
+    if (!isPointerActiveRef.current) {
+      isPointerActiveRef.current = true;
+      setIsInteracting(true);
+    }
     setHoverPct(f);
   }
 
-  function onMouseUp(): void { deactivate(); }
+  function onMouseLeave(): void { deactivate(); }
 
-  function onMouseLeave(): void {
-    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
-    deactivate();
-  }
+  // ── Touch: direction-locking gesture (no long-press delay) ───────────────────
+  // A native, non-passive touchmove listener is registered via useEffect so that
+  // e.preventDefault() can be called to suppress page-scroll when the user is
+  // scrubbing horizontally — matching how react-native-simple-line-chart's
+  // PanGestureHandler discriminates horizontal drags from vertical scrolls.
+  useEffect(() => {
+    const el = chartWrapRef.current;
+    if (!el) return;
 
-  // Mobile — long-press (~500 ms) to activate
-  function onTouchStart(e: React.TouchEvent): void {
-    const touch = e.touches[0];
-    if (!touch) return;
-    longPressPosRef.current = touch.clientX;
-    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null;
-      activateAt(longPressPosRef.current);
-    }, LONG_PRESS_DELAY_MS);
-  }
+    let startX = 0, startY = 0;
+    let direction: "h" | "v" | null = null;
+    // Cache the bounding rect on touchstart so getBoundingClientRect() is not
+    // called on every touchmove frame (avoids forced layout during fast scrubbing).
+    let cachedRect = el.getBoundingClientRect();
 
-  function onTouchMove(e: React.TouchEvent): void {
-    const touch = e.touches[0];
-    if (!touch) return;
-    longPressPosRef.current = touch.clientX;
-    if (isPointerActiveRef.current) {
-      const f = getChartFraction(touch.clientX);
-      hoverPctRef.current = f;
-      setHoverPct(f);
+    function onStart(e: TouchEvent) {
+      // Ignore multi-touch — only track single-finger scrubbing.
+      if (e.touches.length > 1) { direction = null; return; }
+      const t = e.touches[0];
+      if (!t) return;
+      startX = t.clientX;
+      startY = t.clientY;
+      direction = null;
+      cachedRect = el!.getBoundingClientRect(); // refresh once per gesture (el non-null: guarded above)
     }
-  }
 
-  function onTouchEnd(): void {
-    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
-    deactivate();
-  }
+    function onMove(e: TouchEvent) {
+      // Bail on multi-touch or if we've already committed to vertical scroll.
+      if (e.touches.length > 1 || direction === "v") return;
+      const t = e.touches[0];
+      if (!t) return;
+      const dx = Math.abs(t.clientX - startX);
+      const dy = Math.abs(t.clientY - startY);
+
+      // Wait until the finger has moved at least TOUCH_SLOP pixels before committing
+      // to a direction — avoids accidental activation on tiny taps.
+      if (!direction) {
+        if (dx < TOUCH_SLOP && dy < TOUCH_SLOP) return;
+        direction = dx >= dy ? "h" : "v";
+      }
+
+      if (direction === "h") {
+        e.preventDefault(); // suppress page-scroll while scrubbing
+        const f = Math.max(0, Math.min(1, (t.clientX - cachedRect.left) / cachedRect.width));
+        isPointerActiveRef.current = true;
+        hoverPctRef.current = f;
+        setIsInteracting(true);
+        setHoverPct(f);
+      }
+    }
+
+    function onEnd() {
+      direction = null;
+      if (isPointerActiveRef.current) {
+        isPointerActiveRef.current = false;
+        setIsInteracting(false);
+        setHoverPct(null);
+      }
+    }
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove",  onMove,  { passive: false }); // non-passive for preventDefault
+    el.addEventListener("touchend",   onEnd,   { passive: true });
+    el.addEventListener("touchcancel", onEnd,  { passive: true });
+
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove",  onMove);
+      el.removeEventListener("touchend",   onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, []); // stable refs / setState dispatchers — no deps needed
 
   // ── Compute ping + price-key position ────────────────────────────────────────
   let pingX = 0, pingY = 0, pingPrice: number | null = null, pingTimestamp: number | null = null, pingWrapW = 400;
@@ -681,6 +744,18 @@ export default function BtcLiveChart() {
     // Map price to Y pixel using the same padded Y-axis bounds set on the chart
     const pFrac = yAxisMax > yAxisMin ? ((pingPrice as number) - yAxisMin) / (yAxisMax - yAxisMin) : 0.5;
     pingY = plotTop + (1 - pFrac) * plotHeight;
+  }
+
+  // ── Compute live end-point dot position (inspired by react-native-simple-line-chart
+  //    endPointConfig.animated) — pulsing dot at the latest price when not interacting ──
+  let liveDotX = 0, liveDotY = 0, showLiveDot = false;
+  if (!isInteracting && !showGold && closeData.length >= 2 && plotBounds) {
+    const p = plotBounds;
+    const lastPrice = livePrice ?? closeData[closeData.length - 1][1];
+    const pFrac = yAxisMax > yAxisMin ? (lastPrice - yAxisMin) / (yAxisMax - yAxisMin) : 0.5;
+    liveDotX = p.left + p.width;
+    liveDotY = p.top + (1 - pFrac) * p.height;
+    showLiveDot = true;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -786,13 +861,8 @@ export default function BtcLiveChart() {
         ref={chartWrapRef}
         className="relative -mx-3 overflow-hidden"
         aria-label="Bitcoin price chart"
-        onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
         style={{ cursor: isInteracting ? "crosshair" : "default", userSelect: "none" }}
       >
         {loading && (
@@ -801,7 +871,7 @@ export default function BtcLiveChart() {
         <Chart
           options={options}
           series={series}
-          type="line"
+          type="area"
           height={300}
         />
         {/* Hairline at cursor position (only affects its own 1px column, never the background) */}
@@ -819,14 +889,9 @@ export default function BtcLiveChart() {
             }}
           />
         )}
-        {/* Ping circle + price key (only while holding) */}
+        {/* Price key (only while holding) */}
         {pingPrice !== null && isInteracting && (
           <>
-            <div
-              aria-hidden="true"
-              className="absolute z-20 pointer-events-none rounded-full bg-[#FFD300] border-2 border-white dark:border-gray-900 shadow"
-              style={{ width: 12, height: 12, left: pingX - 6, top: pingY - 6 }}
-            />
             <div
               aria-hidden="true"
               className={[
@@ -848,6 +913,19 @@ export default function BtcLiveChart() {
               <span>${fmtNum(pingPrice)}</span>
             </div>
           </>
+        )}
+        {/* Animated live end-point dot — inspired by react-native-simple-line-chart's
+            endPointConfig.animated; shows the latest price position at rest */}
+        {showLiveDot && (
+          <span
+            aria-hidden="true"
+            className="absolute pointer-events-none z-10 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"
+            style={{
+              width: 10, height: 10,
+              left: liveDotX - 5, top: liveDotY - 5,
+              backgroundColor: BRAND_COLOR,
+            }}
+          />
         )}
       </div>
 
