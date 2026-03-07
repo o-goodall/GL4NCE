@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
@@ -21,10 +21,28 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
 
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "6M", "1Y", "ALL"];
 const CHART_UPDATE_THROTTLE_MS = 1_000;
+const LONG_PRESS_DELAY_MS = 500;
+const LABEL_FLIP_THRESHOLD = 0.8;
+/** Fractional Y-axis padding added to chart min/max so the dot calc matches ApexCharts' rendering */
+const Y_AXIS_PAD = 0.05;
+/** Fallback plot-area insets used only before the SVG bounds are read from the DOM */
+const PLOT_PAD_L = 8, PLOT_PAD_R = 8, PLOT_PAD_T = 28, PLOT_PAD_B = 36;
+const CHART_H = 300;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtDate(ts: number, tf: Timeframe): string {
+  const d = new Date(ts);
+  if (tf === "1D" || tf === "1W" || tf === "1M") {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  if (tf === "ALL") {
+    return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  }
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 
@@ -164,7 +182,7 @@ export default function BtcLiveChart() {
   const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChartUpdateRef = useRef<number>(0);
 
-  const [timeframe,  setTimeframe]  = useState<Timeframe>("ALL");
+  const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
   const [showGold,   setShowGold]   = useState(false);
   const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -174,12 +192,17 @@ export default function BtcLiveChart() {
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
   const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
-  // ── Hover / pulse-reveal overlay state ───────────────────────────────────────
-  const chartWrapRef  = useRef<HTMLDivElement>(null);
-  const pulseAnimFrameRef = useRef<number | null>(null);
-  const hoverPctRef   = useRef<number>(0);
-  const [hoverPct,     setHoverPct]     = useState<number | null>(null);
-  const [pulseOverlay, setPulseOverlay] = useState<{ from: number; pos: number } | null>(null);
+  // ── Hover state ──────────────────────────────────────────────────────────────
+  const chartWrapRef       = useRef<HTMLDivElement>(null);
+  const hoverPctRef        = useRef<number>(0);
+  const isPointerActiveRef = useRef(false);
+  const longPressTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressPosRef    = useRef<number>(0);
+  const [isInteracting,  setIsInteracting]  = useState(false);
+  const [hoverPct,       setHoverPct]       = useState<number | null>(null);
+
+  /** Actual SVG plot-area bounds read from the rendered DOM after each chart render. */
+  const svgPlotRef = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
 
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
@@ -280,8 +303,32 @@ export default function BtcLiveChart() {
     };
   }, []);
 
-  // Cancel any in-flight pulse animation on unmount
-  useEffect(() => () => { if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current); }, []);
+  // Cancel any in-flight long-press timer on unmount
+  useEffect(() => () => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+  }, []);
+
+  // ── Read actual ApexCharts plot-area bounds from the rendered SVG ─────────────
+  // ApexCharts' inner group translateY and gridRect height are the ground truth for
+  // converting price→pixel. We re-read them whenever the data changes (timeframe
+  // switch, data load) so the dot always snaps correctly.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      if (!chartWrapRef.current) return;
+      const inner    = chartWrapRef.current.querySelector<SVGGElement>(".apexcharts-inner");
+      const gridRect = chartWrapRef.current.querySelector<SVGRectElement>(".apexcharts-gridRect");
+      if (!inner || !gridRect) return;
+      const m = (inner.getAttribute("transform") ?? "").match(
+        /translate\(\s*([^,\s)]+)[,\s]+([^)]+)\)/,
+      );
+      const left = m ? parseFloat(m[1]) : PLOT_PAD_L;
+      const top  = m ? parseFloat(m[2]) : PLOT_PAD_T;
+      const w = parseFloat(gridRect.getAttribute("width")  ?? "0");
+      const h = parseFloat(gridRect.getAttribute("height") ?? "0");
+      if (w > 0 && h > 0) svgPlotRef.current = { left, top, width: w, height: h };
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [closeData, showGold]);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
@@ -334,6 +381,18 @@ export default function BtcLiveChart() {
     return { goldHighPoint: hi, goldHighIdx: hiIdx, goldLowPoint: lo, goldLowIdx: loIdx };
   }, [showGold, ratioData]);
 
+  // ── Y-axis bounds (with padding) — used by both the chart options and the dot position calc ───
+  const { yAxisMin, yAxisMax } = useMemo<{ yAxisMin: number; yAxisMax: number }>(() => {
+    if (!closeData.length) return { yAxisMin: 0, yAxisMax: 1 };
+    let lo = closeData[0][1], hi = closeData[0][1];
+    for (let i = 1; i < closeData.length; i++) {
+      if (closeData[i][1] < lo) lo = closeData[i][1];
+      if (closeData[i][1] > hi) hi = closeData[i][1];
+    }
+    const pad = (hi - lo) * Y_AXIS_PAD;
+    return { yAxisMin: lo - pad, yAxisMax: hi + pad };
+  }, [closeData]);
+
   // ── Chart options ─────────────────────────────────────────────────────────────
   const options = useMemo<ApexOptions>(() => {
     // Series colors — BTC/USD = brand yellow, Gold overlay = emerald green
@@ -342,11 +401,14 @@ export default function BtcLiveChart() {
     const strokeDashes = showGold ? [0, 0] : [0];
 
     // Y-axis — hidden (we show high/low as point annotations instead)
+    // Explicit min/max (with Y_AXIS_PAD) keeps the scale stable and lets the dot calc match.
     const yaxisConfig: ApexOptions["yaxis"] = showGold
       ? [
           {
             seriesName: "BTC/USD",
             opposite: true,
+            min: yAxisMin,
+            max: yAxisMax,
             labels: { show: false },
             axisBorder: { show: false },
             axisTicks: { show: false },
@@ -360,53 +422,12 @@ export default function BtcLiveChart() {
           },
         ]
       : {
+          min: yAxisMin,
+          max: yAxisMax,
           labels: { show: false },
           axisBorder: { show: false },
           axisTicks: { show: false },
         };
-
-    // Custom tooltip — better spacing than the default shared tooltip
-    const tooltipCustom = ({
-      series,
-      dataPointIndex,
-      w,
-    }: {
-      series: number[][];
-      dataPointIndex: number;
-      w: { globals: { seriesX: number[][] } };
-    }): string => {
-      const ts = w.globals.seriesX[0]?.[dataPointIndex];
-      const dateStr = ts
-        ? new Date(ts).toLocaleString("en-GB", {
-            day: "numeric", month: "short",
-            hour: "2-digit", minute: "2-digit",
-          })
-        : "";
-
-      const defs: Array<{ color: string; label: string; fmt: (v: number) => string }> = [
-        { color: "#FFD300", label: "BTC",      fmt: (v) => `$${fmtNum(v)}` },
-        ...(showGold ? [{ color: "#10b981", label: "Gold oz", fmt: (v: number) => `${v.toFixed(2)} oz` }] : []),
-      ];
-
-      const rows = defs.map((d, i) => {
-        const val = series[i]?.[dataPointIndex];
-        if (val == null) return "";
-        return (
-          `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">` +
-          `<span style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0"></span>` +
-          `<span style="color:#9ca3af;flex:1">${d.label}</span>` +
-          `<span style="color:#f9fafb;font-weight:600">${d.fmt(val)}</span>` +
-          `</div>`
-        );
-      }).join("");
-
-      return (
-        `<div style="padding:8px 12px;font-family:Inter,sans-serif;font-size:12px;min-width:170px">` +
-        `<div style="color:#6b7280;font-size:11px;margin-bottom:5px">${dateStr}</div>` +
-        rows +
-        `</div>`
-      );
-    };
 
     // ── High / low point annotations — text labels along x-axis, no dots ─────────
     const pointAnnotations: NonNullable<ApexOptions["annotations"]>["points"] = [];
@@ -518,13 +539,13 @@ export default function BtcLiveChart() {
       stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
       colors,
       dataLabels: { enabled: false },
-      markers: { size: 0, hover: { size: 4, sizeOffset: 2 } },
+      markers: { size: 0, hover: { size: 0 } },
       xaxis: {
         type: "datetime",
         axisBorder: { show: false },
         axisTicks:  { show: false },
         labels: { show: false },
-        crosshairs: { show: true },
+        crosshairs: { show: false },
         tooltip:    { enabled: false },
       },
       yaxis: yaxisConfig,
@@ -533,17 +554,14 @@ export default function BtcLiveChart() {
         padding: { left: 8, right: 8, top: 28, bottom: 36 },
       },
       tooltip: {
-        enabled: true,
-        shared:  true,
-        theme:   "dark",
-        custom:  tooltipCustom,
+        enabled: false,
       },
       annotations: {
         points: pointAnnotations,
       },
       legend: { show: false },
     };
-  }, [showGold, highPoint, highIdx, lowPoint, lowIdx, goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx, closeData.length, ratioData.length]);
+  }, [showGold, highPoint, highIdx, lowPoint, lowIdx, goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx, closeData.length, ratioData.length, yAxisMin, yAxisMax]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
@@ -573,50 +591,96 @@ export default function BtcLiveChart() {
     return ((last - first) / first) * 100;
   }, [showGold, ratioData, liveRatio]);
 
-  // ── Chart hover/touch interaction helpers ───────────────────────────────────
+  // ── Chart interaction helpers ─────────────────────────────────────────────────
   function getChartFraction(clientX: number): number {
     if (!chartWrapRef.current) return 0;
     const r = chartWrapRef.current.getBoundingClientRect();
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
   }
 
-  function startPulseFrom(from: number): void {
-    if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
-    const t0 = performance.now();
-    const DURATION = 750; // ms
-    function tick(now: number) {
-      const t = Math.min(1, (now - t0) / DURATION);
-      const eased = 1 - (1 - t) ** 2; // ease-out quadratic
-      const pos = from + eased * (1 - from);
-      setPulseOverlay({ from, pos });
-      if (t < 1) { pulseAnimFrameRef.current = requestAnimationFrame(tick); }
-      else        { setPulseOverlay(null); }
-    }
-    pulseAnimFrameRef.current = requestAnimationFrame(tick);
+  function activateAt(clientX: number): void {
+    const f = getChartFraction(clientX);
+    hoverPctRef.current = f;
+    isPointerActiveRef.current = true;
+    setIsInteracting(true);
+    setHoverPct(f);
   }
 
-  function onChartPointerMove(clientX: number): void {
-    const f = getChartFraction(clientX);
+  function deactivate(): void {
+    if (!isPointerActiveRef.current) return;
+    isPointerActiveRef.current = false;
+    setIsInteracting(false);
+    setHoverPct(null);
+  }
+
+  // Desktop
+  function onMouseDown(e: { clientX: number }): void { activateAt(e.clientX); }
+
+  function onMouseMove(e: { clientX: number }): void {
+    if (!isPointerActiveRef.current) return;
+    const f = getChartFraction(e.clientX);
     hoverPctRef.current = f;
     setHoverPct(f);
   }
 
-  function onChartPointerLeave(): void {
-    const from = hoverPctRef.current;
-    setHoverPct(null);
-    startPulseFrom(from);
+  function onMouseUp(): void { deactivate(); }
+
+  function onMouseLeave(): void {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    deactivate();
   }
 
-  // ── Overlay gradient (hover dim OR colour-restore sweep) ────────────────────
-  let chartOverlayBg: string | undefined;
-  if (hoverPct !== null) {
-    // Dim everything to the right of the cursor
-    const p = (hoverPct * 100).toFixed(1);
-    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
-  } else if (pulseOverlay !== null) {
-    // The dim boundary sweeps right from the release point — colour rushes back
-    const p = (pulseOverlay.pos * 100).toFixed(1);
-    chartOverlayBg = `linear-gradient(to right, transparent ${p}%, rgba(10,10,15,0.5) ${p}%)`;
+  // Mobile — long-press (~500 ms) to activate
+  function onTouchStart(e: React.TouchEvent): void {
+    const touch = e.touches[0];
+    if (!touch) return;
+    longPressPosRef.current = touch.clientX;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      activateAt(longPressPosRef.current);
+    }, LONG_PRESS_DELAY_MS);
+  }
+
+  function onTouchMove(e: React.TouchEvent): void {
+    const touch = e.touches[0];
+    if (!touch) return;
+    longPressPosRef.current = touch.clientX;
+    if (isPointerActiveRef.current) {
+      const f = getChartFraction(touch.clientX);
+      hoverPctRef.current = f;
+      setHoverPct(f);
+    }
+  }
+
+  function onTouchEnd(): void {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    deactivate();
+  }
+
+  // ── Compute ping + price-key position ────────────────────────────────────────
+  let pingX = 0, pingY = 0, pingPrice: number | null = null, pingTimestamp: number | null = null, pingWrapW = 400;
+  if (hoverPct !== null && isInteracting && closeData.length >= 2) {
+    pingWrapW = chartWrapRef.current?.getBoundingClientRect().width ?? 400;
+
+    // Use live SVG bounds when available (ground-truth from ApexCharts' rendered output),
+    // fall back to hardcoded estimates only before the first render.
+    const p = svgPlotRef.current;
+    const plotLeft   = p?.left   ?? PLOT_PAD_L;
+    const plotTop    = p?.top    ?? PLOT_PAD_T;
+    const plotWidth  = p?.width  ?? (pingWrapW - PLOT_PAD_L - PLOT_PAD_R);
+    const plotHeight = p?.height ?? (CHART_H   - PLOT_PAD_T - PLOT_PAD_B);
+
+    const plotFrac = Math.max(0, Math.min(1, (hoverPct * pingWrapW - plotLeft) / plotWidth));
+    const dataIdx  = Math.round(plotFrac * (closeData.length - 1));
+    pingPrice     = closeData[dataIdx][1];
+    pingTimestamp = closeData[dataIdx][0];
+    // Snap pingX to the exact data-point column (not the raw cursor fraction)
+    const snappedFrac = dataIdx / (closeData.length - 1);
+    pingX = plotLeft + snappedFrac * plotWidth;
+    // Map price to Y pixel using the same padded Y-axis bounds set on the chart
+    const pFrac = yAxisMax > yAxisMin ? ((pingPrice as number) - yAxisMin) / (yAxisMax - yAxisMin) : 0.5;
+    pingY = plotTop + (1 - pFrac) * plotHeight;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -722,10 +786,14 @@ export default function BtcLiveChart() {
         ref={chartWrapRef}
         className="relative -mx-3 overflow-hidden"
         aria-label="Bitcoin price chart"
-        onMouseMove={(e) => onChartPointerMove(e.clientX)}
-        onMouseLeave={() => onChartPointerLeave()}
-        onTouchMove={(e) => { const touch = e.touches[0]; if (touch) onChartPointerMove(touch.clientX); }}
-        onTouchEnd={() => onChartPointerLeave()}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseLeave}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{ cursor: isInteracting ? "crosshair" : "default", userSelect: "none" }}
       >
         {loading && (
           <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
@@ -736,13 +804,50 @@ export default function BtcLiveChart() {
           type="line"
           height={300}
         />
-        {/* Hover-dim / pulse-reveal gradient overlay */}
-        {chartOverlayBg && (
+        {/* Hairline at cursor position (only affects its own 1px column, never the background) */}
+        {isInteracting && hoverPct !== null && closeData.length >= 2 && (
           <div
             aria-hidden="true"
-            className="absolute inset-0 pointer-events-none"
-            style={{ background: chartOverlayBg }}
+            className="absolute pointer-events-none"
+            style={{
+              left: pingX,
+              top: svgPlotRef.current?.top ?? PLOT_PAD_T,
+              height: svgPlotRef.current?.height ?? (CHART_H - PLOT_PAD_T - PLOT_PAD_B),
+              width: 1,
+              backgroundColor: "rgba(156,163,175,0.5)",
+              transform: "translateX(-0.5px)",
+            }}
           />
+        )}
+        {/* Ping circle + price key (only while holding) */}
+        {pingPrice !== null && isInteracting && (
+          <>
+            <div
+              aria-hidden="true"
+              className="absolute z-20 pointer-events-none rounded-full bg-[#FFD300] border-2 border-white dark:border-gray-900 shadow"
+              style={{ width: 12, height: 12, left: pingX - 6, top: pingY - 6 }}
+            />
+            <div
+              aria-hidden="true"
+              className={[
+                "absolute z-20 pointer-events-none",
+                "px-2 py-1 rounded shadow whitespace-nowrap",
+                "flex flex-col items-start gap-0.5",
+                "text-xs font-semibold",
+                "bg-gray-900 text-white dark:bg-white dark:text-gray-900",
+              ].join(" ")}
+              style={
+                pingX > pingWrapW * LABEL_FLIP_THRESHOLD
+                  ? { left: pingX - 10, top: pingY - 22, transform: "translateX(-100%)" }
+                  : { left: pingX + 10, top: pingY - 22 }
+              }
+            >
+              {pingTimestamp !== null && (
+                <span className="text-[10px] font-normal opacity-70">{fmtDate(pingTimestamp, timeframe)}</span>
+              )}
+              <span>${fmtNum(pingPrice)}</span>
+            </div>
+          </>
         )}
       </div>
 
