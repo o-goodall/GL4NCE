@@ -101,6 +101,14 @@ function fmtK(n: number): string {
   return `$${Math.round(n / 1_000)}K`;
 }
 
+/** Formats a UTC timestamp as "Mar '26" — used for phase timeline labels */
+function fmtMonYear(ms: number): string {
+  const d = new Date(ms);
+  const mon = d.toLocaleDateString("en-AU", { month: "short", timeZone: "UTC" });
+  const yr  = d.getUTCFullYear().toString().slice(2);
+  return `${mon} '${yr}`;
+}
+
 // ── Cache helpers ──────────────────────────────────────────────────────────
 function getCachedNumber(key: string, ttl: number): number | null {
   try {
@@ -544,108 +552,68 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* 3-phase strategy timeline — line calendar */}
-      <div className="border-t border-gray-200 dark:border-gray-800 px-4 pt-2.5 pb-2.5">
-        {/* Segment bar */}
-        <div className="flex rounded-lg overflow-hidden border border-gray-100 dark:border-gray-800">
+      {/* 3-phase strategy timeline — compact pill */}
+      <div className="border-t border-gray-200 dark:border-gray-800 px-3 pt-2 pb-2">
+        <div className="flex rounded overflow-hidden border border-gray-100 dark:border-gray-800 text-[9px] leading-none">
 
           {/* Phase 1 · Save */}
-          <div className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
-            phase === "save"
-              ? "bg-amber-400"
-              : "bg-amber-50 dark:bg-amber-950/30"
+          <div className={`flex-none w-[28%] flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
+            phase === "save" ? "bg-accent-500" : "bg-accent-50 dark:bg-accent-500/[0.08]"
           }`}>
-            <div className="flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                phase === "save" ? "bg-white/80" : "bg-amber-300/60 dark:bg-amber-600/40"
-              }`} />
-              <span className={`text-[9px] font-bold uppercase tracking-widest leading-none ${
-                phase === "save" ? "text-white" : "text-amber-400/80 dark:text-amber-500/60"
-              }`}>Save</span>
-            </div>
-            <span className={`text-[7px] leading-none ${
-              phase === "save" ? "text-amber-100" : "text-gray-400/70 dark:text-gray-500/50"
-            }`}>→ 4 Mar &apos;26</span>
-            {phase === "save" && (
-              <span className="text-[7px] text-white/75 leading-none font-semibold">● Now</span>
-            )}
+            <span className={`font-semibold tracking-wide ${
+              phase === "save" ? "text-gray-900" : "text-accent-600 dark:text-accent-400"
+            }`}>
+              {phase === "save" ? "① Save ●" : "① Save"}
+            </span>
+            <span className={`text-[8px] ${
+              phase === "save" ? "text-gray-700" : "text-gray-400 dark:text-gray-500"
+            }`}>
+              {phase === "save" ? `in ${daysToStart}d` : fmtMonYear(DCA_START_MS)}
+            </span>
           </div>
 
           {/* Divider */}
-          <div className="w-px bg-gray-200 dark:bg-gray-700 self-stretch shrink-0" />
+          <div className="w-px bg-gray-200 dark:bg-gray-700 shrink-0" />
 
           {/* Phase 2 · DCA */}
-          <div className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
-            phase === "dca"
-              ? "bg-emerald-400"
-              : "bg-emerald-50 dark:bg-emerald-950/30"
+          <div className={`flex-1 flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
+            phase === "dca" ? "bg-brand-500" : "bg-brand-50 dark:bg-brand-500/[0.08]"
           }`}>
-            <div className="flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                phase === "dca" ? "bg-white/80" : "bg-emerald-300/60 dark:bg-emerald-600/40"
-              }`} />
-              <span className={`text-[9px] font-bold uppercase tracking-widest leading-none ${
-                phase === "dca" ? "text-white" : "text-emerald-500/80 dark:text-emerald-500/60"
-              }`}>DCA</span>
-            </div>
-            <span className={`text-[7px] leading-none ${
-              phase === "dca" ? "text-emerald-100" : "text-gray-400/70 dark:text-gray-500/50"
-            }`}>Mar &apos;26 – Apr &apos;27</span>
+            <span className={`font-semibold tracking-wide ${
+              phase === "dca" ? "text-gray-900" : "text-brand-600 dark:text-brand-400"
+            }`}>
+              {phase === "dca" ? `② DCA · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "② DCA"}
+            </span>
             {phase === "dca" ? (
-              <>
-                <span className="text-[7px] text-white/75 leading-none font-semibold">● Now · Day {dcaElapsedDays + 1}/{DCA_WINDOW_DAYS}</span>
-                {/* Progress bar within the DCA window */}
-                <div className="w-3/4 h-0.5 bg-white/30 rounded-full overflow-hidden mt-0.5">
-                  <div className="h-full bg-white/80 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
-                </div>
-              </>
-            ) : null}
-          </div>
-
-          {/* Divider */}
-          <div className="w-px bg-gray-200 dark:bg-gray-700 self-stretch shrink-0" />
-
-          {/* Phase 3 · Hold */}
-          <div className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
-            phase === "hold"
-              ? "bg-sky-400"
-              : "bg-sky-50 dark:bg-sky-950/30"
-          }`}>
-            <div className="flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                phase === "hold" ? "bg-white/80" : "bg-sky-300/60 dark:bg-sky-600/40"
-              }`} />
-              <span className={`text-[9px] font-bold uppercase tracking-widest leading-none ${
-                phase === "hold" ? "text-white" : "text-sky-400/80 dark:text-sky-500/60"
-              }`}>Hold</span>
-            </div>
-            <span className={`text-[7px] leading-none ${
-              phase === "hold" ? "text-sky-100" : "text-gray-400/70 dark:text-gray-500/50"
-            }`}>28 Apr &apos;27 →</span>
-            {phase === "hold" && (
-              <span className="text-[7px] text-white/75 leading-none font-semibold">● Now</span>
+              <div className="w-full h-0.5 bg-gray-900/15 rounded-full overflow-hidden">
+                <div className="h-full bg-gray-900/50 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
+              </div>
+            ) : (
+              <span className="text-[8px] text-gray-400 dark:text-gray-500">
+                {fmtMonYear(DCA_START_MS)}–{fmtMonYear(DCA_END_MS)}
+              </span>
             )}
           </div>
 
-        </div>
+          {/* Divider */}
+          <div className="w-px bg-gray-200 dark:bg-gray-700 shrink-0" />
 
-        {/* Context sub-label: days-to-start / days-remaining / deployed */}
-        <div className="flex justify-center mt-1.5">
-          {phase === "save" && (
-            <span className="text-[8px] text-amber-500/80 dark:text-amber-400/70 font-medium">
-              DCA starts in {daysToStart}d
+          {/* Phase 3 · Hold */}
+          <div className={`flex-none w-[28%] flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
+            phase === "hold" ? "bg-secondary-700" : "bg-secondary-50 dark:bg-secondary-500/[0.08]"
+          }`}>
+            <span className={`font-semibold tracking-wide ${
+              phase === "hold" ? "text-white" : "text-secondary-700 dark:text-secondary-400"
+            }`}>
+              {phase === "hold" ? "③ Hold ●" : "③ Hold"}
             </span>
-          )}
-          {phase === "dca" && (
-            <span className="text-[8px] text-emerald-600/80 dark:text-emerald-400/70 font-medium">
-              {dcaProgressPct}% deployed · {daysRemainingDca}d remaining
+            <span className={`text-[8px] ${
+              phase === "hold" ? "text-white/70" : "text-gray-400 dark:text-gray-500"
+            }`}>
+              {phase === "hold" ? "deployed" : fmtMonYear(DCA_END_MS)}
             </span>
-          )}
-          {phase === "hold" && (
-            <span className="text-[8px] text-sky-500/80 dark:text-sky-400/70 font-medium">
-              Capital fully deployed
-            </span>
-          )}
+          </div>
+
         </div>
       </div>
 
