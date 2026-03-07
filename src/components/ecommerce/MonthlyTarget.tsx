@@ -15,7 +15,7 @@ const DCA_END_MS     = DCA_START_MS + (421 - 1) * 86_400_000;
 const DCA_WINDOW_DAYS = 421;
 const YEARS_IN_CYCLE  = 4;
 const WEEKS_PER_YEAR  = 52;
-const DEFAULT_WEEKLY_AUD = 500; // $500/wk → $250/day
+const DEFAULT_WEEKLY_AUD = 500; // $500/wk × 52 × 4yr ÷ 421d ≈ $247 → ceil-to-$5 = $250/day
 
 // ── Cache config ───────────────────────────────────────────────────────────
 const ATH_CACHE_KEY  = "btc-ath";      // shared with BtcLiveChart
@@ -37,13 +37,15 @@ const RSI_OVERBOUGHT = 70;   // weekly RSI ≥ 70 → bull-market peak territory
 const CYCLE_ZONE_DAYS = 90;  // within ±90 days of a known/projected cycle event = "in window"
 
 // ── Confirmed cycle dates + one projected next event per series ────────────
-// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed); Nov 2026 projected (~12m after Oct 2025 peak); Nov 2030 (+4yr)
+// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed).
+// Avg trough-to-trough spacing: 1431d + 1437d ÷ 2 = 1434d
+// Projected: Nov 2022 + 1434d ≈ 25 Oct 2026; Oct 2026 + 1434d ≈ 28 Sep 2030
 const CYCLE_TROUGHS_MS: readonly number[] = [
   new Date("2015-01-14T00:00:00Z").getTime(),
   new Date("2018-12-15T00:00:00Z").getTime(),
   new Date("2022-11-21T00:00:00Z").getTime(),
-  new Date("2026-11-21T00:00:00Z").getTime(), // projected — later half of DCA window (day 262/421)
-  new Date("2030-11-21T00:00:00Z").getTime(), // projected (+4yr)
+  new Date("2026-10-25T00:00:00Z").getTime(), // projected — day 236/421 of DCA window
+  new Date("2030-09-28T00:00:00Z").getTime(), // projected (+1434d)
 ];
 // Peaks: Dec 2013, Dec 2017, Nov 2021, Oct 2025 (all confirmed); Oct 2029 (+4yr projected)
 const CYCLE_PEAKS_MS: readonly number[] = [
