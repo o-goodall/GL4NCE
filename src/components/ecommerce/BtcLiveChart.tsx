@@ -176,8 +176,7 @@ export default function BtcLiveChart() {
 
   // ── Hover / pulse-reveal overlay state ───────────────────────────────────────
   const chartWrapRef  = useRef<HTMLDivElement>(null);
-  const pulseAnimFrameRef     = useRef<number | null>(null);
-  const dataPointLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pulseAnimFrameRef = useRef<number | null>(null);
   const hoverPctRef   = useRef<number>(0);
   const [hoverPct,     setHoverPct]     = useState<number | null>(null);
   const [pulseOverlay, setPulseOverlay] = useState<{ from: number; pos: number } | null>(null);
@@ -282,10 +281,7 @@ export default function BtcLiveChart() {
   }, []);
 
   // Cancel any in-flight pulse animation on unmount
-  useEffect(() => () => {
-    if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
-    if (dataPointLeaveTimerRef.current) clearTimeout(dataPointLeaveTimerRef.current);
-  }, []);
+  useEffect(() => () => { if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current); }, []);
 
   // ── Build ApexCharts series ───────────────────────────────────────────────────
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
@@ -518,30 +514,6 @@ export default function BtcLiveChart() {
           dynamicAnimation: { enabled: true, speed: 300 },
           animateGradually: { enabled: false },
         },
-        events: {
-          // Activate dim only when cursor snaps to a data point on the line
-          dataPointMouseEnter(_e: MouseEvent, _ctx: unknown, cfg: { dataPointIndex: number }) {
-            // Cancel any pending leave timer (cursor moved to adjacent column)
-            if (dataPointLeaveTimerRef.current) {
-              clearTimeout(dataPointLeaveTimerRef.current);
-              dataPointLeaveTimerRef.current = null;
-            }
-            const total = closeData.length;
-            const f = total > 1 ? cfg.dataPointIndex / (total - 1) : 0;
-            hoverPctRef.current = f;
-            setHoverPct(f);
-          },
-          // Debounce the leave so moving between adjacent columns doesn't flash
-          dataPointMouseLeave() {
-            if (dataPointLeaveTimerRef.current) clearTimeout(dataPointLeaveTimerRef.current);
-            dataPointLeaveTimerRef.current = setTimeout(() => {
-              dataPointLeaveTimerRef.current = null;
-              const from = hoverPctRef.current;
-              setHoverPct(null);
-              startPulseFrom(from);
-            }, 50);
-          },
-        },
       },
       stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
       colors,
@@ -602,6 +574,12 @@ export default function BtcLiveChart() {
   }, [showGold, ratioData, liveRatio]);
 
   // ── Chart hover/touch interaction helpers ───────────────────────────────────
+  function getChartFraction(clientX: number): number {
+    if (!chartWrapRef.current) return 0;
+    const r = chartWrapRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  }
+
   function startPulseFrom(from: number): void {
     if (pulseAnimFrameRef.current) cancelAnimationFrame(pulseAnimFrameRef.current);
     const t0 = performance.now();
@@ -617,13 +595,13 @@ export default function BtcLiveChart() {
     pulseAnimFrameRef.current = requestAnimationFrame(tick);
   }
 
+  function onChartPointerMove(clientX: number): void {
+    const f = getChartFraction(clientX);
+    hoverPctRef.current = f;
+    setHoverPct(f);
+  }
+
   function onChartPointerLeave(): void {
-    // Fallback: if mouse exits the chart entirely while on a data point,
-    // cancel any pending leave timer and run the pulse immediately
-    if (dataPointLeaveTimerRef.current) {
-      clearTimeout(dataPointLeaveTimerRef.current);
-      dataPointLeaveTimerRef.current = null;
-    }
     const from = hoverPctRef.current;
     setHoverPct(null);
     startPulseFrom(from);
@@ -744,7 +722,9 @@ export default function BtcLiveChart() {
         ref={chartWrapRef}
         className="relative -mx-3 overflow-hidden"
         aria-label="Bitcoin price chart"
+        onMouseMove={(e) => onChartPointerMove(e.clientX)}
         onMouseLeave={() => onChartPointerLeave()}
+        onTouchMove={(e) => { const touch = e.touches[0]; if (touch) onChartPointerMove(touch.clientX); }}
         onTouchEnd={() => onChartPointerLeave()}
       >
         {loading && (
