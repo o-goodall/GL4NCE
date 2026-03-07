@@ -605,7 +605,7 @@ export default function BtcLiveChart() {
   }
 
   // Mobile — long-press (~500 ms) to activate
-  function onTouchStart(e: { touches: { clientX: number }[] }): void {
+  function onTouchStart(e: TouchEvent): void {
     const touch = e.touches[0];
     if (!touch) return;
     longPressPosRef.current = touch.clientX;
@@ -616,7 +616,7 @@ export default function BtcLiveChart() {
     }, LONG_PRESS_DELAY_MS);
   }
 
-  function onTouchMove(e: { touches: { clientX: number }[] }): void {
+  function onTouchMove(e: TouchEvent): void {
     const touch = e.touches[0];
     if (!touch) return;
     longPressPosRef.current = touch.clientX;
