@@ -9,13 +9,14 @@ import Label from "../form/Label";
 import Checkbox from "../form/input/Checkbox";
 
 // ── DCA window ─────────────────────────────────────────────────────────────
-// Day 1 = 6 March 2026; Day 423 = 2 May 2027 ($245/day × 423d = $103,935 total)
-const DCA_START_MS   = new Date("2026-03-06T00:00:00Z").getTime();
-const DCA_END_MS     = DCA_START_MS + (423 - 1) * 86_400_000;
-const DCA_WINDOW_DAYS = 423;
+// Day 1 = 4 Mar 2026 (DCA start); Day 421 = 28 Apr 2027 ($250/day × 421d = $105,250 total)
+// $506/wk × 208 weeks = $105,248 total savings → $105,248 ÷ 421d = $249.995 → ceil-to-$5 = $250/day
+const DCA_START_MS   = new Date("2026-03-04T00:00:00Z").getTime();
+const DCA_END_MS     = DCA_START_MS + (421 - 1) * 86_400_000;
+const DCA_WINDOW_DAYS = 421;
 const YEARS_IN_CYCLE  = 4;
 const WEEKS_PER_YEAR  = 52;
-const DEFAULT_WEEKLY_AUD = 500; // $500/wk → $245/day
+const DEFAULT_WEEKLY_AUD = 506; // $506/wk × 52 × 4yr ÷ 421d = $249.995 → ceil-to-$5 = $250/day
 
 // ── Cache config ───────────────────────────────────────────────────────────
 const ATH_CACHE_KEY  = "btc-ath";      // shared with BtcLiveChart
@@ -37,12 +38,15 @@ const RSI_OVERBOUGHT = 70;   // weekly RSI ≥ 70 → bull-market peak territory
 const CYCLE_ZONE_DAYS = 90;  // within ±90 days of a known/projected cycle event = "in window"
 
 // ── Confirmed cycle dates + one projected next event per series ────────────
-// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed); Nov 2026 (+4yr projected)
+// Troughs: Jan 2015, Dec 2018, Nov 2022 (all confirmed).
+// Avg trough-to-trough spacing: 1431d + 1437d ÷ 2 = 1434d
+// Projected: Nov 2022 + 1434d ≈ 25 Oct 2026; Oct 2026 + 1434d ≈ 28 Sep 2030
 const CYCLE_TROUGHS_MS: readonly number[] = [
   new Date("2015-01-14T00:00:00Z").getTime(),
   new Date("2018-12-15T00:00:00Z").getTime(),
   new Date("2022-11-21T00:00:00Z").getTime(),
-  new Date("2026-11-21T00:00:00Z").getTime(), // projected
+  new Date("2026-10-25T00:00:00Z").getTime(), // projected — day 236/421 of DCA window
+  new Date("2030-09-28T00:00:00Z").getTime(), // projected (+1434d)
 ];
 // Peaks: Dec 2013, Dec 2017, Nov 2021, Oct 2025 (all confirmed); Oct 2029 (+4yr projected)
 const CYCLE_PEAKS_MS: readonly number[] = [
@@ -75,10 +79,10 @@ interface DcaSettings {
   slot2?: DcaSlot;
 }
 
-/** $X/week → daily buy within the 423-day window (floor = conservative) */
+/** $X/week → daily buy within the 421-day window, rounded up to nearest $5 */
 function calcDailyAmt(weeklyAmtAUD: number): number {
   const total = weeklyAmtAUD * WEEKS_PER_YEAR * YEARS_IN_CYCLE;
-  return Math.floor(total / DCA_WINDOW_DAYS);
+  return Math.ceil(total / DCA_WINDOW_DAYS / 5) * 5;
 }
 
 function loadDcaSettings(): DcaSettings {
@@ -701,7 +705,7 @@ export default function MonthlyTarget() {
           </h4>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Enter your weekly investment amount. The system calculates your optimal daily buy
-            for the <strong className="text-gray-700 dark:text-gray-300">423-day</strong> accumulation window based on a 4-year cycle.
+            for the <strong className="text-gray-700 dark:text-gray-300">421-day</strong> accumulation window based on a 4-year cycle.
           </p>
         </div>
 
@@ -728,7 +732,7 @@ export default function MonthlyTarget() {
               <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                 <div>
                   <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">${fmtAUD(preview1)}/day</span>
-                  {" "}× 423 days
+                  {" "}× {DCA_WINDOW_DAYS} days
                 </div>
                 <div>= ${fmtAUD(preview1 * DCA_WINDOW_DAYS)} total over {YEARS_IN_CYCLE} years</div>
                 <div className="text-gray-400 dark:text-gray-500">
@@ -765,7 +769,7 @@ export default function MonthlyTarget() {
                 <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                   <div>
                     <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">${fmtAUD(preview2)}/day</span>
-                    {" "}× 423 days
+                    {" "}× {DCA_WINDOW_DAYS} days
                   </div>
                   <div>= ${fmtAUD(preview2 * DCA_WINDOW_DAYS)} total over {YEARS_IN_CYCLE} years</div>
                 </div>
