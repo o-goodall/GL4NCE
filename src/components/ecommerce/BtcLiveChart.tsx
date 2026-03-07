@@ -203,6 +203,9 @@ export default function BtcLiveChart() {
 
   /** Actual SVG plot-area bounds read from the rendered DOM after each chart render. */
   const svgPlotRef = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
+  /** State copy of svgPlotRef — triggers a React re-render when plot bounds are first populated
+   *  (needed for the animated live end-point dot to appear on first load). */
+  const [plotBounds, setPlotBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
@@ -325,7 +328,10 @@ export default function BtcLiveChart() {
       const top  = m ? parseFloat(m[2]) : PLOT_PAD_T;
       const w = parseFloat(gridRect.getAttribute("width")  ?? "0");
       const h = parseFloat(gridRect.getAttribute("height") ?? "0");
-      if (w > 0 && h > 0) svgPlotRef.current = { left, top, width: w, height: h };
+      if (w > 0 && h > 0) {
+        svgPlotRef.current = { left, top, width: w, height: h };
+        setPlotBounds({ left, top, width: w, height: h });
+      }
     });
     return () => cancelAnimationFrame(raf);
   }, [closeData, showGold]);
@@ -394,9 +400,19 @@ export default function BtcLiveChart() {
   }, [closeData]);
 
   // ── Chart options ─────────────────────────────────────────────────────────────
+  // lineColor must be declared before the options useMemo so it can be captured in
+  // the memoised closure. tfChangePct is not yet in scope here, so we compute it inline.
+  const lineColor = (() => {
+    if (!closeData.length) return "#FFD300";
+    const first = closeData[0][1];
+    if (!first) return "#FFD300";
+    const last = livePrice ?? closeData[closeData.length - 1][1];
+    const pct = ((last - first) / first) * 100;
+    return pct >= 0 ? "#10b981" : "#f43f5e";
+  })();
   const options = useMemo<ApexOptions>(() => {
-    // Series colors — BTC/USD = brand yellow, Gold overlay = emerald green
-    const colors = showGold ? ["#FFD300", "#10b981"] : ["#FFD300"];
+    // Series colors — BTC uses dynamic direction colour; Gold overlay = emerald green
+    const colors = showGold ? [lineColor, "#10b981"] : [lineColor];
     const strokeWidths = showGold ? [2.5, 2] : [2.5];
     const strokeDashes = showGold ? [0, 0] : [0];
 
@@ -525,7 +541,7 @@ export default function BtcLiveChart() {
     return {
       chart: {
         fontFamily: "Inter, sans-serif",
-        type: "line",
+        type: "area",
         toolbar: { show: false },
         background: "transparent",
         zoom: { enabled: false },
@@ -537,6 +553,19 @@ export default function BtcLiveChart() {
         },
       },
       stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
+      // Gradient area fill — inspired by react-native-simple-line-chart's area chart presentation.
+      // Disabled in gold-overlay mode to avoid visual clutter from two filled series.
+      fill: showGold
+        ? { type: "solid", opacity: 0 }
+        : {
+            type: "gradient",
+            gradient: {
+              shadeIntensity: 1,
+              opacityFrom: 0.25,
+              opacityTo: 0,
+              stops: [0, 100],
+            },
+          },
       colors,
       dataLabels: { enabled: false },
       markers: { size: 0, hover: { size: 0 } },
@@ -561,7 +590,7 @@ export default function BtcLiveChart() {
       },
       legend: { show: false },
     };
-  }, [showGold, highPoint, highIdx, lowPoint, lowIdx, goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx, closeData.length, ratioData.length, yAxisMin, yAxisMax]);
+  }, [showGold, lineColor, highPoint, highIdx, lowPoint, lowIdx, goldHighPoint, goldHighIdx, goldLowPoint, goldLowIdx, closeData.length, ratioData.length, yAxisMin, yAxisMax]);
 
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
@@ -683,6 +712,18 @@ export default function BtcLiveChart() {
     pingY = plotTop + (1 - pFrac) * plotHeight;
   }
 
+  // ── Compute live end-point dot position (inspired by react-native-simple-line-chart
+  //    endPointConfig.animated) — pulsing dot at the latest price when not interacting ──
+  let liveDotX = 0, liveDotY = 0, showLiveDot = false;
+  if (!isInteracting && !showGold && closeData.length >= 2 && plotBounds) {
+    const p = plotBounds;
+    const lastPrice = livePrice ?? closeData[closeData.length - 1][1];
+    const pFrac = yAxisMax > yAxisMin ? (lastPrice - yAxisMin) / (yAxisMax - yAxisMin) : 0.5;
+    liveDotX = p.left + p.width;
+    liveDotY = p.top + (1 - pFrac) * p.height;
+    showLiveDot = true;
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
@@ -801,7 +842,7 @@ export default function BtcLiveChart() {
         <Chart
           options={options}
           series={series}
-          type="line"
+          type="area"
           height={300}
         />
         {/* Hairline at cursor position (only affects its own 1px column, never the background) */}
@@ -824,8 +865,8 @@ export default function BtcLiveChart() {
           <>
             <div
               aria-hidden="true"
-              className="absolute z-20 pointer-events-none rounded-full bg-[#FFD300] border-2 border-white dark:border-gray-900 shadow"
-              style={{ width: 12, height: 12, left: pingX - 6, top: pingY - 6 }}
+              className="absolute z-20 pointer-events-none rounded-full border-2 border-white dark:border-gray-900 shadow"
+              style={{ width: 12, height: 12, left: pingX - 6, top: pingY - 6, backgroundColor: lineColor }}
             />
             <div
               aria-hidden="true"
@@ -847,6 +888,31 @@ export default function BtcLiveChart() {
               )}
               <span>${fmtNum(pingPrice)}</span>
             </div>
+          </>
+        )}
+        {/* Animated live end-point dot — inspired by react-native-simple-line-chart's
+            endPointConfig.animated; shows the latest price position at rest */}
+        {showLiveDot && (
+          <>
+            <span
+              aria-hidden="true"
+              className="absolute pointer-events-none z-10 rounded-full animate-ping"
+              style={{
+                width: 16, height: 16,
+                left: liveDotX - 8, top: liveDotY - 8,
+                backgroundColor: lineColor,
+                opacity: 0.35,
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className="absolute pointer-events-none z-10 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"
+              style={{
+                width: 10, height: 10,
+                left: liveDotX - 5, top: liveDotY - 5,
+                backgroundColor: lineColor,
+              }}
+            />
           </>
         )}
       </div>
