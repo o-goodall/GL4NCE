@@ -204,46 +204,20 @@ function nearestCycleDate(now: number, datesMs: readonly number[]): CycleDateInf
   return { daysAway: Math.round(minDist / 86_400_000), isPast: nearest < now };
 }
 
-// ── 5-phase Bitcoin cycle system (from DCA_STRATEGY_ANALYSIS.md) ──────────
-// Phases (priority order, most specific first):
-//   1. pre-halving     — ≤12 months before next halving (recovery / anticipation)
-//   2. cycle-trough    — ±90 days of projected trough   (capitulation / bottom)
-//   3. cycle-peak      — ±90 days of projected peak     (euphoria / blow-off top)
-//   4. post-halving    — 0–18 months after halving      (supply shock / accumulation)
-//   5. markdown        — default bear                   (post-peak correction)
-type CyclePhaseKey = "post-halving" | "cycle-peak" | "markdown" | "cycle-trough" | "pre-halving";
+// ── 3-phase strategy system ────────────────────────────────────────────────
+// Phases are derived entirely from the DCA window constants — no hardcoded
+// calendar comparisons — so they automatically adapt when DCA_START_MS /
+// DCA_END_MS are updated.
+//
+//   Phase 1 · Save  — before DCA deployment begins   (accumulate capital)
+//   Phase 2 · DCA   — inside the deployment window   (deploy $250/day)
+//   Phase 3 · Hold  — after deployment window ends   (hold through bull run)
+type StrategyPhase = "save" | "dca" | "hold";
 
-interface CyclePhaseInfo { label: string; isBearPhase: boolean }
-
-const PHASE_INFO: Record<CyclePhaseKey, CyclePhaseInfo> = {
-  "post-halving": { label: "Post-Halving · Accumulation", isBearPhase: false },
-  "cycle-peak":   { label: "Cycle Peak · Distribution",   isBearPhase: false },
-  "markdown":     { label: "Post-Peak · Markdown",        isBearPhase: true  },
-  "cycle-trough": { label: "Cycle Trough · Accumulate",   isBearPhase: true  },
-  "pre-halving":  { label: "Pre-Halving · Recovery",      isBearPhase: false },
-};
-
-function deriveCyclePhase(
-  now: number,
-  nearestTrough: CycleDateInfo | null,
-  nearestPeak: CycleDateInfo | null,
-): CyclePhaseKey {
-  // 1. Pre-halving window (≤12 months before next halving)
-  const msToNextHalving = NEXT_HALVING_MS - now;
-  if (msToNextHalving > 0 && msToNextHalving <= PRE_HALVING_WINDOW) return "pre-halving";
-
-  // 2. Cycle trough zone (±90 days of projected/confirmed trough)
-  if (nearestTrough !== null && nearestTrough.daysAway <= CYCLE_ZONE_DAYS) return "cycle-trough";
-
-  // 3. Cycle peak zone (±90 days of projected/confirmed peak)
-  if (nearestPeak !== null && nearestPeak.daysAway <= CYCLE_ZONE_DAYS) return "cycle-peak";
-
-  // 4. Post-halving accumulation (0–18 months after last halving)
-  const msSincePrevHalving = now - PREV_HALVING_MS;
-  if (msSincePrevHalving >= 0 && msSincePrevHalving <= POST_HALVING_WINDOW) return "post-halving";
-
-  // 5. Default: post-peak markdown (bear market / correction phase)
-  return "markdown";
+function getDcaPhase(nowMs: number): StrategyPhase {
+  if (nowMs < DCA_START_MS) return "save";
+  if (nowMs <= DCA_END_MS)  return "dca";
+  return "hold";
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
@@ -460,7 +434,7 @@ export default function MonthlyTarget() {
 
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
-  const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
+  const halvingActive = msToHalving > 0 && msToHalving <= PRE_HALVING_WINDOW;
 
   // Post-halving accumulation phase (BSP cycle-awareness)
   const msSinceHalving    = Date.now() - PREV_HALVING_MS;
@@ -482,9 +456,14 @@ export default function MonthlyTarget() {
   const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
   const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
 
-  // ── Cycle phase (5-phase cheat sheet) ──────────────────────────────────
-  const cyclePhase = deriveCyclePhase(now, nearestTrough, nearestPeak);
-  const { label: phaseLabel, isBearPhase } = PHASE_INFO[cyclePhase];
+  // ── Strategy phase (3-phase: Save → DCA → Hold) ─────────────────────────
+  // Derived from DCA_START_MS / DCA_END_MS — no hardcoded calendar dates here.
+  const phase       = getDcaPhase(now);
+  const isHoldPhase = phase === "hold";   // capital deployed; show hold signals
+  const phaseLabel  =
+    phase === "save" ? "Phase 1 · Save"
+    : phase === "dca"  ? "Phase 2 · DCA"
+    :                    "Phase 3 · Hold";
 
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
@@ -519,11 +498,11 @@ export default function MonthlyTarget() {
   // ── Display helpers ────────────────────────────────────────────────────
   const chartValue = typeof recommendedBuy === "number" ? 100 : 0;
   const centerLabel =
-    now < DCA_START_MS ? `${daysToStart}d`
-    : now > DCA_END_MS  ? "Done"
-    : priceUSD === null  ? "—"
-    : isPass             ? "PASS"
-    :                      `$${fmtAUD(dailyAmtAUD)}`;
+    phase === "save"  ? `${daysToStart}d`
+    : phase === "hold"  ? "HOLD"
+    : priceUSD === null ? "—"
+    : isPass            ? "PASS"
+    :                     `$${fmtAUD(dailyAmtAUD)}`;
 
   // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
@@ -660,9 +639,15 @@ export default function MonthlyTarget() {
 
       {/* Phase label + signals footer */}
       <div className={`flex items-center justify-center gap-1.5 px-4 py-1.5 border-t border-gray-200 dark:border-gray-800 ${
-        isBearPhase ? "bg-amber-50/60 dark:bg-amber-900/10" : "bg-emerald-50/60 dark:bg-emerald-900/10"
+        phase === "save" ? "bg-amber-50/60 dark:bg-amber-900/10"
+        : phase === "dca"  ? "bg-emerald-50/60 dark:bg-emerald-900/10"
+        :                    "bg-sky-50/60 dark:bg-sky-900/10"
       }`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isBearPhase ? "bg-amber-400" : "bg-emerald-400"}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          phase === "save" ? "bg-amber-400"
+          : phase === "dca"  ? "bg-emerald-400"
+          :                    "bg-sky-400"
+        }`} />
         <span className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">
           {phaseLabel}
         </span>
@@ -670,9 +655,9 @@ export default function MonthlyTarget() {
 
       {/* Signals grid — 4 contextual tiles per phase */}
       <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
-        {isBearPhase ? (
+        {!isHoldPhase ? (
           <>
-            {/* Phase 1: bear/accumulation signals */}
+            {/* Phase 1 (Save) + Phase 2 (DCA): accumulation/deployment signals */}
             <SignalItem
               active={fearActive}
               label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
@@ -702,7 +687,7 @@ export default function MonthlyTarget() {
           </>
         ) : (
           <>
-            {/* Phase 2: recovery/bull signals */}
+            {/* Phase 3 (Hold): bull/hold signals — track the post-DCA bull run */}
             <SignalItem
               active={halvingActive || postHalvingActive}
               label={
