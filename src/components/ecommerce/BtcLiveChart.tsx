@@ -25,6 +25,9 @@ const LONG_PRESS_DELAY_MS = 500;
 const LABEL_FLIP_THRESHOLD = 0.8;
 /** Fractional Y-axis padding added to chart min/max so the dot calc matches ApexCharts' rendering */
 const Y_AXIS_PAD = 0.05;
+/** Fallback plot-area insets used only before the SVG bounds are read from the DOM */
+const PLOT_PAD_L = 8, PLOT_PAD_R = 8, PLOT_PAD_T = 28, PLOT_PAD_B = 36;
+const CHART_H = 300;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string {
@@ -198,6 +201,9 @@ export default function BtcLiveChart() {
   const [isInteracting,  setIsInteracting]  = useState(false);
   const [hoverPct,       setHoverPct]       = useState<number | null>(null);
 
+  /** Actual SVG plot-area bounds read from the rendered DOM after each chart render. */
+  const svgPlotRef = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
+
   // ── Gold price history fetch (when overlay is active) ────────────────────────
   useEffect(() => {
     if (!showGold) { setGoldPriceHistory([]); return; }
@@ -302,6 +308,28 @@ export default function BtcLiveChart() {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
   }, []);
 
+  // ── Read actual ApexCharts plot-area bounds from the rendered SVG ─────────────
+  // ApexCharts' inner group translateY and gridRect height are the ground truth for
+  // converting price→pixel. We re-read them whenever the data changes (timeframe
+  // switch, data load) so the dot always snaps correctly.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      if (!chartWrapRef.current) return;
+      const inner    = chartWrapRef.current.querySelector<SVGGElement>(".apexcharts-inner");
+      const gridRect = chartWrapRef.current.querySelector<SVGRectElement>(".apexcharts-gridRect");
+      if (!inner || !gridRect) return;
+      const m = (inner.getAttribute("transform") ?? "").match(
+        /translate\(\s*([^,\s)]+)[,\s]+([^)]+)\)/,
+      );
+      const left = m ? parseFloat(m[1]) : PLOT_PAD_L;
+      const top  = m ? parseFloat(m[2]) : PLOT_PAD_T;
+      const w = parseFloat(gridRect.getAttribute("width")  ?? "0");
+      const h = parseFloat(gridRect.getAttribute("height") ?? "0");
+      if (w > 0 && h > 0) svgPlotRef.current = { left, top, width: w, height: h };
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [closeData, showGold]);
+
   // ── Build ApexCharts series ───────────────────────────────────────────────────
   // BTC/Gold ratio overlay (computed from current BTC closes + gold history)
   const ratioData = useMemo<PricePoint[]>(() => {
@@ -379,6 +407,8 @@ export default function BtcLiveChart() {
           {
             seriesName: "BTC/USD",
             opposite: true,
+            min: yAxisMin,
+            max: yAxisMax,
             labels: { show: false },
             axisBorder: { show: false },
             axisTicks: { show: false },
@@ -629,23 +659,28 @@ export default function BtcLiveChart() {
   }
 
   // ── Compute ping + price-key position ────────────────────────────────────────
-  const PLOT_PAD_L = 8, PLOT_PAD_R = 8, PLOT_PAD_T = 28, PLOT_PAD_B = 36;
-  const CHART_H = 300;
   let pingX = 0, pingY = 0, pingPrice: number | null = null, pingTimestamp: number | null = null, pingWrapW = 400;
   if (hoverPct !== null && isInteracting && closeData.length >= 2) {
     pingWrapW = chartWrapRef.current?.getBoundingClientRect().width ?? 400;
-    const plotWidth  = pingWrapW - PLOT_PAD_L - PLOT_PAD_R;
-    const plotHeight = CHART_H  - PLOT_PAD_T  - PLOT_PAD_B;
-    const plotFrac   = Math.max(0, Math.min(1, (hoverPct * pingWrapW - PLOT_PAD_L) / plotWidth));
-    const dataIdx    = Math.round(plotFrac * (closeData.length - 1));
+
+    // Use live SVG bounds when available (ground-truth from ApexCharts' rendered output),
+    // fall back to hardcoded estimates only before the first render.
+    const p = svgPlotRef.current;
+    const plotLeft   = p?.left   ?? PLOT_PAD_L;
+    const plotTop    = p?.top    ?? PLOT_PAD_T;
+    const plotWidth  = p?.width  ?? (pingWrapW - PLOT_PAD_L - PLOT_PAD_R);
+    const plotHeight = p?.height ?? (CHART_H   - PLOT_PAD_T - PLOT_PAD_B);
+
+    const plotFrac = Math.max(0, Math.min(1, (hoverPct * pingWrapW - plotLeft) / plotWidth));
+    const dataIdx  = Math.round(plotFrac * (closeData.length - 1));
     pingPrice     = closeData[dataIdx][1];
     pingTimestamp = closeData[dataIdx][0];
     // Snap pingX to the exact data-point column (not the raw cursor fraction)
     const snappedFrac = dataIdx / (closeData.length - 1);
-    pingX = PLOT_PAD_L + snappedFrac * plotWidth;
-    // Use the same padded Y-axis bounds set on the chart so the dot snaps to the line
+    pingX = plotLeft + snappedFrac * plotWidth;
+    // Map price to Y pixel using the same padded Y-axis bounds set on the chart
     const pFrac = yAxisMax > yAxisMin ? ((pingPrice as number) - yAxisMin) / (yAxisMax - yAxisMin) : 0.5;
-    pingY = PLOT_PAD_T + (1 - pFrac) * plotHeight;
+    pingY = plotTop + (1 - pFrac) * plotHeight;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -776,8 +811,8 @@ export default function BtcLiveChart() {
             className="absolute pointer-events-none"
             style={{
               left: pingX,
-              top: PLOT_PAD_T,
-              height: CHART_H - PLOT_PAD_T - PLOT_PAD_B,
+              top: svgPlotRef.current?.top ?? PLOT_PAD_T,
+              height: svgPlotRef.current?.height ?? (CHART_H - PLOT_PAD_T - PLOT_PAD_B),
               width: 1,
               backgroundColor: "rgba(156,163,175,0.5)",
               transform: "translateX(-0.5px)",
