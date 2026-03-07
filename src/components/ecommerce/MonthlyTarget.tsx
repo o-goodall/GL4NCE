@@ -563,32 +563,30 @@ export default function MonthlyTarget() {
 
           {/* Reserve */}
           <div style={{ width: `${reservePct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-            phase === "save" ? "bg-accent-500" : "bg-accent-50 dark:bg-accent-500/[0.08]"
+            phase === "save" ? "bg-gray-100 dark:bg-gray-800" : "bg-brand-50 dark:bg-brand-500/[0.08]"
           }`}>
             <span className={`font-semibold tracking-wide ${
-              phase === "save" ? "text-gray-900" : "text-accent-600 dark:text-accent-400"
+              phase === "save" ? "text-gray-400 dark:text-gray-500" : "text-brand-600 dark:text-brand-400"
             }`}>
               {phase === "save" ? "Reserve ●" : "Reserve"}
             </span>
-            <span className={`text-[8px] ${
-              phase === "save" ? "text-gray-700" : "text-gray-400 dark:text-gray-500"
-            }`}>
+            <span className="text-[8px] text-gray-400 dark:text-gray-500">
               {phase === "save" ? `${daysToStart}d left` : `${RESERVE_WINDOW_DAYS}d`}
             </span>
           </div>
 
           {/* Buy */}
           <div style={{ width: `${buyPct}%` }} className={`flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
-            phase === "dca" ? "bg-brand-500" : "bg-brand-50 dark:bg-brand-500/[0.08]"
+            phase === "dca" ? "bg-gray-100 dark:bg-gray-800" : "bg-brand-50 dark:bg-brand-500/[0.08]"
           }`}>
             <span className={`font-semibold tracking-wide ${
-              phase === "dca" ? "text-gray-900" : "text-brand-600 dark:text-brand-400"
+              phase === "dca" ? "text-gray-400 dark:text-gray-500" : "text-brand-600 dark:text-brand-400"
             }`}>
               {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "Buy"}
             </span>
             {phase === "dca" ? (
-              <div className="w-full h-0.5 bg-gray-900/15 rounded-full overflow-hidden">
-                <div className="h-full bg-gray-900/50 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
+              <div className="w-full h-0.5 bg-gray-300/50 dark:bg-gray-600/50 rounded-full overflow-hidden">
+                <div className="h-full bg-gray-400 dark:bg-gray-500 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
               </div>
             ) : (
               <span className="text-[8px] text-gray-400 dark:text-gray-500">{DCA_WINDOW_DAYS}d</span>
@@ -597,16 +595,14 @@ export default function MonthlyTarget() {
 
           {/* Hold */}
           <div style={{ width: `${holdPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-            phase === "hold" ? "bg-secondary-700" : "bg-secondary-50 dark:bg-secondary-500/[0.08]"
+            phase === "hold" ? "bg-gray-100 dark:bg-gray-800" : "bg-brand-50 dark:bg-brand-500/[0.08]"
           }`}>
             <span className={`font-semibold tracking-wide ${
-              phase === "hold" ? "text-white" : "text-secondary-700 dark:text-secondary-400"
+              phase === "hold" ? "text-gray-400 dark:text-gray-500" : "text-brand-600 dark:text-brand-400"
             }`}>
               {phase === "hold" ? "Hold ●" : "Hold"}
             </span>
-            <span className={`text-[8px] ${
-              phase === "hold" ? "text-white/70" : "text-gray-400 dark:text-gray-500"
-            }`}>
+            <span className="text-[8px] text-gray-400 dark:text-gray-500">
               {HOLD_WINDOW_DAYS}d
             </span>
           </div>
