@@ -51,6 +51,13 @@ const CYCLE_PEAKS_MS: readonly number[] = [
   new Date("2029-10-06T00:00:00Z").getTime(), // projected
 ];
 
+// ── 3-phase strategy durations (derived from cycle constants, not hardcoded) ─
+// Reserve: confirmed Oct 2025 cycle peak → DCA window open  ≈ 149 d
+// Buy:     DCA deployment window                             = 421 d (DCA_WINDOW_DAYS)
+// Hold:    DCA window close → projected Oct 2029 cycle peak ≈ 891 d
+const RESERVE_WINDOW_DAYS = Math.round((DCA_START_MS - CYCLE_PEAKS_MS[3]) / 86_400_000);
+const HOLD_WINDOW_DAYS    = Math.round((CYCLE_PEAKS_MS[4] - DCA_END_MS)    / 86_400_000);
+
 // ── Fallbacks while async fetches are in-flight ────────────────────────────
 const LOW_PRICE_USD_FALLBACK  = 55_000;
 const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
@@ -101,13 +108,6 @@ function fmtK(n: number): string {
   return `$${Math.round(n / 1_000)}K`;
 }
 
-/** Formats a UTC timestamp as "Mar '26" — used for phase timeline labels */
-function fmtMonYear(ms: number): string {
-  const d = new Date(ms);
-  const mon = d.toLocaleDateString("en-AU", { month: "short", timeZone: "UTC" });
-  const yr  = d.getUTCFullYear().toString().slice(2);
-  return `${mon} '${yr}`;
-}
 
 // ── Cache helpers ──────────────────────────────────────────────────────────
 function getCachedNumber(key: string, ttl: number): number | null {
@@ -550,69 +550,69 @@ export default function MonthlyTarget() {
         </div>
       </div>
 
-      {/* 3-phase strategy timeline — compact pill */}
+      {/* 3-phase strategy thermometer */}
       <div className="border-t border-gray-200 dark:border-gray-800 px-3 pt-2 pb-2">
-        <div className="flex rounded overflow-hidden border border-gray-100 dark:border-gray-800 text-[9px] leading-none">
+        {(() => {
+          const totalDays = RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + HOLD_WINDOW_DAYS;
+          const rPct = (RESERVE_WINDOW_DAYS / totalDays) * 100;
+          const bPct = (DCA_WINDOW_DAYS      / totalDays) * 100;
+          const hPct = (HOLD_WINDOW_DAYS     / totalDays) * 100;
+          return (
+            <div className="flex rounded overflow-hidden text-[9px] leading-none">
 
-          {/* Phase 1 · Save */}
-          <div className={`flex-none w-[28%] flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-            phase === "save" ? "bg-accent-500" : "bg-accent-50 dark:bg-accent-500/[0.08]"
-          }`}>
-            <span className={`font-semibold tracking-wide ${
-              phase === "save" ? "text-gray-900" : "text-accent-600 dark:text-accent-400"
-            }`}>
-              {phase === "save" ? "① Save ●" : "① Save"}
-            </span>
-            <span className={`text-[8px] ${
-              phase === "save" ? "text-gray-700" : "text-gray-400 dark:text-gray-500"
-            }`}>
-              {phase === "save" ? `in ${daysToStart}d` : fmtMonYear(DCA_START_MS)}
-            </span>
-          </div>
-
-          {/* Divider */}
-          <div className="w-px bg-gray-200 dark:bg-gray-700 shrink-0" />
-
-          {/* Phase 2 · DCA */}
-          <div className={`flex-1 flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
-            phase === "dca" ? "bg-brand-500" : "bg-brand-50 dark:bg-brand-500/[0.08]"
-          }`}>
-            <span className={`font-semibold tracking-wide ${
-              phase === "dca" ? "text-gray-900" : "text-brand-600 dark:text-brand-400"
-            }`}>
-              {phase === "dca" ? `② DCA · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "② DCA"}
-            </span>
-            {phase === "dca" ? (
-              <div className="w-full h-0.5 bg-gray-900/15 rounded-full overflow-hidden">
-                <div className="h-full bg-gray-900/50 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
+              {/* Reserve */}
+              <div style={{ width: `${rPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
+                phase === "save" ? "bg-accent-500" : "bg-accent-50 dark:bg-accent-500/[0.08]"
+              }`}>
+                <span className={`font-semibold tracking-wide ${
+                  phase === "save" ? "text-gray-900" : "text-accent-600 dark:text-accent-400"
+                }`}>
+                  {phase === "save" ? "Reserve ●" : "Reserve"}
+                </span>
+                <span className={`text-[8px] ${
+                  phase === "save" ? "text-gray-700" : "text-gray-400 dark:text-gray-500"
+                }`}>
+                  {phase === "save" ? `${daysToStart}d left` : `${RESERVE_WINDOW_DAYS}d`}
+                </span>
               </div>
-            ) : (
-              <span className="text-[8px] text-gray-400 dark:text-gray-500">
-                {fmtMonYear(DCA_START_MS)}–{fmtMonYear(DCA_END_MS)}
-              </span>
-            )}
-          </div>
 
-          {/* Divider */}
-          <div className="w-px bg-gray-200 dark:bg-gray-700 shrink-0" />
+              {/* Buy */}
+              <div style={{ width: `${bPct}%` }} className={`flex flex-col items-center py-1.5 px-2 gap-1 transition-colors ${
+                phase === "dca" ? "bg-brand-500" : "bg-brand-50 dark:bg-brand-500/[0.08]"
+              }`}>
+                <span className={`font-semibold tracking-wide ${
+                  phase === "dca" ? "text-gray-900" : "text-brand-600 dark:text-brand-400"
+                }`}>
+                  {phase === "dca" ? `Buy · Day ${dcaElapsedDays + 1}/${DCA_WINDOW_DAYS} ●` : "Buy"}
+                </span>
+                {phase === "dca" ? (
+                  <div className="w-full h-0.5 bg-gray-900/15 rounded-full overflow-hidden">
+                    <div className="h-full bg-gray-900/50 rounded-full transition-all" style={{ width: `${dcaProgressPct}%` }} />
+                  </div>
+                ) : (
+                  <span className="text-[8px] text-gray-400 dark:text-gray-500">{DCA_WINDOW_DAYS}d</span>
+                )}
+              </div>
 
-          {/* Phase 3 · Hold */}
-          <div className={`flex-none w-[28%] flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
-            phase === "hold" ? "bg-secondary-700" : "bg-secondary-50 dark:bg-secondary-500/[0.08]"
-          }`}>
-            <span className={`font-semibold tracking-wide ${
-              phase === "hold" ? "text-white" : "text-secondary-700 dark:text-secondary-400"
-            }`}>
-              {phase === "hold" ? "③ Hold ●" : "③ Hold"}
-            </span>
-            <span className={`text-[8px] ${
-              phase === "hold" ? "text-white/70" : "text-gray-400 dark:text-gray-500"
-            }`}>
-              {phase === "hold" ? "deployed" : fmtMonYear(DCA_END_MS)}
-            </span>
-          </div>
+              {/* Hold */}
+              <div style={{ width: `${hPct}%` }} className={`flex flex-col items-center py-1.5 px-1 gap-1 transition-colors ${
+                phase === "hold" ? "bg-secondary-700" : "bg-secondary-50 dark:bg-secondary-500/[0.08]"
+              }`}>
+                <span className={`font-semibold tracking-wide ${
+                  phase === "hold" ? "text-white" : "text-secondary-700 dark:text-secondary-400"
+                }`}>
+                  {phase === "hold" ? "Hold ●" : "Hold"}
+                </span>
+                <span className={`text-[8px] ${
+                  phase === "hold" ? "text-white/70" : "text-gray-400 dark:text-gray-500"
+                }`}>
+                  {HOLD_WINDOW_DAYS}d
+                </span>
+              </div>
 
-        </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Signals grid — 4 contextual tiles per phase */}
