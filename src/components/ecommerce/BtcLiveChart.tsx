@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
@@ -605,7 +605,7 @@ export default function BtcLiveChart() {
   }
 
   // Mobile — long-press (~500 ms) to activate
-  function onTouchStart(e: TouchEvent): void {
+  function onTouchStart(e: React.TouchEvent): void {
     const touch = e.touches[0];
     if (!touch) return;
     longPressPosRef.current = touch.clientX;
@@ -616,7 +616,7 @@ export default function BtcLiveChart() {
     }, LONG_PRESS_DELAY_MS);
   }
 
-  function onTouchMove(e: TouchEvent): void {
+  function onTouchMove(e: React.TouchEvent): void {
     const touch = e.touches[0];
     if (!touch) return;
     longPressPosRef.current = touch.clientX;
