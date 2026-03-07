@@ -889,14 +889,9 @@ export default function BtcLiveChart() {
             }}
           />
         )}
-        {/* Ping circle + price key (only while holding) */}
+        {/* Price key (only while holding) */}
         {pingPrice !== null && isInteracting && (
           <>
-            <div
-              aria-hidden="true"
-              className="absolute z-20 pointer-events-none rounded-full border-2 border-white dark:border-gray-900 shadow"
-              style={{ width: 12, height: 12, left: pingX - 6, top: pingY - 6, backgroundColor: BRAND_COLOR }}
-            />
             <div
               aria-hidden="true"
               className={[
