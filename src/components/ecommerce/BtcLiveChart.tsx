@@ -671,7 +671,7 @@ export default function BtcLiveChart() {
       startX = t.clientX;
       startY = t.clientY;
       direction = null;
-      cachedRect = el.getBoundingClientRect(); // refresh once per gesture
+      cachedRect = el!.getBoundingClientRect(); // refresh once per gesture (el non-null: guarded above)
     }
 
     function onMove(e: TouchEvent) {
