@@ -65,6 +65,7 @@ const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
 const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
 const NEXT_HALVING_MS     = new Date("2028-04-19T00:00:00Z").getTime();
 const POST_HALVING_WINDOW = 547 * 86_400_000; // ≈ 18 months after halving
+const PRE_HALVING_WINDOW  = 365 * 86_400_000; // ≤ 12 months before next halving
 
 // ── Chart style ────────────────────────────────────────────────────────────
 const CHART_FONT     = "Inter, sans-serif";
@@ -201,6 +202,22 @@ function nearestCycleDate(now: number, datesMs: readonly number[]): CycleDateInf
     if (dist < minDist) { minDist = dist; nearest = d; }
   }
   return { daysAway: Math.round(minDist / 86_400_000), isPast: nearest < now };
+}
+
+// ── 3-phase strategy system ────────────────────────────────────────────────
+// Phases are derived entirely from the DCA window constants — no hardcoded
+// calendar comparisons — so they automatically adapt when DCA_START_MS /
+// DCA_END_MS are updated.
+//
+//   Phase 1 · Save  — before DCA deployment begins   (accumulate capital)
+//   Phase 2 · DCA   — inside the deployment window   (deploy $250/day)
+//   Phase 3 · Hold  — after deployment window ends   (hold through bull run)
+type StrategyPhase = "save" | "dca" | "hold";
+
+function getDcaPhase(nowMs: number): StrategyPhase {
+  if (nowMs < DCA_START_MS) return "save";
+  if (nowMs <= DCA_END_MS)  return "dca";
+  return "hold";
 }
 
 // ── Signal indicator card ──────────────────────────────────────────────────
@@ -417,7 +434,7 @@ export default function MonthlyTarget() {
 
   const msToHalving   = NEXT_HALVING_MS - Date.now();
   const daysToHalving = Math.max(0, Math.ceil(msToHalving / 86_400_000));
-  const halvingActive = msToHalving > 0 && msToHalving <= 365 * 86_400_000;
+  const halvingActive = msToHalving > 0 && msToHalving <= PRE_HALVING_WINDOW;
 
   // Post-halving accumulation phase (BSP cycle-awareness)
   const msSinceHalving    = Date.now() - PREV_HALVING_MS;
@@ -439,8 +456,14 @@ export default function MonthlyTarget() {
   const inWindow   = now >= DCA_START_MS && now <= DCA_END_MS;
   const daysToStart = Math.max(0, Math.ceil((DCA_START_MS - now) / 86_400_000));
 
-  // Phase 1 = accumulation window (bear / accumulate); Phase 2 = recovery / bull
-  const isPhase1 = now <= DCA_END_MS;
+  // ── Strategy phase (3-phase: Save → DCA → Hold) ─────────────────────────
+  // Derived from DCA_START_MS / DCA_END_MS — no hardcoded calendar dates here.
+  const phase       = getDcaPhase(now);
+  const isHoldPhase = phase === "hold";   // capital deployed; show hold signals
+  const phaseLabel  =
+    phase === "save" ? "Phase 1 · Save"
+    : phase === "dca"  ? "Phase 2 · DCA"
+    :                    "Phase 3 · Hold";
 
   // ── DCA recommendation — user-configured daily amount; PASS when price ≥ live ATH ─
   let recommendedBuy: number | "PASS" | null = null;
@@ -475,11 +498,11 @@ export default function MonthlyTarget() {
   // ── Display helpers ────────────────────────────────────────────────────
   const chartValue = typeof recommendedBuy === "number" ? 100 : 0;
   const centerLabel =
-    now < DCA_START_MS ? `${daysToStart}d`
-    : now > DCA_END_MS  ? "Done"
-    : priceUSD === null  ? "—"
-    : isPass             ? "PASS"
-    :                      `$${fmtAUD(dailyAmtAUD)}`;
+    phase === "save"  ? `${daysToStart}d`
+    : phase === "hold"  ? "HOLD"
+    : priceUSD === null ? "—"
+    : isPass            ? "PASS"
+    :                     `$${fmtAUD(dailyAmtAUD)}`;
 
   // ── ApexCharts radial bar ──────────────────────────────────────────────
   const options: ApexOptions = {
@@ -616,19 +639,25 @@ export default function MonthlyTarget() {
 
       {/* Phase label + signals footer */}
       <div className={`flex items-center justify-center gap-1.5 px-4 py-1.5 border-t border-gray-200 dark:border-gray-800 ${
-        isPhase1 ? "bg-amber-50/60 dark:bg-amber-900/10" : "bg-emerald-50/60 dark:bg-emerald-900/10"
+        phase === "save" ? "bg-amber-50/60 dark:bg-amber-900/10"
+        : phase === "dca"  ? "bg-emerald-50/60 dark:bg-emerald-900/10"
+        :                    "bg-sky-50/60 dark:bg-sky-900/10"
       }`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPhase1 ? "bg-amber-400" : "bg-emerald-400"}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          phase === "save" ? "bg-amber-400"
+          : phase === "dca"  ? "bg-emerald-400"
+          :                    "bg-sky-400"
+        }`} />
         <span className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">
-          {isPhase1 ? "Phase 1 · Accumulation" : "Phase 2 · Recovery / Bull"}
+          {phaseLabel}
         </span>
       </div>
 
       {/* Signals grid — 4 contextual tiles per phase */}
       <div className="grid grid-cols-4 divide-x divide-gray-200 dark:divide-gray-800">
-        {isPhase1 ? (
+        {!isHoldPhase ? (
           <>
-            {/* Phase 1: bear/accumulation signals */}
+            {/* Phase 1 (Save) + Phase 2 (DCA): accumulation/deployment signals */}
             <SignalItem
               active={fearActive}
               label={fearExtreme ? "Ext. Fear" : "Fear/Greed"}
@@ -658,7 +687,7 @@ export default function MonthlyTarget() {
           </>
         ) : (
           <>
-            {/* Phase 2: recovery/bull signals */}
+            {/* Phase 3 (Hold): bull/hold signals — track the post-DCA bull run */}
             <SignalItem
               active={halvingActive || postHalvingActive}
               label={
