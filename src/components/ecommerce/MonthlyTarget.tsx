@@ -9,13 +9,14 @@ import Label from "../form/Label";
 import Checkbox from "../form/input/Checkbox";
 
 // ── DCA window ─────────────────────────────────────────────────────────────
-// Day 1 = 4 March 2026 (DCA start); Day 421 = 28 Apr 2027 ($250/day × 421d = $105,250 total)
+// Day 1 = 4 Mar 2026 (DCA start); Day 421 = 28 Apr 2027 ($250/day × 421d = $105,250 total)
+// $506/wk × 208 weeks = $105,248 total savings → $105,248 ÷ 421d = $249.995 → ceil-to-$5 = $250/day
 const DCA_START_MS   = new Date("2026-03-04T00:00:00Z").getTime();
 const DCA_END_MS     = DCA_START_MS + (421 - 1) * 86_400_000;
 const DCA_WINDOW_DAYS = 421;
 const YEARS_IN_CYCLE  = 4;
 const WEEKS_PER_YEAR  = 52;
-const DEFAULT_WEEKLY_AUD = 500; // $500/wk × 52 × 4yr ÷ 421d ≈ $247 → ceil-to-$5 = $250/day
+const DEFAULT_WEEKLY_AUD = 506; // $506/wk × 52 × 4yr ÷ 421d = $249.995 → ceil-to-$5 = $250/day
 
 // ── Cache config ───────────────────────────────────────────────────────────
 const ATH_CACHE_KEY  = "btc-ath";      // shared with BtcLiveChart
