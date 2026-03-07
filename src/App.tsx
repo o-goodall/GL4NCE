@@ -3,9 +3,9 @@ import { BrowserRouter as Router, Routes, Route } from "react-router";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 
-const Home = lazy(() => import("./pages/Dashboard/Home"));
-const Portfolio = lazy(() => import("./pages/Dashboard/Portfolio"));
-const Intel = lazy(() => import("./pages/Dashboard/Intel"));
+const Home = lazy(() => import("./pages/Signal"));
+const Portfolio = lazy(() => import("./pages/Portfolio"));
+const Intel = lazy(() => import("./pages/Intel"));
 const UserProfiles = lazy(() => import("./pages/UserProfiles"));
 const Calendar = lazy(() => import("./pages/Calendar"));
 const Blank = lazy(() => import("./pages/Blank"));

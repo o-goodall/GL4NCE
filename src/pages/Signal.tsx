@@ -1,10 +1,10 @@
-import MoneyPrinter from "../../components/ecommerce/MoneyPrinter";
-import BtcLiveChart from "../../components/ecommerce/BtcLiveChart";
-import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
-import BlockchainVisualizer from "../../components/ecommerce/BlockchainVisualizer";
-import PageMeta from "../../components/common/PageMeta";
+import MoneyPrinter from "../components/ecommerce/MoneyPrinter";
+import BtcLiveChart from "../components/ecommerce/BtcLiveChart";
+import MonthlyTarget from "../components/ecommerce/MonthlyTarget";
+import BlockchainVisualizer from "../components/ecommerce/BlockchainVisualizer";
+import PageMeta from "../components/common/PageMeta";
 
-export default function Home() {
+export default function Signal() {
   return (
     <>
       <PageMeta
