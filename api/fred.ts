@@ -35,9 +35,10 @@ const ALLOWED_SERIES = new Set([
   // Printer-score indicators
   "BAMLH0A0HYM2",  // ICE BofA US HY OAS (credit stress)
   "T10Y2Y",        // 10Y-2Y yield spread (yield curve)
-  // BRRR liquidity formula: WALCL − RRPONTSYD − WTREGEN
+  // FRLI liquidity formula
   "RRPONTSYD",     // Overnight reverse repo (daily)
   "WTREGEN",       // Treasury General Account (weekly)
+  "TOTRESNS",      // Total reserves at Fed (monthly)
   // Rate pressure indicators
   "DFF",           // Federal Funds effective rate (daily)
   "DGS2",          // 2-year Treasury yield (daily)

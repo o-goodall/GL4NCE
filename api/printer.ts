@@ -1,25 +1,25 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-// ── US Money Printer / BRRR Score API ──────────────────────────────────────
+// ── FRLI — Fed Reserve Liquidity Index ──────────────────────────────────────
 //
-// Computes a 0–5 BRRR level for US monetary expansion using three pillars:
+// Computes a 0–5 FRLI level using weighted Z-scores of 4 monetary metrics:
 //
-//   1. Liquidity (40%)  — WALCL − RRPONTSYD − WTREGEN  (30-day Δ)
-//   2. Rates    (30%)  — Fed Funds Rate, 2Y Treasury yield, SOFR trend
-//   3. Forward  (30%)  — Polymarket rate-cut / recession probabilities
+//   1. M1 & M2 Growth YoY   (35%)  — Money supply expansion
+//   2. Fed Balance Sheet ΔYoY (30%) — QE / liquidity injections
+//   3. Total Reserves at Fed  (20%) — Fastest banking liquidity indicator
+//   4. Reverse Repo Net       (15%) — Fed draining or adding short-term liquidity
 //
-// BRRR Levels:
-//   0  Tightening
-//   1  Neutral
-//   2  Liquidity rising
-//   3  Active stimulus
-//   4  Heavy printing
-//   5  Crisis printing (2008 / COVID scale)
+// FRLI Levels (statistically grounded Z-score bands):
+//   0  Strong tightening / liquidity drained
+//   1  Mild tightening / near neutral
+//   2  Neutral / normal liquidity
+//   3  Mild expansion / early QE
+//   4  Active QE / emergency liquidity
+//   5  Extreme intervention / systemic backstop
 //
-// Historic calibration:
-//   2008 crisis  — ~$1T expansion
-//   2020 COVID   — ~$4–5T expansion
-//   30-day Δ of ~$500B+ ≈ MAX BRRR territory
+// Z-scores are computed relative to ~3-year historical norms.
+// Positive composite → expansion (money printing)
+// Negative composite → contraction
 
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const POLYMARKET_API = "https://gamma-api.polymarket.com";
@@ -49,10 +49,6 @@ function parseObs(obs: FredObs[]): { date: string; value: number }[] {
   return obs
     .map((o) => ({ date: o.date, value: parseFloat(o.value) }))
     .filter((o) => !isNaN(o.value));
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
 }
 
 // ── Polymarket helpers ─────────────────────────────────────────────────────
@@ -140,99 +136,96 @@ async function fetchFedMarkets(): Promise<{ rateCutProb: number; recessionProb: 
   return { rateCutProb, recessionProb };
 }
 
-// ── Scoring constants ──────────────────────────────────────────────────────
+// ── FRLI Metric Weights (Z-score composite) ───────────────────────────────
+//
+//  Metric                        Weight   Why
+//  M1 & M2 Growth (YoY)          0.35    Captures money supply expansion
+//  Fed Balance Sheet Δ (YoY)     0.30    Reflects QE / liquidity injections
+//  Total Reserves at Fed          0.20    Fastest indicator of banking liquidity
+//  Reverse Repo Net               0.15    Shows Fed draining or adding short-term liquidity
 
-// Weights for composite
-const W_LIQUIDITY = 0.40;
-const W_RATES     = 0.30;
-const W_FORWARD   = 0.30;
+const W_M1M2     = 0.35;
+const W_BALANCE  = 0.30;
+const W_RESERVES = 0.20;
+const W_REPO     = 0.15;
 
-// Liquidity 30-day Δ calibration (in billions USD):
-//  -$200B or worse = 0 (QT)
-//  +$0 = ~29 (neutral)
-//  +$200B = ~57 (strong)
-//  +$500B = 100 (MAX BRRR pace, annualized ~$6T)
-const LIQ_FLOOR = -200;  // billions
-const LIQ_CEIL  =  500;  // billions
-
-// Rate trend: we compute a "dovishness" score 0–100
-// Higher when rates are falling or low
-// Fed Funds 0% → 100; 5.5% → 0
-const RATE_CEIL  = 5.5;
-const RATE_FLOOR = 0.0;
-
-// SOFR spike detection: >50bps above Fed Funds = repo stress signal
+// SOFR spike detection (display only — not in composite)
 const SOFR_SPREAD_THRESHOLD = 0.50;
+
+// ── Z-score helper ─────────────────────────────────────────────────────────
+// Returns the Z-score of the first (most recent) value relative to the series.
+
+function zScoreOf(series: number[]): { z: number; mean: number; stddev: number } {
+  if (series.length < 2) return { z: 0, mean: series[0] ?? 0, stddev: 1 };
+  const n    = series.length;
+  const mean = series.reduce((s, v) => s + v, 0) / n;
+  const vari = series.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1);
+  const sd   = Math.sqrt(vari);
+  if (sd < 1e-10) return { z: 0, mean, stddev: 1 };
+  return { z: (series[0] - mean) / sd, mean, stddev: sd };
+}
 
 // ── Response types ─────────────────────────────────────────────────────────
 
-export interface PrinterIndicator {
+export interface FrliMetric {
   label:    string;
-  value:    number;
-  score:    number;
+  raw:      number;       // raw value (growth %, $ change, level)
+  zScore:   number;       // individual Z-score
   weight:   number;
-  elevated: boolean;
-  arrow?:   "up" | "down" | "flat";
-  detail?:  string;
+  arrow:    "up" | "down" | "flat";
+  detail:   string;
 }
 
 export interface PrinterScoreResult {
-  brrrLevel:     number;       // 0–5
-  score:         number;       // 0–100 composite (kept for gradient/bar)
-  regime:        string;       // "Tightening" | "Normal" | "Stimulus" | "Strong Printing" | "Crisis Printing" | "MAX BRRR"
-  status:        string;       // Short status label
-  liquidity: {
-    current:     number;       // billions
-    change30d:   number;       // billions change over ~30 days
-    walcl:       number;       // Fed balance sheet
-    rrp:         number;       // Reverse repo
-    tga:         number;       // Treasury General Account
-  };
+  frliLevel:     number;       // 0–5
+  frliScore:     number;       // raw composite weighted Z-score
+  regime:        string;       // descriptive label
+  status:        string;       // short status copy
+  metrics:       FrliMetric[]; // 4 core FRLI metrics
   rates: {
     fedFunds:    number | null;
     yield2y:     number | null;
     sofr:        number | null;
-    sofrSpread:  number | null; // SOFR − Fed Funds
+    sofrSpread:  number | null;
     repoStress:  boolean;
   };
   forward: {
-    rateCutProb:    number;   // -1 = unavailable
-    recessionProb:  number;   // -1 = unavailable
+    rateCutProb:    number;    // -1 = unavailable
+    recessionProb:  number;    // -1 = unavailable
   };
-  indicators:   PrinterIndicator[];
   updatedAt:    string;
 }
 
-// ── Regime / Level mapping ─────────────────────────────────────────────────
+// ── FRLI Level mapping (statistically grounded Z-score bands) ──────────────
 
-function brrrLevel(score: number): number {
-  if (score >= 90) return 5;
-  if (score >= 70) return 4;
-  if (score >= 50) return 3;
-  if (score >= 30) return 2;
-  if (score >= 15) return 1;
-  return 0;
+function toFrliLevel(z: number): number {
+  if (z >  2.0) return 5;   // Extreme intervention / systemic backstop
+  if (z >  1.0) return 4;   // Active QE / emergency liquidity
+  if (z >  0.3) return 3;   // Mild expansion / early QE
+  if (z > -0.3) return 2;   // Neutral / normal liquidity
+  if (z > -1.0) return 1;   // Mild tightening / near neutral
+  return 0;                  // Strong tightening / liquidity drained
 }
 
 function regimeName(level: number): string {
   switch (level) {
-    case 5: return "Crisis Printing";
-    case 4: return "Heavy Printing";
-    case 3: return "Active Stimulus";
-    case 2: return "Liquidity Rising";
-    case 1: return "Neutral";
-    default: return "Tightening";
+    case 5: return "Extreme Intervention";
+    case 4: return "Active QE";
+    case 3: return "Mild Expansion";
+    case 2: return "Neutral";
+    case 1: return "Mild Tightening";
+    default: return "Strong Tightening";
   }
 }
 
 function statusLabel(level: number): string {
   switch (level) {
-    case 5: return "🔴 Crisis printing";
-    case 4: return "🟠 Heavy printing";
-    case 3: return "🟡 Active stimulus";
-    case 2: return "🟢 Liquidity rising";
-    case 1: return "⚪ Neutral";
-    default: return "🔵 Tightening";
+    case 5: return "Systemic backstop";
+    case 4: return "Emergency liquidity";
+    case 3: return "Early QE / expansion";
+    case 2: return "Normal liquidity";
+    case 1: return "Near neutral";
+    default: return "Liquidity drained";
   }
 }
 
@@ -253,56 +246,149 @@ export default async function handler(
 
   try {
     // ── Fetch all data in parallel ───────────────────────────────────────
-    // WALCL: weekly, need ~12 observations for 30-day window
-    // RRPONTSYD: daily, need ~45 for 30 days
-    // WTREGEN: weekly, need ~12 for 30-day comparison
-    // DFF: daily Fed Funds rate
-    // DGS2: daily 2-year Treasury yield
-    // SOFR: daily SOFR rate
-    const [walclRes, rrpRes, tgaRes, dffRes, dgs2Res, sofrRes, polyRes] =
-      await Promise.allSettled([
-        fetchFred("WALCL",      apiKey, 12),
-        fetchFred("RRPONTSYD",  apiKey, 45),
-        fetchFred("WTREGEN",    apiKey, 12),
-        fetchFred("DFF",        apiKey, 10),
-        fetchFred("DGS2",       apiKey, 10),
-        fetchFred("SOFR",       apiKey, 10),
-        fetchFedMarkets(),
-      ]);
+    //
+    // Core FRLI metrics:
+    //   M1SL       – monthly M1 money supply       (36 obs ≈ 3 yr → 24 YoY points)
+    //   M2SL       – monthly M2 money supply       (36 obs ≈ 3 yr → 24 YoY points)
+    //   WALCL      – weekly Fed balance sheet       (120 obs ≈ 2.3 yr → ~68 YoY points)
+    //   TOTRESNS   – monthly total reserves         (36 obs ≈ 3 yr)
+    //   RRPONTSYD  – daily overnight reverse repo   (500 obs ≈ 2 yr)
+    //
+    // Display-only (rates + Polymarket):
+    //   DFF, DGS2, SOFR – latest 10 daily observations each
+    //   Polymarket       – rate-cut & recession probabilities
 
-    // ── 1. LIQUIDITY ─────────────────────────────────────────────────────
-    // Liquidity = WALCL − RRPONTSYD − WTREGEN
-    // Compute current value and ~30-day change
+    const [
+      m1Res, m2Res, walclRes, resRes, rrpRes,
+      dffRes, dgs2Res, sofrRes, polyRes,
+    ] = await Promise.allSettled([
+      fetchFred("M1SL",       apiKey, 36),
+      fetchFred("M2SL",       apiKey, 36),
+      fetchFred("WALCL",      apiKey, 120),
+      fetchFred("TOTRESNS",   apiKey, 36),
+      fetchFred("RRPONTSYD",  apiKey, 500),
+      fetchFred("DFF",        apiKey, 10),
+      fetchFred("DGS2",       apiKey, 10),
+      fetchFred("SOFR",       apiKey, 10),
+      fetchFedMarkets(),
+    ]);
 
+    // ── 1. M1 & M2 YoY Growth (weight 0.35) ─────────────────────────────
+    const m1Pts = m1Res.status === "fulfilled" ? parseObs(m1Res.value) : [];
+    const m2Pts = m2Res.status === "fulfilled" ? parseObs(m2Res.value) : [];
+
+    // Build series of averaged M1+M2 YoY growth rates (%)
+    const minMonths = Math.min(m1Pts.length, m2Pts.length);
+    const m1m2GrowthSeries: number[] = [];
+    for (let i = 0; i + 12 < minMonths; i++) {
+      const g1 = ((m1Pts[i].value / m1Pts[i + 12].value) - 1) * 100;
+      const g2 = ((m2Pts[i].value / m2Pts[i + 12].value) - 1) * 100;
+      m1m2GrowthSeries.push((g1 + g2) / 2);
+    }
+    const m1m2Z = zScoreOf(m1m2GrowthSeries);
+    const latestM1M2 = m1m2GrowthSeries[0] ?? 0;
+
+    const m1m2Arrow: "up" | "down" | "flat" =
+      m1m2GrowthSeries.length >= 2
+        ? m1m2GrowthSeries[0] > m1m2GrowthSeries[1] + 0.3 ? "up"
+        : m1m2GrowthSeries[0] < m1m2GrowthSeries[1] - 0.3 ? "down"
+        : "flat"
+        : "flat";
+
+    // ── 2. Fed Balance Sheet YoY Change (weight 0.30) ────────────────────
     const walclPts = walclRes.status === "fulfilled" ? parseObs(walclRes.value) : [];
-    const rrpPts   = rrpRes.status   === "fulfilled" ? parseObs(rrpRes.value)   : [];
-    const tgaPts   = tgaRes.status   === "fulfilled" ? parseObs(tgaRes.value)   : [];
 
-    // Most recent values
-    const walclNow = walclPts.length > 0 ? walclPts[0].value : 0;
-    const rrpNow   = rrpPts.length   > 0 ? rrpPts[0].value   : 0;
-    const tgaNow   = tgaPts.length   > 0 ? tgaPts[0].value   : 0;
+    // Build series of 52-week (YoY) changes
+    const bsChangeSeries: number[] = [];
+    for (let i = 0; i + 52 < walclPts.length; i++) {
+      bsChangeSeries.push(walclPts[i].value - walclPts[i + 52].value);
+    }
+    const bsZ = zScoreOf(bsChangeSeries);
+    const latestBsChange = bsChangeSeries[0] ?? 0;
 
-    // ~30 days ago (WALCL is weekly so index ~4 is about 1 month)
-    const walclPrev = walclPts.length >= 5 ? walclPts[4].value : walclPts[walclPts.length - 1]?.value ?? walclNow;
-    const rrpPrev   = rrpPts.length  >= 22 ? rrpPts[21].value  : rrpPts[rrpPts.length - 1]?.value     ?? rrpNow;
-    const tgaPrev   = tgaPts.length  >= 5  ? tgaPts[4].value   : tgaPts[tgaPts.length - 1]?.value     ?? tgaNow;
+    const bsArrow: "up" | "down" | "flat" =
+      bsChangeSeries.length >= 2
+        ? bsChangeSeries[0] > bsChangeSeries[1] * 1.02 ? "up"
+        : bsChangeSeries[0] < bsChangeSeries[1] * 0.98 ? "down"
+        : "flat"
+        : "flat";
 
-    const liqNow  = walclNow  - rrpNow  - tgaNow;
-    const liqPrev = walclPrev - rrpPrev  - tgaPrev;
-    const liqChange30d = liqNow - liqPrev;
+    // ── 3. Total Reserves at Fed (weight 0.20) ──────────────────────────
+    const resPts = resRes.status === "fulfilled" ? parseObs(resRes.value) : [];
+    const reserveLevels = resPts.map((p) => p.value);
+    const resZ = zScoreOf(reserveLevels);
+    const latestReserves = reserveLevels[0] ?? 0;
 
-    // Map 30-day change to 0–100 sub-score
-    const liqScore = clamp(
-      ((liqChange30d - LIQ_FLOOR) / (LIQ_CEIL - LIQ_FLOOR)) * 100,
-      0,
-      100,
-    );
+    const resArrow: "up" | "down" | "flat" =
+      reserveLevels.length >= 2
+        ? reserveLevels[0] > reserveLevels[1] * 1.01 ? "up"
+        : reserveLevels[0] < reserveLevels[1] * 0.99 ? "down"
+        : "flat"
+        : "flat";
 
-    const liqArrow: "up" | "down" | "flat" =
-      liqChange30d > 20 ? "up" : liqChange30d < -20 ? "down" : "flat";
+    // ── 4. Overnight Reverse Repo (weight 0.15, inverted) ────────────────
+    // Higher RRP = Fed draining liquidity → negative FRLI contribution
+    const rrpPts = rrpRes.status === "fulfilled" ? parseObs(rrpRes.value) : [];
+    const rrpLevels = rrpPts.map((p) => p.value);
+    const rrpRaw = zScoreOf(rrpLevels);
+    const repoNetZ = -rrpRaw.z;   // invert: lower RRP = more liquidity
+    const latestRrp = rrpLevels[0] ?? 0;
 
-    // ── 2. RATE PRESSURE ─────────────────────────────────────────────────
+    const rrpArrow: "up" | "down" | "flat" =
+      rrpLevels.length >= 2
+        ? rrpLevels[0] < rrpLevels[1] * 0.98 ? "up"   // RRP falling → more liquidity → up arrow
+        : rrpLevels[0] > rrpLevels[1] * 1.02 ? "down"  // RRP rising → draining → down arrow
+        : "flat"
+        : "flat";
+
+    // ── FRLI Composite ───────────────────────────────────────────────────
+    const frliComposite =
+      W_M1M2     * m1m2Z.z +
+      W_BALANCE  * bsZ.z   +
+      W_RESERVES * resZ.z  +
+      W_REPO     * repoNetZ;
+
+    const level  = toFrliLevel(frliComposite);
+    const regime = regimeName(level);
+    const status = statusLabel(level);
+
+    // ── Build FRLI metrics array ─────────────────────────────────────────
+    const metrics: FrliMetric[] = [
+      {
+        label:  "M1/M2 YoY",
+        raw:    Math.round(latestM1M2 * 100) / 100,
+        zScore: Math.round(m1m2Z.z * 100) / 100,
+        weight: W_M1M2,
+        arrow:  m1m2Arrow,
+        detail: `${latestM1M2 >= 0 ? "+" : ""}${latestM1M2.toFixed(1)}%`,
+      },
+      {
+        label:  "Fed BS ΔYoY",
+        raw:    Math.round(latestBsChange),
+        zScore: Math.round(bsZ.z * 100) / 100,
+        weight: W_BALANCE,
+        arrow:  bsArrow,
+        detail: `${latestBsChange >= 0 ? "+" : ""}${Math.abs(Math.round(latestBsChange))}`,
+      },
+      {
+        label:  "Reserves",
+        raw:    Math.round(latestReserves),
+        zScore: Math.round(resZ.z * 100) / 100,
+        weight: W_RESERVES,
+        arrow:  resArrow,
+        detail: `${Math.round(latestReserves)}`,
+      },
+      {
+        label:  "Repo Net",
+        raw:    Math.round(latestRrp),
+        zScore: Math.round(repoNetZ * 100) / 100,
+        weight: W_REPO,
+        arrow:  rrpArrow,
+        detail: `${Math.round(latestRrp)}`,
+      },
+    ];
+
+    // ── Rates (display only) ─────────────────────────────────────────────
     const dffPts  = dffRes.status  === "fulfilled" ? parseObs(dffRes.value)  : [];
     const dgs2Pts = dgs2Res.status === "fulfilled" ? parseObs(dgs2Res.value) : [];
     const sofrPts = sofrRes.status === "fulfilled" ? parseObs(sofrRes.value) : [];
@@ -311,119 +397,21 @@ export default async function handler(
     const yield2y  = dgs2Pts.length > 0 ? dgs2Pts[0].value : null;
     const sofr     = sofrPts.length > 0 ? sofrPts[0].value : null;
 
-    // Dovishness: lower rates = more printing likely
-    // Use average of available rates, map inversely
-    const rateValues: number[] = [];
-    if (fedFunds !== null) rateValues.push(fedFunds);
-    if (yield2y !== null) rateValues.push(yield2y);
-    if (sofr !== null) rateValues.push(sofr);
-
-    let rateScore = 50; // default neutral if no rate data
-    if (rateValues.length > 0) {
-      const avgRate = rateValues.reduce((a, b) => a + b, 0) / rateValues.length;
-      // High rates → low score (tightening); low rates → high score (easy money)
-      rateScore = clamp(((RATE_CEIL - avgRate) / (RATE_CEIL - RATE_FLOOR)) * 100, 0, 100);
-    }
-
-    // Rate direction: compare current vs ~1 week ago
-    let rateArrow: "up" | "down" | "flat" = "flat";
-    if (dffPts.length >= 5) {
-      const diff = dffPts[0].value - dffPts[4].value;
-      rateArrow = diff < -0.05 ? "down" : diff > 0.05 ? "up" : "flat";
-    }
-
-    // SOFR spread (repo stress detection)
     const sofrSpread = sofr !== null && fedFunds !== null ? sofr - fedFunds : null;
     const repoStress = sofrSpread !== null && sofrSpread > SOFR_SPREAD_THRESHOLD;
 
-    // Boost rate score if repo stress detected (precursor to emergency printing)
-    if (repoStress) {
-      rateScore = Math.min(100, rateScore + 20);
-    }
-
-    // ── 3. FORWARD SIGNAL (Polymarket) ───────────────────────────────────
+    // ── Forward signal (Polymarket, display only) ────────────────────────
     const polyData = polyRes.status === "fulfilled"
       ? polyRes.value
       : { rateCutProb: -1, recessionProb: -1 };
 
-    let forwardScore = 50; // neutral default
-    const validProbs: number[] = [];
-    if (polyData.rateCutProb >= 0) validProbs.push(polyData.rateCutProb);
-    if (polyData.recessionProb >= 0) validProbs.push(polyData.recessionProb);
-
-    if (validProbs.length > 0) {
-      // Higher probability of rate cuts / recession → higher BRRR risk
-      forwardScore = Math.round(
-        validProbs.reduce((a, b) => a + b, 0) / validProbs.length,
-      );
-    }
-
-    // ── COMPOSITE ────────────────────────────────────────────────────────
-    const composite = Math.round(
-      liqScore     * W_LIQUIDITY +
-      rateScore    * W_RATES     +
-      forwardScore * W_FORWARD,
-    );
-
-    const level  = brrrLevel(composite);
-    const regime = regimeName(level);
-    const status = statusLabel(level);
-
-    // ── Build indicators ─────────────────────────────────────────────────
-    const indicators: PrinterIndicator[] = [
-      {
-        label:    "Liquidity Δ30d",
-        value:    Math.round(liqChange30d),
-        score:    Math.round(liqScore),
-        weight:   W_LIQUIDITY,
-        elevated: liqScore >= 50,
-        arrow:    liqArrow,
-        detail:   `${liqChange30d >= 0 ? "+" : ""}$${Math.abs(Math.round(liqChange30d))}B`,
-      },
-      {
-        label:    "Rate Pressure",
-        value:    fedFunds ?? 0,
-        score:    Math.round(rateScore),
-        weight:   W_RATES,
-        elevated: rateScore >= 50,
-        arrow:    rateArrow,
-        detail:   rateArrow === "down" ? "↓ expected" : rateArrow === "up" ? "↑ rising" : "→ flat",
-      },
-      {
-        label:    "Market Odds",
-        value:    polyData.rateCutProb >= 0 ? polyData.rateCutProb : 0,
-        score:    Math.round(forwardScore),
-        weight:   W_FORWARD,
-        elevated: forwardScore >= 60,
-        arrow:    forwardScore >= 60 ? "up" : forwardScore <= 30 ? "down" : "flat",
-        detail:   polyData.rateCutProb >= 0 ? `${polyData.rateCutProb}% rate cut` : "unavailable",
-      },
-    ];
-
-    if (repoStress) {
-      indicators.push({
-        label:    "Repo Stress",
-        value:    sofrSpread ?? 0,
-        score:    100,
-        weight:   0,
-        elevated: true,
-        arrow:    "up",
-        detail:   `SOFR +${((sofrSpread ?? 0) * 100).toFixed(0)}bps above FFR`,
-      });
-    }
-
+    // ── Respond ──────────────────────────────────────────────────────────
     const result: PrinterScoreResult = {
-      brrrLevel:  level,
-      score:      composite,
+      frliLevel:  level,
+      frliScore:  Math.round(frliComposite * 100) / 100,
       regime,
       status,
-      liquidity: {
-        current:   Math.round(liqNow),
-        change30d: Math.round(liqChange30d),
-        walcl:     Math.round(walclNow),
-        rrp:       Math.round(rrpNow),
-        tga:       Math.round(tgaNow),
-      },
+      metrics,
       rates: {
         fedFunds,
         yield2y,
@@ -435,7 +423,6 @@ export default async function handler(
         rateCutProb:   polyData.rateCutProb,
         recessionProb: polyData.recessionProb,
       },
-      indicators,
       updatedAt: new Date().toISOString(),
     };
 
