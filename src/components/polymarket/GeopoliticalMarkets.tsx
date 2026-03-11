@@ -437,8 +437,6 @@ export default function GeopoliticalMarkets() {
   const [category, setCategory] = useState<MarketCategory>("geo");
   const { markets, loading, error } = usePolymarket(category);
 
-  const activeCat = CATEGORIES.find((c) => c.id === category)!;
-
   // Flip detection: compare current probabilities against the previous snapshot
   const prevSnapshotRef = useRef<Snapshot>(new Map());
   const [flippedIds, setFlippedIds] = useState<Set<string>>(new Set());

@@ -77,12 +77,6 @@ const HOLD_WINDOW_DAYS    = Math.round((CYCLE_PEAKS_MS[4] - DCA_END_MS)    / 86_
 const LOW_PRICE_USD_FALLBACK  = 55_000;
 const HIGH_PRICE_USD_FALLBACK = 126_200; // used only until live ATH is fetched
 
-// ── Halving cycle ──────────────────────────────────────────────────────────
-const PREV_HALVING_MS     = new Date("2024-04-20T00:00:00Z").getTime();
-const NEXT_HALVING_MS     = new Date("2028-04-19T00:00:00Z").getTime();
-const POST_HALVING_WINDOW = 547 * 86_400_000; // ≈ 18 months after halving
-const PRE_HALVING_WINDOW  = 365 * 86_400_000; // ≤ 12 months before next halving
-
 // ── DCA settings — user-configurable ──────────────────────────────────────
 interface DcaSlot {
   weeklyAmtAUD: number;
@@ -462,29 +456,9 @@ export default function MonthlyTarget() {
   // Derived from DCA_START_MS / DCA_END_MS — no hardcoded calendar dates here.
   const phase       = getDcaPhase(now);
 
-  // DCA progress within the buy window (used by dotPct calculation)
-  const dcaElapsedDays   = Math.max(0, Math.floor((now - DCA_START_MS) / 86_400_000));
-
   // Full cycle days used for display labels.
   const thermometerTotal = RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + HOLD_WINDOW_DAYS;
 
-  // Progress on an even 3-part UI timeline (Reserve/Buy/Hold each = 1/3 width).
-  const elapsedReserveDays = Math.min(RESERVE_WINDOW_DAYS, Math.max(0, RESERVE_WINDOW_DAYS - daysToStart));
-  const holdElapsedDays    = Math.min(HOLD_WINDOW_DAYS,    Math.max(0, Math.floor((now - DCA_END_MS) / 86_400_000)));
-  const segment = 100 / 3;
-  const phaseProgressPct =
-    phase === "save"
-      ? (elapsedReserveDays / Math.max(RESERVE_WINDOW_DAYS, 1)) * segment
-      : phase === "dca"
-      ? segment + (dcaElapsedDays / Math.max(DCA_WINDOW_DAYS, 1)) * segment
-      : segment * 2 + (holdElapsedDays / Math.max(HOLD_WINDOW_DAYS, 1)) * segment;
-  const progressPct = Math.min(100, Math.max(0, phaseProgressPct));
-  const cycleDay =
-    phase === "save"
-      ? elapsedReserveDays + 1
-      : phase === "dca"
-      ? RESERVE_WINDOW_DAYS + dcaElapsedDays + 1
-      : RESERVE_WINDOW_DAYS + DCA_WINDOW_DAYS + holdElapsedDays + 1;
   const [displayedProgressPct, setDisplayedProgressPct] = useState(0);
 
   // Repeating phase info for refined single-row UI (Reserve -> Buy -> Hold -> repeat).
