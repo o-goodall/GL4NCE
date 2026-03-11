@@ -140,7 +140,7 @@ export default function MoneyPrinter() {
   const m2Arrow    = m2Metric?.arrow;
   const m2Active   = m2Metric != null;
 
-  const fedRate    = data?.rates.fedFunds;
+  const fedRate    = data?.rates.fedFunds ?? null;
   const rateCut    = data?.forward.rateCutProb ?? -1;
   const frliScore  = data?.frliScore ?? 0;
 
