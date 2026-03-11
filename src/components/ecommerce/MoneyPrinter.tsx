@@ -260,6 +260,80 @@ export default function MoneyPrinter() {
         </div>
       </div>
 
+      {/* ── Fed Balance Sheet scale ───────────────────────────────── */}
+      {bsTotal > 0 && (() => {
+        const todayPctClamped = Math.min(Math.max(todayPct, 0), 100);
+        const ticks = [
+          { key: "2008",  pct: BS_2008_PCT,  label: "2008",  value: "(4.5T)" },
+          { key: "today", pct: todayPctClamped, label: "Today", value: `(${bsTotal.toFixed(1)}T)`, highlight: true },
+          { key: "covid", pct: BS_COVID_PCT, label: "2020",  value: "(8.9T)" },
+        ].sort((a, b) => a.pct - b.pct);
+
+        return (
+          <div className="pb-3.5">
+            {/* Gradient-filled track (same style as printer bar) */}
+            <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden relative">
+              <div
+                className="h-full rounded-full transition-all duration-1000 ease-out"
+                style={{
+                  width: `${todayPctClamped}%`,
+                  background: getCycleGradient(),
+                  backgroundSize: `${10000 / Math.max(todayPctClamped, 1)}% 100%`,
+                  backgroundPosition: "left center",
+                  backgroundRepeat: "no-repeat",
+                }}
+              />
+              {/* Tick marks on track */}
+              {ticks.map((t) => (
+                <div
+                  key={t.key}
+                  className={`absolute top-0 w-px ${
+                    t.highlight ? "h-2 bg-white/70 dark:bg-white/50" : "h-2 bg-gray-400/50 dark:bg-gray-500/50"
+                  }`}
+                  style={{ left: `${t.pct}%` }}
+                />
+              ))}
+            </div>
+
+            {/* Top label row: 0T ... event names ... 30T */}
+            <div className="relative h-3 mt-1">
+              <span className="absolute left-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">0T</span>
+              {ticks.map((t) => (
+                <span
+                  key={t.key}
+                  className={`absolute -translate-x-1/2 text-[9px] tabular-nums whitespace-nowrap ${
+                    t.highlight
+                      ? "font-medium text-gray-600 dark:text-gray-300"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}
+                  style={{ left: `${t.pct}%` }}
+                >
+                  {t.label}
+                </span>
+              ))}
+              <span className="absolute right-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">30T</span>
+            </div>
+
+            {/* Bottom label row: dollar values in parentheses */}
+            <div className="relative h-3">
+              {ticks.map((t) => (
+                <span
+                  key={t.key}
+                  className={`absolute -translate-x-1/2 text-[9px] tabular-nums whitespace-nowrap ${
+                    t.highlight
+                      ? "font-medium text-gray-600 dark:text-gray-300"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}
+                  style={{ left: `${t.pct}%` }}
+                >
+                  {t.value}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── 4 Key Indicators ───────────────────────────────────────────── */}
       <div className="py-3">
         <div className="grid grid-cols-4 gap-1">
@@ -321,82 +395,6 @@ export default function MoneyPrinter() {
           </div>
         </div>
       </div>
-
-      {/* ── Fed Balance Sheet scale ───────────────────────────────── */}
-      {bsTotal > 0 && (() => {
-        const todayPctClamped = Math.min(Math.max(todayPct, 0), 100);
-        // Build ordered ticks: 2008, Today, COVID — sorted by position
-        const fixedTicks = [
-          { key: "2008",  pct: BS_2008_PCT,  label: "2008",  value: "$4.5T" },
-          { key: "today", pct: todayPctClamped, label: "Today", value: `$${bsTotal.toFixed(1)}T`, highlight: true },
-          { key: "covid", pct: BS_COVID_PCT, label: "2020",  value: "$8.9T" },
-        ].sort((a, b) => a.pct - b.pct);
-
-        return (
-          <div className="pb-3">
-            {/* Top label row: event names */}
-            <div className="relative h-3 mb-0.5">
-              <span className="absolute left-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">$1T</span>
-              {fixedTicks.map((t) => (
-                <span
-                  key={t.key}
-                  className={`absolute -translate-x-1/2 text-[9px] tabular-nums whitespace-nowrap ${
-                    t.highlight
-                      ? "font-medium text-gray-600 dark:text-gray-300"
-                      : "text-gray-400 dark:text-gray-500"
-                  }`}
-                  style={{ left: `${t.pct}%` }}
-                >
-                  {t.label}
-                </span>
-              ))}
-              <span className="absolute right-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">$30T</span>
-            </div>
-
-            {/* Track */}
-            <div className="relative h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-visible">
-              {/* Fill up to today */}
-              <div
-                className="absolute inset-y-0 left-0 rounded-full bg-gray-300 dark:bg-gray-600 transition-all duration-700"
-                style={{ width: `${todayPctClamped}%` }}
-              />
-
-              {/* Tick marks */}
-              {fixedTicks.map((t) => (
-                <div
-                  key={t.key}
-                  className={`absolute top-0 w-px ${
-                    t.highlight ? "h-3 -top-[3px] bg-gray-500 dark:bg-gray-400" : "h-1.5 bg-gray-400 dark:bg-gray-500"
-                  }`}
-                  style={{ left: `${t.pct}%` }}
-                />
-              ))}
-            </div>
-
-            {/* Bottom label row: dollar values */}
-            <div className="relative h-3 mt-0.5">
-              {fixedTicks.map((t) => (
-                <span
-                  key={t.key}
-                  className={`absolute -translate-x-1/2 text-[9px] tabular-nums whitespace-nowrap ${
-                    t.highlight
-                      ? "font-medium text-gray-600 dark:text-gray-300"
-                      : "text-gray-400 dark:text-gray-500"
-                  }`}
-                  style={{ left: `${t.pct}%` }}
-                >
-                  {t.value}
-                </span>
-              ))}
-              <span className="absolute right-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">$30T</span>
-            </div>
-
-            <div className="text-[9px] text-gray-400 dark:text-gray-500 text-center mt-1">
-              Federal Reserve assets (USD trillions)
-            </div>
-          </div>
-        );
-      })()}
 
     </section>
   );
