@@ -229,7 +229,7 @@ export default function MoneyPrinter() {
   return (
     <section className="w-full px-1 py-1 sm:px-0">
 
-      {/* ── Header: icon + DEFCON-style level number ──────────────────── */}
+      {/* ── Header: icon + level number ──────────────────────────────── */}
       <div className="pb-1 pt-0">
         <p className="flex items-center gap-2 text-3xl font-semibold leading-none text-white sm:text-4xl">
           <span
@@ -244,8 +244,31 @@ export default function MoneyPrinter() {
         </p>
       </div>
 
-      {/* ── Gauge bar (printer rating 0–5) ─────────────────────────────── */}
+      {/* ── Gauge bar (printer rating 0–5) — halving-bar style ─────────── */}
       <div className="pt-2 pb-3.5">
+        {/* Label row above bar */}
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Printer
+            </span>
+            <span className="text-[10px] tabular-nums font-medium text-gray-500 dark:text-gray-400">
+              {((data.frliLevel / 5) * 100).toFixed(0)}%
+            </span>
+          </div>
+          <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+            {({
+              0: "Strong Tightening",
+              1: "Mild Tightening",
+              2: "Neutral",
+              3: "Mild Expansion",
+              4: "Active QE",
+              5: "Extreme Intervention",
+            } as Record<number, string>)[data.frliLevel] ?? ""}
+          </span>
+        </div>
+
+        {/* Bar */}
         <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden relative">
           <div
             className="h-full rounded-full transition-all duration-1000 ease-out"
@@ -257,7 +280,7 @@ export default function MoneyPrinter() {
               backgroundRepeat: "no-repeat",
             }}
           />
-          {/* Level tick marks on the bar */}
+          {/* Level tick marks */}
           {[1, 2, 3, 4].map((lvl) => (
             <div
               key={lvl}
@@ -266,48 +289,6 @@ export default function MoneyPrinter() {
             />
           ))}
         </div>
-
-        {/* Level number + label rows */}
-        {(() => {
-          const levels = [
-            { n: 0, label: "Strong Tightening" },
-            { n: 1, label: "Mild Tightening" },
-            { n: 2, label: "Neutral" },
-            { n: 3, label: "Mild Expansion" },
-            { n: 4, label: "Active QE" },
-            { n: 5, label: "Extreme Intervention" },
-          ];
-          return (
-            <div className="relative mt-1 h-6">
-              {levels.map(({ n, label }) => {
-                const pct = (n / 5) * 100;
-                const isActive = data.frliLevel === n;
-                return (
-                  <span
-                    key={n}
-                    className={`absolute flex flex-col items-center text-[9px] leading-tight whitespace-nowrap ${
-                      n === 0 ? "items-start" : n === 5 ? "items-end" : "-translate-x-1/2"
-                    } ${
-                      isActive
-                        ? "font-medium text-gray-600 dark:text-gray-300"
-                        : "text-gray-400 dark:text-gray-500"
-                    }`}
-                    style={
-                      n === 0
-                        ? { left: 0 }
-                        : n === 5
-                          ? { right: 0 }
-                          : { left: `${pct}%` }
-                    }
-                  >
-                    <span className="tabular-nums">{n}</span>
-                    <span className="text-[8px] hidden sm:inline">{label}</span>
-                  </span>
-                );
-              })}
-            </div>
-          );
-        })()}
       </div>
 
       {/* ── Fed Balance Sheet scale ───────────────────────────────── */}
