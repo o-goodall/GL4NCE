@@ -44,16 +44,15 @@ function getCycleGradient(): string {
   return "linear-gradient(to right, #FFD700, #FFC700, #FF8C00, #FF4500, #FF0000, #B22222, #CD5C5C, #E0FFFF)";
 }
 
-// ── Fed Balance Sheet thermometer scale constants ───────────────────────
-// Scale: baseline ($0.9T) → ceiling ($20T) to leave room for the next big print
-const BS_BASELINE   = 0.9;    // ~$0.9T pre-2008
-const BS_2008_PEAK  = 4.5;    // ~$4.5T post-GFC          (+3.6T)
-const BS_COVID_PEAK = 8.9;    // ~$8.9T COVID peak         (+4.4T from pre-COVID $4.1T→$8.9T ≈ +5T)
-const BS_CEILING    = 20;     // $20T — leaves headroom for +$7–10T next crisis
-const BS_RANGE      = BS_CEILING - BS_BASELINE;  // 19.1T
-const BS_2008_PCT   = ((BS_2008_PEAK - BS_BASELINE) / BS_RANGE) * 100;   // ~18.8%
-const BS_COVID_PCT  = ((BS_COVID_PEAK - BS_BASELINE) / BS_RANGE) * 100;  // ~41.9%
-const BS_NEXT_PCT   = 100; // right edge = ceiling
+// ── Fed Balance Sheet scale constants ──────────────────────────────────
+const BS_BASELINE   = 1;      // $1T left edge
+const BS_2008       = 4.5;    // $4.5T post-GFC
+const BS_COVID      = 8.9;    // $8.9T COVID peak
+const BS_CEILING    = 30;     // $30T right edge (future headroom)
+const BS_RANGE      = BS_CEILING - BS_BASELINE; // 29T
+const pctOf = (v: number) => ((v - BS_BASELINE) / BS_RANGE) * 100;
+const BS_2008_PCT   = pctOf(BS_2008);   // ~12.1%
+const BS_COVID_PCT  = pctOf(BS_COVID);  // ~27.2%
 
 // ── MiniStat (same pattern as BlockchainVisualizer) ───────────────────────
 
@@ -323,93 +322,81 @@ export default function MoneyPrinter() {
         </div>
       </div>
 
-      {/* ── Fed Balance Sheet thermometer ───────────────────────────── */}
-      {bsTotal > 0 && (
-        <div className="pb-3">
-          {/* Track */}
-          <div className="relative h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-visible">
-            {/* Faded "next crisis" zone from COVID to end */}
-            <div
-              className="absolute inset-y-0 rounded-full opacity-30"
-              style={{
-                left: `${BS_COVID_PCT}%`,
-                width: `${BS_NEXT_PCT - BS_COVID_PCT}%`,
-                background: "repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(156,163,175,0.25) 3px, rgba(156,163,175,0.25) 6px)",
-              }}
-            />
+      {/* ── Fed Balance Sheet scale ───────────────────────────────── */}
+      {bsTotal > 0 && (() => {
+        const todayPctClamped = Math.min(Math.max(todayPct, 0), 100);
+        // Build ordered ticks: 2008, Today, COVID — sorted by position
+        const fixedTicks = [
+          { key: "2008",  pct: BS_2008_PCT,  label: "2008",  value: "$4.5T" },
+          { key: "today", pct: todayPctClamped, label: "Today", value: `$${bsTotal.toFixed(1)}T`, highlight: true },
+          { key: "covid", pct: BS_COVID_PCT, label: "2020",  value: "$8.9T" },
+        ].sort((a, b) => a.pct - b.pct);
 
-            {/* Fill up to today */}
-            <div
-              className="absolute inset-y-0 left-0 rounded-full bg-gray-300 dark:bg-gray-600 transition-all duration-700"
-              style={{ width: `${Math.min(todayPct, 100)}%` }}
-            />
+        return (
+          <div className="pb-3">
+            {/* Top label row: event names */}
+            <div className="relative h-3 mb-0.5">
+              <span className="absolute left-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">$1T</span>
+              {fixedTicks.map((t) => (
+                <span
+                  key={t.key}
+                  className={`absolute -translate-x-1/2 text-[9px] tabular-nums whitespace-nowrap ${
+                    t.highlight
+                      ? "font-medium text-gray-600 dark:text-gray-300"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}
+                  style={{ left: `${t.pct}%` }}
+                >
+                  {t.label}
+                </span>
+              ))}
+              <span className="absolute right-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">$30T</span>
+            </div>
 
-            {/* 2008 marker */}
-            <div
-              className="absolute top-0 h-1.5 w-px bg-gray-400 dark:bg-gray-500"
-              style={{ left: `${BS_2008_PCT}%` }}
-            />
+            {/* Track */}
+            <div className="relative h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-visible">
+              {/* Fill up to today */}
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-gray-300 dark:bg-gray-600 transition-all duration-700"
+                style={{ width: `${todayPctClamped}%` }}
+              />
 
-            {/* COVID marker */}
-            <div
-              className="absolute top-0 h-1.5 w-px bg-gray-400 dark:bg-gray-500"
-              style={{ left: `${BS_COVID_PCT}%` }}
-            />
+              {/* Tick marks */}
+              {fixedTicks.map((t) => (
+                <div
+                  key={t.key}
+                  className={`absolute top-0 w-px ${
+                    t.highlight ? "h-3 -top-[3px] bg-gray-500 dark:bg-gray-400" : "h-1.5 bg-gray-400 dark:bg-gray-500"
+                  }`}
+                  style={{ left: `${t.pct}%` }}
+                />
+              ))}
+            </div>
 
-            {/* Today triangle marker */}
-            <div
-              className="absolute -top-2.5 -translate-x-1/2 text-[9px] leading-none text-gray-400 dark:text-gray-500"
-              style={{ left: `${Math.min(todayPct, 100)}%` }}
-            >
-              ▲
+            {/* Bottom label row: dollar values */}
+            <div className="relative h-3 mt-0.5">
+              {fixedTicks.map((t) => (
+                <span
+                  key={t.key}
+                  className={`absolute -translate-x-1/2 text-[9px] tabular-nums whitespace-nowrap ${
+                    t.highlight
+                      ? "font-medium text-gray-600 dark:text-gray-300"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}
+                  style={{ left: `${t.pct}%` }}
+                >
+                  {t.value}
+                </span>
+              ))}
+              <span className="absolute right-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">$30T</span>
+            </div>
+
+            <div className="text-[9px] text-gray-400 dark:text-gray-500 text-center mt-1">
+              Federal Reserve assets (USD trillions)
             </div>
           </div>
-
-          {/* Labels row */}
-          <div className="relative mt-1 h-4">
-            {/* 0 */}
-            <span className="absolute left-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">0</span>
-
-            {/* 2008 */}
-            <span
-              className="absolute -translate-x-1/2 text-[9px] tabular-nums text-gray-400 dark:text-gray-500 whitespace-nowrap"
-              style={{ left: `${BS_2008_PCT}%` }}
-            >
-              2008 (+3.6T)
-            </span>
-
-            {/* COVID */}
-            <span
-              className="absolute -translate-x-1/2 text-[9px] tabular-nums text-gray-400 dark:text-gray-500 whitespace-nowrap"
-              style={{ left: `${BS_COVID_PCT}%` }}
-            >
-              COVID (+5T)
-            </span>
-
-            {/* Next Crisis */}
-            <span
-              className="absolute text-[9px] tabular-nums text-gray-400/60 dark:text-gray-600 whitespace-nowrap"
-              style={{ right: 0 }}
-            >
-              Next?
-            </span>
-          </div>
-
-          {/* Today label below marker */}
-          <div className="relative h-3">
-            <span
-              className="absolute -translate-x-1/2 text-[9px] font-medium tabular-nums text-gray-500 dark:text-gray-400 whitespace-nowrap"
-              style={{ left: `${Math.min(todayPct, 100)}%` }}
-            >
-              Today (${bsTotal.toFixed(1)}T)
-            </span>
-          </div>
-
-          <div className="text-[9px] text-gray-400 dark:text-gray-500 text-center mt-0.5">
-            Fed balance sheet size (trillions USD)
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
     </section>
   );
