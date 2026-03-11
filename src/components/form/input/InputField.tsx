@@ -1,11 +1,13 @@
 import type React from "react";
 import type { FC } from "react";
+import { useId } from "react";
 
 interface InputProps {
   type?: "text" | "number" | "email" | "password" | "date" | "time" | string;
   id?: string;
   name?: string;
   placeholder?: string;
+  autoComplete?: string;
   value?: string | number;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   className?: string;
@@ -23,6 +25,7 @@ const Input: FC<InputProps> = ({
   id,
   name,
   placeholder,
+  autoComplete,
   value,
   onChange,
   className = "",
@@ -34,6 +37,10 @@ const Input: FC<InputProps> = ({
   error = false,
   hint,
 }) => {
+  const generatedId = useId().replace(/:/g, "");
+  const resolvedId = id ?? `input-${generatedId}`;
+  const resolvedName = name ?? resolvedId;
+
   let inputClasses = ` h-11 w-full rounded-lg border appearance-none px-4 py-2.5 text-sm shadow-theme-xs placeholder:text-gray-400 focus:outline-hidden focus:ring-3  dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 ${className}`;
 
   if (disabled) {
@@ -50,9 +57,10 @@ const Input: FC<InputProps> = ({
     <div className="relative">
       <input
         type={type}
-        id={id}
-        name={name}
+        id={resolvedId}
+        name={resolvedName}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         value={value}
         onChange={onChange}
         min={min}

@@ -7,6 +7,29 @@ layer(base);
 
 @custom-variant dark (&:is(.dark *));
 
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined", "Material Symbols Rounded", sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: "liga";
+  font-variant-ligatures: contextual;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
 @theme {
   --font-*: initial;
   --font-euclid: "Euclid Circular A", "Plus Jakarta Sans", sans-serif;
@@ -227,6 +250,27 @@ layer(base);
   to   { opacity: 1; transform: translateY(0);    }
 }
 
+.app-surface-texture {
+  background-color: #eef1f4;
+  background-image: linear-gradient(180deg, #f4f6f8 0%, #e9edf1 100%);
+}
+
+.app-nav-texture {
+  background-color: #eef1f4;
+  background-image: linear-gradient(180deg, #f6f8fa 0%, #edf1f4 100%);
+  backdrop-filter: blur(6px);
+}
+
+.dark .app-surface-texture {
+  background-color: #1f1f1f;
+  background-image: linear-gradient(180deg, #262626 0%, #1b1b1b 100%);
+}
+
+.dark .app-nav-texture {
+  background-color: #1f1f1f;
+  background-image: linear-gradient(180deg, #282828 0%, #1f1f1f 100%);
+}
+
 /* ── Blockchain Visualizer animations ──────────────────────────── */
 
 /* New confirmed block slides in with elastic bounce */
@@ -271,28 +315,28 @@ layer(base);
 
 /* ── 3D block slab box-shadow classes ───────────────────────── */
 
-/* Regular confirmed block — solid right+bottom shadow simulates cube side faces */
+/* Regular confirmed block — solid left+bottom shadow simulates cube side faces */
 .btc-block-3d {
-  box-shadow: 4px 4px 0 0 #d1d5db, 0 6px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: -4px 4px 0 0 rgba(249, 115, 22, 0.45), -2px 6px 20px rgba(249, 115, 22, 0.12);
 }
 .dark .btc-block-3d {
-  box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.45), 0 6px 20px rgba(0, 0, 0, 0.28);
+  box-shadow: -4px 4px 0 0 rgba(249, 115, 22, 0.38), -2px 6px 20px rgba(249, 115, 22, 0.18);
 }
 
 /* Latest (most-recent) confirmed block — orange cube shadow */
 .btc-block-3d-latest {
-  box-shadow: 4px 4px 0 0 rgba(234, 88, 12, 0.40), 0 6px 20px rgba(251, 146, 60, 0.10);
+  box-shadow: -4px 4px 0 0 rgba(234, 88, 12, 0.40), -2px 6px 20px rgba(251, 146, 60, 0.10);
 }
 .dark .btc-block-3d-latest {
-  box-shadow: 4px 4px 0 0 rgba(251, 130, 40, 0.32), 0 6px 20px rgba(251, 130, 40, 0.10);
+  box-shadow: -4px 4px 0 0 rgba(251, 130, 40, 0.32), -2px 6px 20px rgba(251, 130, 40, 0.10);
 }
 
 /* Pending (next) block — amber cube shadow */
 .btc-block-3d-pending {
-  box-shadow: 4px 4px 0 0 rgba(217, 119, 6, 0.45), 0 6px 20px rgba(245, 158, 11, 0.08);
+  box-shadow: -4px 4px 0 0 rgba(234, 179, 8, 0.48), -2px 6px 20px rgba(250, 204, 21, 0.14);
 }
 .dark .btc-block-3d-pending {
-  box-shadow: 4px 4px 0 0 rgba(217, 119, 6, 0.32), 0 6px 20px rgba(245, 158, 11, 0.08);
+  box-shadow: -4px 4px 0 0 rgba(250, 204, 21, 0.40), -2px 6px 20px rgba(250, 204, 21, 0.18);
 }
 
 /*
@@ -546,35 +590,99 @@ layer(base);
   @apply !p-0 !pl-6;
 }
 
-.jvectormap-container {
-  @apply !bg-transparent;
+/* ═══════════════════════════════════════════════════════════════════════════
+   FLASHPOINTS MAP — Leaflet edition
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dot marker — pixel-sized HTML element with box-shadow pulse ──────────── */
+.map-dot {
+  display: block;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: pointer;
 }
-.jvectormap-region.jvectormap-element {
-  @apply fill-gray-300 hover:fill-brand-500 dark:fill-gray-700 dark:hover:fill-brand-500;
+
+/* Critical: triple-ring radar pulse via stacked box-shadows */
+@keyframes dotPulseCritical {
+  0%   { box-shadow: 0 0 0 0 var(--dot-color-40), 0 0 0 0 var(--dot-color-25), 0 0 0 0 var(--dot-color-12); }
+  70%  { box-shadow: 0 0 0 6px var(--dot-color-0),  0 0 0 12px var(--dot-color-0), 0 0 0 18px var(--dot-color-0); }
+  100% { box-shadow: 0 0 0 6px var(--dot-color-0),  0 0 0 12px var(--dot-color-0), 0 0 0 18px var(--dot-color-0); }
 }
-.jvectormap-marker.jvectormap-element {
-  @apply !stroke-gray-200 dark:!stroke-white;
+.map-dot--critical {
+  --dot-color-40: rgba(240, 68, 56, 0.4);
+  --dot-color-25: rgba(240, 68, 56, 0.25);
+  --dot-color-12: rgba(240, 68, 56, 0.12);
+  --dot-color-0:  rgba(240, 68, 56, 0);
+  animation: dotPulseCritical 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
-/* Expanding ping-ring ghost for critical map markers — mirrors the notification bell animate-ping pattern */
-@keyframes mapPingRing {
-  75%, 100% {
-    transform: scale(2.5);
-    opacity: 0;
-  }
+
+/* High: single-ring pulse */
+@keyframes dotPulseHigh {
+  0%   { box-shadow: 0 0 0 0 var(--dot-color-35); }
+  70%  { box-shadow: 0 0 0 8px var(--dot-color-0); }
+  100% { box-shadow: 0 0 0 8px var(--dot-color-0); }
 }
-.map-ping-ring {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-  animation: mapPingRing 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-  opacity: 0.7;
+.map-dot--high {
+  --dot-color-35: rgba(247, 144, 9, 0.35);
+  --dot-color-0:  rgba(247, 144, 9, 0);
+  animation: dotPulseHigh 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ── Vignette overlay — cinematic edge darkening ─────────────────────────── */
+.map-vignette {
   pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0,0,0,0.08) 85%, rgba(0,0,0,0.18) 100%);
 }
-.jvectormap-tip {
-  @apply !bg-brand-500 !border-none !px-2 !py-1 !text-gray-900;
+.dark .map-vignette {
+  background: radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(0,0,0,0.2) 80%, rgba(0,0,0,0.4) 100%);
 }
-.jvectormap-zoomin,
-.jvectormap-zoomout {
-  @apply !hidden;
+
+/* ── Leaflet tooltip styling ─────────────────────────────────────────────── */
+.map-leaflet-tooltip {
+  background: rgba(17, 24, 39, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.5rem !important;
+  padding: 0.5rem 0.75rem !important;
+  box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.3) !important;
+  backdrop-filter: blur(8px);
+  color: #e5e7eb !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+.map-leaflet-tooltip::before {
+  border-top-color: rgba(17, 24, 39, 0.95) !important;
+}
+
+/* ── Leaflet zoom controls — match key / legend style ────────────────────── */
+.leaflet-control-zoom a {
+  background: rgba(255, 255, 255, 0.90) !important;
+  color: #374151 !important;
+  border-color: rgba(229, 231, 235, 0.80) !important;
+  backdrop-filter: blur(4px);
+  transition: all 0.15s ease;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+}
+.leaflet-control-zoom a:hover {
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+.dark .leaflet-control-zoom a {
+  background: rgba(31, 41, 55, 0.90) !important;
+  color: #9ca3af !important;
+  border-color: rgba(55, 65, 81, 0.80) !important;
+}
+.dark .leaflet-control-zoom a:hover {
+  background: rgba(55, 65, 81, 1) !important;
+  color: #e5e7eb !important;
+}
+
+/* ── Leaflet gesture-handling overlay ─────────────────────────────────────── */
+.leaflet-gesture-handling-scroll-warning,
+.leaflet-gesture-handling-touch-warning {
+  font-family: inherit !important;
 }
 
 .stocks-slider-outer .swiper-button-next:after,

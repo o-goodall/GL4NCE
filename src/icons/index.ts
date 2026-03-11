@@ -54,9 +54,19 @@ import { ReactComponent as ChatIcon } from "./chat.svg?react";
 import { ReactComponent as MoreDotIcon } from "./moredot.svg?react";
 import { ReactComponent as AlertHexaIcon } from "./alert-hexa.svg?react";
 import { ReactComponent as ErrorHexaIcon } from "./info-hexa.svg?react";
+import { ReactComponent as ReserveStageIcon } from "./reserve-stage.svg?react";
+import { ReactComponent as DeployStageIcon } from "./deploy-stage.svg?react";
+import { ReactComponent as HoldStageIcon } from "./hold-stage.svg?react";
+import { ReactComponent as CubeBlockIcon } from "./cube-block.svg?react";
+import { ReactComponent as BitcoinTiltIcon } from "./bitcoin-tilt.svg?react";
 
 export {
   ErrorHexaIcon,
+  ReserveStageIcon,
+  DeployStageIcon,
+  HoldStageIcon,
+  CubeBlockIcon,
+  BitcoinTiltIcon,
   AlertHexaIcon,
   MoreDotIcon,
   DownloadIcon,

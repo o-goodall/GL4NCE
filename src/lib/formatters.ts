@@ -1,0 +1,10 @@
+export const n = (v: number, dec = 0) => v.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+export const pct = (v: number | null) => v === null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+export const sc = (v: number | null) => v === null ? 'var(--t3)' : v >= 0 ? 'var(--up)' : 'var(--dn)';
+export const fmtVol = (v: number) => v >= 1e6 ? `$${(v / 1e6).toFixed(1)}m` : v >= 1e3 ? `$${(v / 1e3).toFixed(0)}k` : `$${v}`;
+export const fmtDate = (d: string) => { try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch { return ''; } };
+export const pc = (p: number) => p >= 70 ? 'var(--up)' : p >= 40 ? 'var(--orange)' : 'var(--dn)';
+export const ago = (d: string) => { try { const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000); return m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`; } catch { return ''; } };
+export const fmtBytes = (b: number) => b >= 1e6 ? `${(b / 1e6).toFixed(2)} MB` : b >= 1e3 ? `${(b / 1e3).toFixed(0)} KB` : `${b} B`;
+export const fmtSats = (s: number) => s >= 1e8 ? `${(s / 1e8).toFixed(3)} BTC` : s >= 1e6 ? `${(s / 1e6).toFixed(1)}M sats` : s >= 1e3 ? `${(s / 1e3).toFixed(0)}K sats` : `${s} sats`;
+export const blockAge = (ts: number) => { const m = Math.floor((Date.now() / 1000 - ts) / 60); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ${m % 60}m ago`; };

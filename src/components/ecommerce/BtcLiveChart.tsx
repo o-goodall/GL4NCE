@@ -3,11 +3,28 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
+import { subscribeBtcTicker } from "../../lib/binanceTicker";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Timeframe = "1D" | "1W" | "1M" | "6M" | "1Y" | "ALL";
 /** [timestamp_ms, close_price] */
 type PricePoint = [number, number];
+type IncomingPricePoint = { timestamp: number; price: number };
+type SmoothingMode = "ema" | "sma";
+
+type SmoothingConfig = {
+  mode: SmoothingMode;
+  emaAlpha: number;
+  smaWindow: number;
+  maxPoints: number;
+  replaceLastOnSameTimestamp: boolean;
+};
+
+type LiveSmoothingState = {
+  lastEma: number | null;
+  smaBuffer: number[];
+  smaSum: number;
+};
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: number }> = {
@@ -21,6 +38,14 @@ const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; cacheTTL: 
 
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "6M", "1Y", "ALL"];
 const CHART_UPDATE_THROTTLE_MS = 1_000;
+const LIVE_SMOOTHING_CONFIG: SmoothingConfig = {
+  mode: "ema",
+  emaAlpha: 0.2,
+  smaWindow: 8,
+  maxPoints: 1200,
+  replaceLastOnSameTimestamp: true,
+};
+const SHOW_LINE_MARKERS = false;
 /** Minimum pixels of horizontal finger movement before touch scrubbing activates (directional lock) */
 const TOUCH_SLOP = 5;
 const LABEL_FLIP_THRESHOLD = 0.8;
@@ -46,6 +71,53 @@ function fmtDate(ts: number, tf: Timeframe): string {
     return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
   }
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function smoothIncomingBatch(
+  prevSeries: PricePoint[],
+  incomingPoints: IncomingPricePoint[],
+  state: LiveSmoothingState,
+  config: SmoothingConfig,
+): PricePoint[] {
+  if (!incomingPoints.length) return prevSeries;
+
+  const nextSeries: PricePoint[] = [...prevSeries];
+
+  for (const point of incomingPoints) {
+    let smoothedPrice = point.price;
+
+    if (config.mode === "ema") {
+      const prevEma = state.lastEma ?? point.price;
+      const nextEma = config.emaAlpha * point.price + (1 - config.emaAlpha) * prevEma;
+      state.lastEma = nextEma;
+      smoothedPrice = nextEma;
+    } else {
+      state.smaBuffer.push(point.price);
+      state.smaSum += point.price;
+
+      if (state.smaBuffer.length > config.smaWindow) {
+        const removed = state.smaBuffer.shift();
+        if (removed !== undefined) state.smaSum -= removed;
+      }
+
+      smoothedPrice = state.smaSum / state.smaBuffer.length;
+    }
+
+    const nextPoint: PricePoint = [point.timestamp, smoothedPrice];
+    const lastPoint = nextSeries[nextSeries.length - 1];
+
+    if (config.replaceLastOnSameTimestamp && lastPoint && lastPoint[0] === point.timestamp) {
+      nextSeries[nextSeries.length - 1] = nextPoint;
+    } else {
+      nextSeries.push(nextPoint);
+    }
+  }
+
+  if (nextSeries.length > config.maxPoints) {
+    nextSeries.splice(0, nextSeries.length - config.maxPoints);
+  }
+
+  return nextSeries;
 }
 
 
@@ -117,8 +189,6 @@ const GOLD_TF_CONFIG: Record<GoldTF, { goldRange: string; goldInterval: string; 
   "ALL": { goldRange: "max", goldInterval: "1wk", cacheTTL:  86_400_000 },
 };
 
-const GOLD_POLL_MS = 10 * 60 * 1_000; // 10 minutes
-
 // ── Generic localStorage cache helpers (for gold overlay) ─────────────────────
 function getCache<T>(key: string, ttl: number): T | null {
   try {
@@ -134,15 +204,6 @@ function setCache<T>(key: string, data: T): void {
   try {
     localStorage.setItem(key, JSON.stringify({ data, fetchedAt: Date.now() }));
   } catch { /* ignore storage quota errors */ }
-}
-
-// ── Gold spot price fetch ─────────────────────────────────────────────────────
-async function fetchGoldSpotPrice(signal: AbortSignal): Promise<number> {
-  const res = await fetch("/api/gold-price", { signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = (await res.json()) as { price: number };
-  if (!data.price || isNaN(data.price)) throw new Error("Invalid gold price");
-  return data.price;
 }
 
 // ── Gold history fetch ────────────────────────────────────────────────────────
@@ -184,16 +245,22 @@ export default function BtcLiveChart() {
   const prevPriceRef      = useRef<number | null>(null);
   const flashTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChartUpdateRef = useRef<number>(0);
+  const liveSmoothingRef = useRef<LiveSmoothingState>({
+    lastEma: null,
+    smaBuffer: [],
+    smaSum: 0,
+  });
+  const incomingBufferRef = useRef<IncomingPricePoint[]>([]);
+  const lastSeriesTimestampRef = useRef<number>(Date.now());
 
   const [timeframe,  setTimeframe]  = useState<Timeframe>("1D");
-  const [showGold,   setShowGold]   = useState(false);
+  const [showGold]   = useState(false);
   const [closeData,  setCloseData]  = useState<PricePoint[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [livePrice,  setLivePrice]  = useState<number | null>(null);
   const [change24h,  setChange24h]  = useState<number | null>(null);
   const [flash,      setFlash]      = useState<"up" | "down" | null>(null);
   const [goldPriceHistory, setGoldPriceHistory] = useState<PricePoint[]>([]);
-  const [liveGoldPrice, setLiveGoldPrice] = useState<number | null>(null);
 
   // ── Hover / scrub state ──────────────────────────────────────────────────────
   const chartWrapRef       = useRef<HTMLDivElement>(null);
@@ -225,29 +292,35 @@ export default function BtcLiveChart() {
     return () => ctrl.abort();
   }, [showGold, timeframe]);
 
-  // ── Gold spot price poll (active only while gold overlay is on) ───────────────
-  useEffect(() => {
-    if (!showGold) { setLiveGoldPrice(null); return; }
-    const ctrl = new AbortController();
-    const poll = () =>
-      fetchGoldSpotPrice(ctrl.signal).then(setLiveGoldPrice).catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        if (import.meta.env.DEV) console.error("[BtcLiveChart] Gold price error:", err);
-      });
-    poll();
-    const id = setInterval(poll, GOLD_POLL_MS);
-    return () => { ctrl.abort(); clearInterval(id); };
-  }, [showGold]);
-
   // ── Historical price fetch (with cache) ──────────────────────────────────────
   useEffect(() => {
     const cached = getCachedPrices(timeframe);
-    if (cached) { setCloseData(cached); setLoading(false); return; }
+    if (cached) {
+      setCloseData(cached);
+      incomingBufferRef.current = [];
+      liveSmoothingRef.current = {
+        lastEma: cached.length ? cached[cached.length - 1][1] : null,
+        smaBuffer: [],
+        smaSum: 0,
+      };
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     const ctrl = new AbortController();
     fetchPrices(timeframe, ctrl.signal)
-      .then((data) => { setCachedPrices(timeframe, data); setCloseData(data); setLoading(false); })
+      .then((data) => {
+        setCachedPrices(timeframe, data);
+        setCloseData(data);
+        incomingBufferRef.current = [];
+        liveSmoothingRef.current = {
+          lastEma: data.length ? data[data.length - 1][1] : null,
+          smaBuffer: [],
+          smaSum: 0,
+        };
+        setLoading(false);
+      })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (import.meta.env.DEV) console.error("[BtcLiveChart] fetch error:", err);
@@ -256,53 +329,49 @@ export default function BtcLiveChart() {
     return () => ctrl.abort();
   }, [timeframe]);
 
-  // ── Binance WebSocket — live price + throttled chart update ──────────────────
   useEffect(() => {
-    const ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@ticker");
+    if (closeData.length) {
+      lastSeriesTimestampRef.current = closeData[closeData.length - 1][0];
+    }
+  }, [closeData]);
 
-    ws.onmessage = (event: MessageEvent) => {
-      try {
-        const msg = JSON.parse(event.data as string) as {
-          stream: string;
-          data: Record<string, string>;
-        };
-        if (msg.stream !== "btcusdt@ticker") return;
-        const price = parseFloat(msg.data["c"]);
-        const pct   = parseFloat(msg.data["P"]);
-        if (isNaN(price)) return;
+  // ── Shared Binance ticker — live price + throttled chart update ───────────────
+  useEffect(() => {
+    const unsubscribe = subscribeBtcTicker(({ price, changePct }) => {
+      setLivePrice(price);
+      setChange24h(changePct);
 
-        setLivePrice(price);
-        setChange24h(pct);
+      // Flash effect on price change
+      if (prevPriceRef.current !== null && price !== prevPriceRef.current) {
+        const dir: "up" | "down" = price > prevPriceRef.current ? "up" : "down";
+        setFlash(dir);
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = setTimeout(() => setFlash(null), 600);
+      }
+      prevPriceRef.current = price;
 
-        // Flash effect on price change
-        if (prevPriceRef.current !== null && price !== prevPriceRef.current) {
-          const dir: "up" | "down" = price > prevPriceRef.current ? "up" : "down";
-          setFlash(dir);
-          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-          flashTimerRef.current = setTimeout(() => setFlash(null), 600);
-        }
-        prevPriceRef.current = price;
+      incomingBufferRef.current.push({
+        timestamp: lastSeriesTimestampRef.current,
+        price,
+      });
 
-        // Throttled chart update — mutate only the last data point
-        const now = Date.now();
-        if (now - lastChartUpdateRef.current >= CHART_UPDATE_THROTTLE_MS) {
-          lastChartUpdateRef.current = now;
-          setCloseData((prev) => {
-            if (!prev.length) return prev;
-            const next = [...prev];
-            next[next.length - 1] = [next[next.length - 1][0], price];
-            return next;
-          });
-        }
-      } catch { /* ignore malformed frames */ }
-    };
+      // Throttled chart update — process buffered ticks in one pass for stable perf.
+      const now = Date.now();
+      if (now - lastChartUpdateRef.current >= CHART_UPDATE_THROTTLE_MS) {
+        lastChartUpdateRef.current = now;
+        const batch = incomingBufferRef.current;
+        if (!batch.length) return;
+        incomingBufferRef.current = [];
 
-    ws.onerror = () => {
-      if (import.meta.env.DEV) console.error("[BtcLiveChart] WebSocket error");
-    };
+        setCloseData((prev) => {
+          if (!prev.length) return prev;
+          return smoothIncomingBatch(prev, batch, liveSmoothingRef.current, LIVE_SMOOTHING_CONFIG);
+        });
+      }
+    });
 
     return () => {
-      if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) ws.close();
+      unsubscribe();
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
@@ -404,7 +473,8 @@ export default function BtcLiveChart() {
       if (closeData[i][1] < lo) lo = closeData[i][1];
       if (closeData[i][1] > hi) hi = closeData[i][1];
     }
-    const pad = (hi - lo) * Y_AXIS_PAD;
+    const range = hi - lo;
+    const pad = range > 0 ? range * Y_AXIS_PAD : Math.max(1, hi * 0.001);
     return { yAxisMin: lo - pad, yAxisMax: hi + pad };
   }, [closeData]);
 
@@ -412,7 +482,7 @@ export default function BtcLiveChart() {
   const options = useMemo<ApexOptions>(() => {
     // Series colors — BTC/USD = brand yellow, Gold overlay = emerald green
     const colors = showGold ? [BRAND_COLOR, "#10b981"] : [BRAND_COLOR];
-    const strokeWidths = showGold ? [2.5, 2] : [2.5];
+    const strokeWidths = showGold ? [2, 1.5] : [2];
     const strokeDashes = showGold ? [0, 0] : [0];
 
     // Y-axis — hidden (we show high/low as point annotations instead)
@@ -539,6 +609,7 @@ export default function BtcLiveChart() {
 
     return {
       chart: {
+        id: "btc-live-price-chart",
         fontFamily: "Inter, sans-serif",
         type: "area",
         toolbar: { show: false },
@@ -551,23 +622,12 @@ export default function BtcLiveChart() {
           animateGradually: { enabled: false },
         },
       },
-      stroke: { curve: "monotoneCubic", width: strokeWidths, dashArray: strokeDashes },
-      // Gradient area fill — inspired by react-native-simple-line-chart's area chart presentation.
-      // Disabled in gold-overlay mode to avoid visual clutter from two filled series.
-      fill: showGold
-        ? { type: "solid", opacity: 0 }
-        : {
-            type: "gradient",
-            gradient: {
-              shadeIntensity: 1,
-              opacityFrom: 0.25,
-              opacityTo: 0,
-              stops: [0, 100],
-            },
-          },
+      stroke: { curve: "smooth", width: strokeWidths, dashArray: strokeDashes },
+      // Keep only the line; remove area fill to avoid panel-like glow under the chart.
+      fill: { type: "solid", opacity: 0 },
       colors,
       dataLabels: { enabled: false },
-      markers: { size: 0, hover: { size: 0 } },
+      markers: SHOW_LINE_MARKERS ? { size: 2, hover: { size: 3 } } : { size: 0, hover: { size: 0 } },
       xaxis: {
         type: "datetime",
         axisBorder: { show: false },
@@ -594,12 +654,9 @@ export default function BtcLiveChart() {
   // ── Derived display values ────────────────────────────────────────────────────
   const isUp      = change24h !== null ? change24h >= 0 : true;
   const flashClass =
-    flash === "up"   ? "text-emerald-500" :
-    flash === "down" ? "text-red-500"     :
-    "text-gray-800 dark:text-white/90";
-  const liveRatio = livePrice !== null && liveGoldPrice !== null && liveGoldPrice > 0
-    ? livePrice / liveGoldPrice
-    : null;
+    flash === "up"   ? "text-white" :
+    flash === "down" ? "text-white" :
+    "text-white";
 
   // % change over the currently loaded timeframe (first candle → live price)
   const tfChangePct = useMemo<number | null>(() => {
@@ -609,15 +666,6 @@ export default function BtcLiveChart() {
     const last = livePrice ?? closeData[closeData.length - 1][1];
     return ((last - first) / first) * 100;
   }, [closeData, livePrice]);
-
-  // Same but for the BTC/Gold ratio series
-  const tfGoldChangePct = useMemo<number | null>(() => {
-    if (!showGold || !ratioData.length) return null;
-    const first = ratioData[0][1];
-    if (!first) return null;
-    const last = liveRatio ?? ratioData[ratioData.length - 1][1];
-    return ((last - first) / first) * 100;
-  }, [showGold, ratioData, liveRatio]);
 
   // ── Chart interaction helpers ─────────────────────────────────────────────────
   /** Converts a client-X pixel position into a [0,1] fraction across the chart wrapper. */
@@ -760,19 +808,27 @@ export default function BtcLiveChart() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-      {/* Header row: price + controls */}
-      <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className="w-full px-1 py-1 sm:px-0">
+      {/* Header row: live price */}
+      <div className="mb-3 sm:mb-4">
         {/* Left: live price */}
         <div>
-          {/* Price columns: BTC USD | BTC/Gold oz (side-by-side when gold active) */}
           <div className="mt-1 flex items-start gap-4">
-
-            {/* ── USD column ── */}
             <div className="flex flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span
-                  className={`text-2xl font-bold tabular-nums transition-colors duration-300 ${flashClass}`}
+                  className="inline-flex items-center justify-center"
+                  aria-hidden="true"
+                >
+                  <span
+                    className="material-symbols-outlined text-[#FFD300] text-[24px] leading-none"
+                    style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+                  >
+                    currency_bitcoin
+                  </span>
+                </span>
+                <span
+                  className={`text-3xl font-semibold tabular-nums leading-none transition-colors duration-300 sm:text-4xl ${flashClass}`}
                   aria-live="polite"
                   aria-label={livePrice !== null ? `Bitcoin price $${fmtNum(livePrice)}` : "Loading"}
                 >
@@ -781,77 +837,17 @@ export default function BtcLiveChart() {
                 {timeframe === "1D" && change24h !== null && (
                   <Badge color={change24h >= 0 ? "success" : "error"} size="sm">
                     {isUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                    {Math.abs(change24h).toFixed(2)}% 24h
+                    {Math.abs(change24h).toFixed(2)}%
                   </Badge>
                 )}
                 {timeframe !== "1D" && tfChangePct !== null && (
                   <Badge color={tfChangePct >= 0 ? "success" : "error"} size="sm">
                     {tfChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                    {Math.abs(tfChangePct).toFixed(2)}% {timeframe}
+                    {Math.abs(tfChangePct).toFixed(2)}%
                   </Badge>
                 )}
               </div>
             </div>
-
-            {/* ── Gold oz column (only when overlay active) ── */}
-            {showGold && (
-              <>
-                <div className="w-px self-stretch bg-gray-200 dark:bg-gray-700" />
-                <div className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-2xl font-bold tabular-nums text-yellow-400">
-                      {liveRatio !== null ? `${liveRatio.toFixed(2)} oz` : "—"}
-                    </span>
-                    {tfGoldChangePct !== null && (
-                      <Badge color={tfGoldChangePct >= 0 ? "success" : "error"} size="sm">
-                        {tfGoldChangePct >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-                        {Math.abs(tfGoldChangePct).toFixed(2)}% {timeframe} oz
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-          </div>
-        </div>
-
-        {/* Right: timeframe tabs + Gold toggle */}
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <div
-            className="flex items-center gap-1"
-            role="tablist"
-            aria-label="Chart timeframe"
-          >
-            {TIMEFRAMES.map((tf) => (
-              <button
-                key={tf}
-                role="tab"
-                aria-selected={timeframe === tf}
-                onClick={() => setTimeframe(tf)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  timeframe === tf
-                    ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
-                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                }`}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowGold((g) => !g)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                showGold
-                  ? "border-yellow-400 bg-yellow-50 text-yellow-600 dark:bg-yellow-500/10 dark:text-yellow-400"
-                  : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
-              }`}
-              aria-pressed={showGold}
-            >
-              Gold oz
-            </button>
           </div>
         </div>
       </div>
@@ -865,15 +861,14 @@ export default function BtcLiveChart() {
         onMouseLeave={onMouseLeave}
         style={{ cursor: isInteracting ? "crosshair" : "default", userSelect: "none" }}
       >
-        {loading && (
-          <div className="absolute inset-0 z-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 300 }} />
-        )}
-        <Chart
-          options={options}
-          series={series}
-          type="area"
-          height={300}
-        />
+        <div className={`transition-opacity duration-300 ${loading ? "opacity-65" : "opacity-100"}`}>
+          <Chart
+            options={options}
+            series={series}
+            type="area"
+            height={300}
+          />
+        </div>
         {/* Hairline at cursor position (only affects its own 1px column, never the background) */}
         {isInteracting && hoverPct !== null && closeData.length >= 2 && (
           <div
@@ -929,6 +924,31 @@ export default function BtcLiveChart() {
         )}
       </div>
 
-    </div>
+      {/* Timeframe tabs below chart */}
+      <div className="mt-3 px-2 sm:px-4">
+        <div
+          className="grid grid-cols-6 items-center gap-1 sm:gap-2"
+          role="tablist"
+          aria-label="Chart timeframe"
+        >
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf}
+              role="tab"
+              aria-selected={timeframe === tf}
+              onClick={() => setTimeframe(tf)}
+              className={`w-full rounded-md px-1 py-1.5 text-center text-xs font-semibold transition-colors sm:px-2 sm:text-sm ${
+                timeframe === tf
+                  ? "text-[#FFD300]"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
+      </div>
+
+    </section>
   );
 }

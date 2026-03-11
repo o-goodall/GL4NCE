@@ -12,27 +12,22 @@ export default function Intel() {
         title="Intel | GL4NCE Dashboard"
         description="GL4NCE - Intel Dashboard"
       />
-      <div className="grid grid-cols-12 gap-4 md:gap-6">
-        <div className="col-span-12">
+      <div className="w-full space-y-5 pb-2">
+        <div className="w-full">
           <Suspense fallback={
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
-              <div className="h-[420px] sm:h-[520px] xl:h-[620px] animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
-            </div>
+            <div className="h-[65vh] sm:h-[75vh] lg:h-[82vh] xl:h-[86vh] min-h-[420px] animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
           }>
             <NewsMapWidget />
           </Suspense>
         </div>
 
-        <div className="col-span-12">
+        <div className="w-full">
           <GeopoliticalMarkets />
         </div>
 
-        {/* Pulse tile — RSS general news feed with category groups */}
-        <div className="col-span-12">
+        <div className="w-full">
           <Suspense fallback={
-            <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-8 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-              <div className="h-[320px] animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
-            </div>
+            <div className="h-[320px] animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
           }>
             <PulseFeed />
           </Suspense>

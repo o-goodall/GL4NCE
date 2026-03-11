@@ -192,6 +192,12 @@ const MEDIUM_MILITARY = [
   "troop withdrawal", "military withdrawal", "peacekeeping mission",
   "military deployment", "naval patrol",
   "defense spending", "military budget",
+  // Carrier groups / fleet tracking
+  "carrier strike group", "carrier battle group", "carrier group",
+  "fleet deployment", "naval task force", "amphibious ready group",
+  // Defense procurement / arms deals
+  "defense procurement", "arms procurement", "weapons contract", "arms contract",
+  "military readiness", "force posture", "combat readiness",
 ];
 
 // ── Commodities / Resource Supply ────────────────────────────────────────────
@@ -316,6 +322,12 @@ const MEDIUM_ESCALATION = [
   // Pre-coup signals
   "soldiers surrounding", "parliament surrounded",
   "president detained", "prime minister detained",
+  // Missile / weapons tests (provocative, not yet active combat)
+  "missile test", "weapons test", "missile test launch", "test fired",
+  "test launch", "rocket test", "nuclear test",
+  // NATO posture / readiness escalation
+  "nato alert", "nato readiness", "nato force posture",
+  "nato mobilization", "nato mobilisation",
 ];
 
 /**

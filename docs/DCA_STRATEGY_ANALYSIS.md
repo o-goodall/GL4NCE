@@ -125,23 +125,38 @@ accumulation windows in Bitcoin's history.
 
 ## 5. Signal Architecture
 
-### Signals (5 total)
+### Signals (3-phase psychological confirmation model)
 
-| # | Signal | Threshold | Boost | Purpose |
-|---|--------|-----------|-------|---------|
-| 1 | **Fear / Greed** | ≤ 40 (active), ≤ 20 (extreme) | +10 % / +20 % | Sentiment-based accumulation |
-| 2 | **Diff Drop** | < −5 % | +10 % | Mining difficulty drop → miner capitulation |
-| 3 | **Halving Phase** | Post-halving (≤ 547 d) / Pre-halving (≤ 365 d) | +10 % | Supply-shock cycle timing |
-| 4 | **Peak / Trough** | ±90 d of projected date | −10 % (peak) / +15 % (trough) | Cycle peak/trough proximity |
-| 5 | **Below 200WMA** | Price < 200-week MA | +25 % | Historically rare extreme buy zone |
+Validated across all cycles 2015–2025. Core indicators: MVRV Z-Score, NUPL, Fear & Greed Index.
 
-### Boost Ranges
+#### 🟢 Deploy Phase — Trough Confirmation
 
-| Scenario | Total Boost |
-|----------|-------------|
-| Best case (trough + fear extreme + below WMA + post-halving + diff drop) | +80 % |
-| Neutral (no signals active) | 0 % |
-| Worst case (near peak only) | −10 % |
+3 of 4 signals active within the predicted trough window → high-confidence trough.
+Historical cluster: ±~14–21 days of confirmed bottoms.
+
+| # | Signal | Threshold | Behaviour Across Cycles |
+|---|--------|-----------|-------------------------|
+| 1 | **MVRV Z-Score** | < 1 | Bottoms in 2015, 2018, 2020, 2022 |
+| 2 | **Price near/below 200W MA** | Near/Below 200-week MA | Bottom behaviour in 2015, 2018, 2022 |
+| 3 | **Weekly RSI** | ≤ 35 | Capitulation lows in 2015, 2018, 2022 |
+| 4 | **Fear & Greed Index** | ≤ 20 | Extreme fear in 2018, 2020, 2022 |
+
+#### 🟡 Hold Phase — Bull Expansion
+
+| # | Signal | Threshold | Behaviour Across Cycles |
+|---|--------|-----------|-------------------------|
+| 1 | **NUPL** | 0.25–0.60 | Bull regime in 2016–17, 2020–21, 2023–25 |
+| 2 | **50W > 200W MA** | 50-week SMA above 200-week SMA | Classic bull structure every expansion |
+| 3 | **Fear & Greed** | 60–85 | Greed range common in historical bulls, 2024–25 sentiment peaks |
+
+#### 🔴 Reserve Phase — Peak / Late-Cycle
+
+| # | Signal | Threshold | Historical Confirm |
+|---|--------|-----------|--------------------|
+| 1 | **MVRV Z-Score** | > 5–6 | Peaks in 2013, 2017, 2021 |
+| 2 | **NUPL (Euphoria)** | > 0.70–0.75 | Past cycle peaks |
+| 3 | **Weekly RSI** | ≥ 80 | Consistent with previous blow-offs |
+| 4 | **Fear & Greed** | ≥ 90 | Psychological mania at tops |
 
 ---
 
@@ -149,16 +164,18 @@ accumulation windows in Bitcoin's history.
 
 Changes in `src/components/ecommerce/MonthlyTarget.tsx`:
 
-1. Added historical + projected cycle **peak dates** (Dec 2013, Dec 2017,
-   Nov 2021, Dec 2025) and **trough dates** (Jan 2015, Dec 2018, Nov 2022,
-   Dec 2028) as `CYCLE_PEAKS_MS` and `CYCLE_TROUGHS_MS`.
-2. Added `getCyclePhase()` helper that finds the nearest peak/trough and
-   returns `"near-peak"`, `"near-trough"`, or `"mid-cycle"` with days away.
-3. Added `BOOST_NEAR_TROUGH = 15` and `DAMPEN_NEAR_PEAK = -10` constants.
-4. Integrated cycle phase into the boost calculation.
-5. Added 5th signal to footer: shows "Near Peak" / "Near Trough" /
-   "Mid-Cycle" with days to/from nearest event.
-6. Expanded signal grid from `grid-cols-4` to `grid-cols-5`.
+1. Replaced 5-signal boost architecture with 3-phase psychological
+   confirmation model validated across 2015–2025 cycles.
+2. **Deploy phase** (🟢): MVRV Z < 1, Below 200W MA, Weekly RSI ≤ 35,
+   Fear & Greed ≤ 20. 3 of 4 active → trough confirmed.
+3. **Hold phase** (🟡): NUPL 0.25–0.60, 50W > 200W MA, Fear & Greed 60–85.
+4. **Reserve phase** (🔴): MVRV Z > 5–6, NUPL > 0.70, Weekly RSI ≥ 80,
+   Fear & Greed ≥ 90.
+5. Added 50-week SMA derivation from Binance weekly klines.
+6. Removed Mining Difficulty Drop and Halving Phase signals (not
+   universally reliable across all cycles).
+7. MVRV Z-Score and NUPL shown as manual-check placeholders
+   (require specialised on-chain APIs not freely available).
 
 ### What NOT to adopt from BSP
 

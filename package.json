@@ -18,9 +18,13 @@
     "@fullcalendar/timegrid": "^6.1.15",
     "@react-jvectormap/core": "^1.0.4",
     "@react-jvectormap/world": "^1.1.2",
+    "@types/leaflet": "^1.9.21",
+    "@types/topojson-client": "^3.1.5",
     "apexcharts": "^4.1.0",
     "clsx": "^2.1.1",
     "flatpickr": "^4.6.13",
+    "leaflet": "^1.9.4",
+    "leaflet-gesture-handling": "^1.2.2",
     "react": "^19.0.0",
     "react-apexcharts": "^1.7.0",
     "react-dnd": "^16.0.1",
@@ -28,10 +32,13 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.5",
     "react-helmet-async": "^2.0.5",
+    "react-leaflet": "^5.0.0",
     "react-router": "^7.1.5",
     "rss-parser": "^3.13.0",
     "swiper": "^11.2.3",
-    "tailwind-merge": "^3.0.1"
+    "tailwind-merge": "^3.0.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",

@@ -86,19 +86,28 @@ export default function SignInForm() {
             <form>
               <div className="space-y-6">
                 <div>
-                  <Label>
+                  <Label htmlFor="signin-email">
                     Email <span className="text-error-800">*</span>{" "}
                   </Label>
-                  <Input placeholder="info@gmail.com" />
+                  <Input
+                    id="signin-email"
+                    name="email"
+                    type="email"
+                    placeholder="info@gmail.com"
+                    autoComplete="email"
+                  />
                 </div>
                 <div>
-                  <Label>
+                  <Label htmlFor="signin-password">
                     Password <span className="text-error-800">*</span>{" "}
                   </Label>
                   <div className="relative">
                     <Input
+                      id="signin-password"
+                      name="password"
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter your password"
+                      autoComplete="current-password"
                     />
                     <span
                       onClick={() => setShowPassword(!showPassword)}

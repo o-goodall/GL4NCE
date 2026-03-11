@@ -87,50 +87,56 @@ export default function SignUpForm() {
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   {/* <!-- First Name --> */}
                   <div className="sm:col-span-1">
-                    <Label>
+                    <Label htmlFor="signup-fname">
                       First Name<span className="text-error-800">*</span>
                     </Label>
                     <Input
                       type="text"
-                      id="fname"
-                      name="fname"
+                      id="signup-fname"
+                      name="firstName"
                       placeholder="Enter your first name"
+                      autoComplete="given-name"
                     />
                   </div>
                   {/* <!-- Last Name --> */}
                   <div className="sm:col-span-1">
-                    <Label>
+                    <Label htmlFor="signup-lname">
                       Last Name<span className="text-error-800">*</span>
                     </Label>
                     <Input
                       type="text"
-                      id="lname"
-                      name="lname"
+                      id="signup-lname"
+                      name="lastName"
                       placeholder="Enter your last name"
+                      autoComplete="family-name"
                     />
                   </div>
                 </div>
                 {/* <!-- Email --> */}
                 <div>
-                  <Label>
+                  <Label htmlFor="signup-email">
                     Email<span className="text-error-800">*</span>
                   </Label>
                   <Input
                     type="email"
-                    id="email"
+                    id="signup-email"
                     name="email"
                     placeholder="Enter your email"
+                    autoComplete="email"
                   />
                 </div>
                 {/* <!-- Password --> */}
                 <div>
-                  <Label>
+                  <Label htmlFor="signup-password">
                     Password<span className="text-error-800">*</span>
                   </Label>
                   <div className="relative">
                     <Input
+                      id="signup-password"
+                      name="password"
                       placeholder="Enter your password"
                       type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
                     />
                     <span
                       onClick={() => setShowPassword(!showPassword)}

@@ -1,37 +1,6 @@
 import { useEffect, useState } from "react";
 
-// ── Types (mirror API responses) ──────────────────────────────────────────
-
-interface CountryData {
-  id:               string;
-  name:             string;
-  flag:             string;
-  error:            boolean;
-  // M1
-  m1USD?:           number | null;
-  m1ChangeUSD?:     number | null;
-  m1DataMissing?:   boolean;
-  // M2 / broad money
-  m2USD?:           number | null;
-  m2ChangeUSD?:     number | null;
-  // Debt-to-GDP (World Bank, annual)
-  debtToGDP?:       number | null;
-  // Gross National Debt in current USD (annual, IMF WEO: debtToGDP% × nominal GDP)
-  grossDebtUSD?:    number | null;
-  // Per-bank Printer Score
-  printerScore?:    number | null;
-  scoreRegime?:     string | null;
-  printing?:        boolean;
-  // legacy fields (backward compat)
-  latestUSD?:       number;
-  printedUSD?:      number | null;
-  lastPrintedDate?: string | null;
-  lastPrintedUSD?:  number | null;
-}
-
-interface M2Response {
-  countries: CountryData[];
-}
+// ── Types (mirror /api/printer response) ──────────────────────────────────
 
 interface PrinterIndicator {
   label:    string;
@@ -39,293 +8,407 @@ interface PrinterIndicator {
   score:    number;
   weight:   number;
   elevated: boolean;
+  arrow?:   "up" | "down" | "flat";
+  detail?:  string;
 }
 
-interface PrinterScore {
-  score:      number;
-  regime:     string;
-  indicators: PrinterIndicator[];
+interface PrinterData {
+  brrrLevel:   number;
+  score:       number;
+  regime:      string;
+  status:      string;
+  liquidity: {
+    current:   number;
+    change30d: number;
+    walcl:     number;
+    rrp:       number;
+    tga:       number;
+  };
+  rates: {
+    fedFunds:    number | null;
+    yield2y:     number | null;
+    sofr:        number | null;
+    sofrSpread:  number | null;
+    repoStress:  boolean;
+  };
+  forward: {
+    rateCutProb:   number;
+    recessionProb: number;
+  };
+  indicators:  PrinterIndicator[];
+  updatedAt:   string;
 }
 
-// ── Regime config ─────────────────────────────────────────────────────────
+// ── Level config ──────────────────────────────────────────────────────────
 
-interface RegimeConfig {
-  color:  string;
-  bg:     string;
+interface LevelConfig {
+  color:     string;
+  bg:        string;
+  barColor:  string;
+  label:     string;
 }
 
-function regimeCfg(regime: string): RegimeConfig {
-  switch (regime) {
-    case "Brrrr":   return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500"       };
-    case "Alert":   return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500"    };
-    case "Warming": return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500"    };
-    default:        return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500" };
+function levelCfg(level: number): LevelConfig {
+  switch (level) {
+    case 5: return { color: "text-red-500 dark:text-red-400",       bg: "bg-red-500/10 dark:bg-red-500/20",       barColor: "bg-red-500",       label: "Crisis Printing" };
+    case 4: return { color: "text-orange-500 dark:text-orange-400", bg: "bg-orange-500/10 dark:bg-orange-500/20", barColor: "bg-orange-500",    label: "Heavy Printing" };
+    case 3: return { color: "text-yellow-500 dark:text-yellow-400", bg: "bg-yellow-500/10 dark:bg-yellow-500/20", barColor: "bg-yellow-500",    label: "Active Stimulus" };
+    case 2: return { color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500/10 dark:bg-emerald-500/20", barColor: "bg-emerald-500", label: "Liquidity Rising" };
+    case 1: return { color: "text-gray-500 dark:text-gray-400",     bg: "bg-gray-500/10 dark:bg-gray-500/20",     barColor: "bg-gray-400",      label: "Neutral" };
+    default: return { color: "text-blue-500 dark:text-blue-400",    bg: "bg-blue-500/10 dark:bg-blue-500/20",     barColor: "bg-blue-500",      label: "Tightening" };
   }
 }
 
-// ── Per-bank score badge styles (green → yellow → orange → red) ──────────────
-
-const REGIME_BADGE: Record<string, { badge: string; dot: string }> = {
-  Crisis: {
-    badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
-    dot:   "bg-red-500 dark:bg-red-400",
-  },
-  // "Brrrr" is the US printer.ts label for the top-of-tile score; map it to
-  // the same Crisis style so the Fed row badge is consistent when overlaid.
-  Brrrr: {
-    badge: "bg-red-50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400",
-    dot:   "bg-red-500 dark:bg-red-400",
-  },
-  Alert: {
-    badge: "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400",
-    dot:   "bg-orange-500 dark:bg-orange-400",
-  },
-  Warming: {
-    badge: "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-300",
-    dot:   "bg-yellow-500 dark:bg-yellow-400",
-  },
-  Normal: {
-    badge: "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400",
-    dot:   "bg-gray-400 dark:bg-gray-500",
-  },
-};
-
 // ── Formatting helpers ────────────────────────────────────────────────────
 
-function fmtUSD(billions: number | null | undefined): string {
-  if (billions == null) return "—";
-  const t = billions / 1_000;
-  const str = t >= 100 ? t.toFixed(0) : t >= 10 ? t.toFixed(1) : t.toFixed(2);
-  return `$${str}T`;
+function fmtBillions(b: number): string {
+  const t = b / 1_000;
+  if (Math.abs(t) >= 100) return `$${t.toFixed(0)}T`;
+  if (Math.abs(t) >= 10)  return `$${t.toFixed(1)}T`;
+  if (Math.abs(t) >= 1)   return `$${t.toFixed(2)}T`;
+  return `$${Math.abs(b).toFixed(0)}B`;
 }
 
-function fmtDelta(billions: number | null | undefined): string {
-  if (billions == null) return "—";
-  const sign = billions < 0 ? "-" : "+";
-  const abs  = Math.abs(billions);
-  const t    = abs / 1_000;
-  const str  = t >= 10 ? t.toFixed(1) : t >= 1 ? t.toFixed(2) : t.toFixed(3);
-  return `${sign}$${str}T`;
+function fmtDelta(b: number): string {
+  const sign = b >= 0 ? "+" : "-";
+  const abs = Math.abs(b);
+  if (abs >= 1_000) {
+    const t = abs / 1_000;
+    return `${sign}$${t >= 10 ? t.toFixed(1) : t.toFixed(2)}T`;
+  }
+  return `${sign}$${abs.toFixed(0)}B`;
 }
 
-function fmtPct(pct: number | null | undefined): string {
-  if (pct == null) return "—";
-  return `${pct.toFixed(1)}%`;
+function fmtRate(v: number | null): string {
+  if (v === null) return "—";
+  return `${v.toFixed(2)}%`;
+}
+
+function arrowIcon(arrow?: "up" | "down" | "flat"): string {
+  if (arrow === "up") return "↑";
+  if (arrow === "down") return "↓";
+  return "→";
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
+
 export default function MoneyPrinter() {
-  const [countries, setCountries] = useState<CountryData[]>([]);
-  const [printer,   setPrinter]   = useState<PrinterScore | null>(null);
-  const [loading,   setLoading]   = useState(true);
+  const [data, setData] = useState<PrinterData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
 
-    Promise.all([
-      fetch("/api/m2",      { signal: controller.signal })
-        .then((r) => { if (!r.ok) throw new Error(`m2 ${r.status}`);      return r.json() as Promise<M2Response>; }),
-      fetch("/api/printer", { signal: controller.signal })
-        .then((r) => { if (!r.ok) throw new Error(`printer ${r.status}`); return r.json() as Promise<PrinterScore>; }),
-    ])
-      .then(([m2Json, printerJson]) => {
-        setCountries(m2Json.countries);
-        setPrinter(printerJson);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
+    async function load(): Promise<void> {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/printer", { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as PrinterData;
+        if (!controller.signal.aborted) {
+          setData(json);
+          setLoading(false);
+        }
+      } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
+        setError("Data unavailable right now.");
         setLoading(false);
-      });
+      }
+    }
 
+    load();
     return () => controller.abort();
   }, []);
 
-  const score = printer?.score  ?? null;
-  const rg    = printer?.regime ?? "Normal";
-  const cfg   = regimeCfg(rg);
-  const pct   = score !== null ? Math.min(100, Math.max(0, score)) : 0;
+  const level = data?.brrrLevel ?? 0;
+  const cfg = levelCfg(level);
+  const pct = data ? Math.min(100, Math.max(0, data.score)) : 0;
 
-  // ── Skeleton table rows ───────────────────────────────────────────────
-  const skeletonRows = Array.from({ length: 6 }, (_, i) => (
-    <tr key={i}>
-      {Array.from({ length: 4 }, (__, j) => (
-        <td key={j} className="py-2 md:py-3 pr-3 md:pr-4">
-          <div className="h-3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: j === 0 ? "5rem" : "2.5rem" }} />
-          {j === 3 && (
-            <div className="h-2.5 mt-1 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: "1.75rem" }} />
-          )}
-        </td>
-      ))}
-    </tr>
-  ));
+  // ── Skeleton ──────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <section className="relative w-full px-1 py-1 sm:px-0">
+        <div className="flex items-center gap-2 mb-5">
+          <span
+            className="material-symbols-outlined shrink-0 text-brand-500 text-[24px] leading-none"
+            aria-hidden="true"
+            style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+          >
+            print
+          </span>
+          <div className="h-9 w-40 rounded bg-gray-100 dark:bg-gray-800 animate-pulse sm:h-10" />
+        </div>
+        <div className="space-y-4 animate-pulse">
+          <div className="h-20 rounded-xl bg-gray-100 dark:bg-gray-800" />
+          <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800" />
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-24 rounded-xl bg-gray-100 dark:bg-gray-800" />
+            ))}
+          </div>
+          <div className="h-32 rounded-xl bg-gray-100 dark:bg-gray-800" />
+        </div>
+      </section>
+    );
+  }
 
-  return (
-    <div className="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-7 h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4 md:mb-5">
-        <h3 className="text-lg md:text-xl font-semibold text-gray-800 dark:text-white/90">
-          Money Printer
-        </h3>
-      </div>
-
-      {/* ── US Printer Score ───────────────────────────────────────────── */}
-      <div className="mb-4 md:mb-5 pb-4 md:pb-5 border-b border-gray-100 dark:border-gray-800">
-        {/* Score row */}
-        <div className="flex items-center justify-between mb-2 md:mb-3">
-          {loading ? (
-            <div className="w-12 h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-          ) : (
-            <span className={`text-sm md:text-base font-bold tabular-nums ${score !== null ? cfg.color : "text-gray-400"}`}>
-              {score !== null ? `${score}/100` : "—"}
-            </span>
-          )}
-          <span className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            US Printer Score
+  // ── Error state ───────────────────────────────────────────────────────
+  if (error || !data) {
+    return (
+      <section className="relative w-full px-1 py-1 sm:px-0">
+        <div className="flex items-center gap-2 mb-5">
+          <span
+            className="material-symbols-outlined shrink-0 text-brand-500 text-[24px] leading-none"
+            aria-hidden="true"
+            style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+          >
+            print
+          </span>
+          <span className="text-3xl font-semibold leading-none text-gray-400 dark:text-gray-500 sm:text-4xl">
+            —
           </span>
         </div>
+        <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
+          {error ?? "No data available."}
+        </div>
+      </section>
+    );
+  }
 
-        {/* Progress bar */}
-        <div className="h-1.5 md:h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mb-2 md:mb-3">
-          {loading ? (
-            <div className="h-full w-1/3 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
-          ) : score !== null ? (
-            <div
-              className={`h-full rounded-full transition-all duration-700 ${cfg.bg}`}
-              style={{ width: `${pct}%` }}
-            />
-          ) : null}
+  return (
+    <section className="relative w-full px-1 py-1 sm:px-0">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 mb-5">
+        <span
+          className="material-symbols-outlined shrink-0 text-brand-500 text-[24px] leading-none"
+          aria-hidden="true"
+          style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+        >
+          print
+        </span>
+        <span className={`text-3xl font-semibold leading-none sm:text-4xl ${cfg.color}`}>
+          {data.regime}
+        </span>
+      </div>
+
+      {/* ── BRRR Level Hero ────────────────────────────────────────────── */}
+      <div className={`rounded-xl p-4 md:p-5 mb-4 ${cfg.bg}`}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+              BRRR Level
+            </div>
+            <div className={`text-3xl md:text-4xl font-bold tabular-nums ${cfg.color}`}>
+              {data.brrrLevel} <span className="text-lg md:text-xl font-normal text-gray-400 dark:text-gray-500">/ 5</span>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className={`text-sm md:text-base font-semibold ${cfg.color}`}>
+              {data.regime}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {data.status}
+            </div>
+          </div>
         </div>
 
-        {/* Regime label + indicator pills */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {loading ? (
-            <div className="w-20 h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-          ) : (
-            <span className={`text-xs md:text-sm font-semibold ${score !== null ? cfg.color : "text-gray-400"}`}>
-              {score !== null ? rg : "—"}
-            </span>
-          )}
+        {/* Level bar (5 segments) */}
+        <div className="flex gap-1">
+          {[0, 1, 2, 3, 4].map((i) => {
+            const segCfg = levelCfg(i + 1);
+            const active = data.brrrLevel > i;
+            return (
+              <div
+                key={i}
+                className={`h-2 flex-1 rounded-full transition-all duration-500 ${
+                  active ? segCfg.barColor : "bg-gray-200 dark:bg-gray-700"
+                }`}
+              />
+            );
+          })}
+        </div>
 
-          {!loading && printer?.indicators?.map((ind) => (
-            <span
+        {/* Liquidity change callout */}
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400">Liquidity Δ (30d):</span>
+          <span className={`text-sm font-bold tabular-nums ${
+            data.liquidity.change30d >= 0 ? "text-emerald-500 dark:text-emerald-400" : "text-red-500 dark:text-red-400"
+          }`}>
+            {fmtDelta(data.liquidity.change30d)}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Composite progress bar ─────────────────────────────────────── */}
+      <div className="mb-4">
+        <div className="flex justify-between items-center mb-1">
+          <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+            Composite Score
+          </span>
+          <span className={`text-xs font-bold tabular-nums ${cfg.color}`}>
+            {data.score}/100
+          </span>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ${cfg.barColor}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* ── Three Pillar Cards ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {data.indicators.filter((ind) => ind.weight > 0).map((ind) => {
+          const isElevated = ind.elevated;
+          return (
+            <div
               key={ind.label}
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
-                ind.elevated
-                  ? "bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-500/10 dark:border-orange-500/30 dark:text-orange-400"
-                  : "bg-gray-50 border-gray-200 text-gray-500 dark:bg-white/5 dark:border-gray-700 dark:text-gray-400"
+              className={`rounded-xl border p-3 md:p-4 ${
+                isElevated
+                  ? "border-orange-200 bg-orange-50/50 dark:border-orange-500/30 dark:bg-orange-500/5"
+                  : "border-gray-200 bg-white dark:border-gray-700 dark:bg-white/[0.02]"
               }`}
             >
-              <span className={`w-1 h-1 rounded-full shrink-0 ${ind.elevated ? "bg-orange-400" : "bg-gray-300 dark:bg-gray-600"}`} />
-              {ind.label}
-            </span>
-          ))}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] md:text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  {ind.label}
+                </span>
+                <span className={`text-sm font-bold ${
+                  isElevated ? "text-orange-500 dark:text-orange-400" : "text-gray-600 dark:text-gray-300"
+                }`}>
+                  {arrowIcon(ind.arrow)}
+                </span>
+              </div>
+              <div className={`text-lg md:text-xl font-bold tabular-nums ${
+                isElevated ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
+              }`}>
+                {ind.score}<span className="text-xs font-normal text-gray-400">/100</span>
+              </div>
+              {ind.detail && (
+                <div className="text-[10px] md:text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {ind.detail}
+                </div>
+              )}
+              <div className="h-1 w-full rounded-full bg-gray-200 dark:bg-gray-700 mt-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isElevated ? "bg-orange-400" : "bg-gray-300 dark:bg-gray-600"
+                  }`}
+                  style={{ width: `${Math.min(100, ind.score)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Repo Stress Alert ──────────────────────────────────────────── */}
+      {data.rates.repoStress && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/50 dark:border-red-500/30 dark:bg-red-500/5 p-3 flex items-center gap-2">
+          <span className="text-red-500 text-sm">⚠️</span>
+          <span className="text-xs font-medium text-red-600 dark:text-red-400">
+            Repo Stress Detected — SOFR elevated {data.rates.sofrSpread !== null ? `+${(data.rates.sofrSpread * 100).toFixed(0)}bps` : ""} above Fed Funds
+          </span>
+        </div>
+      )}
+
+      {/* ── Detailed Breakdown ─────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-3 md:px-4 py-2 md:py-3 bg-gray-50 dark:bg-white/[0.02] border-b border-gray-200 dark:border-gray-700">
+          <span className="text-[10px] md:text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Breakdown
+          </span>
+        </div>
+        <div className="divide-y divide-gray-100 dark:divide-gray-800">
+          {/* Liquidity section */}
+          <div className="px-3 md:px-4 py-2.5 md:py-3">
+            <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
+              Liquidity Formula
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">Fed Balance Sheet</div>
+                <div className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">{fmtBillions(data.liquidity.walcl)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">Reverse Repo</div>
+                <div className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">−{fmtBillions(data.liquidity.rrp)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">Treasury Account</div>
+                <div className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">−{fmtBillions(data.liquidity.tga)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">= Net Liquidity</div>
+                <div className="font-bold text-gray-800 dark:text-white tabular-nums">{fmtBillions(data.liquidity.current)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Rates section */}
+          <div className="px-3 md:px-4 py-2.5 md:py-3">
+            <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
+              Interest Rate Pressure
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">Fed Funds Rate</div>
+                <div className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">{fmtRate(data.rates.fedFunds)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">2Y Treasury</div>
+                <div className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">{fmtRate(data.rates.yield2y)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">SOFR</div>
+                <div className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">{fmtRate(data.rates.sofr)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Forward signal section */}
+          <div className="px-3 md:px-4 py-2.5 md:py-3">
+            <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
+              Prediction Markets (Forward Signal)
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">Rate Cut Probability</div>
+                <div className={`font-semibold tabular-nums ${
+                  data.forward.rateCutProb >= 60
+                    ? "text-orange-500 dark:text-orange-400"
+                    : data.forward.rateCutProb >= 0
+                      ? "text-gray-700 dark:text-gray-200"
+                      : "text-gray-400 dark:text-gray-500"
+                }`}>
+                  {data.forward.rateCutProb >= 0 ? `${data.forward.rateCutProb}%` : "—"}
+                  {data.forward.rateCutProb >= 80 && (
+                    <span className="ml-1 text-[10px] text-red-500 dark:text-red-400 font-medium">printer likely</span>
+                  )}
+                  {data.forward.rateCutProb >= 60 && data.forward.rateCutProb < 80 && (
+                    <span className="ml-1 text-[10px] text-orange-500 dark:text-orange-400 font-medium">BRRR risk rising</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-400 dark:text-gray-500 mb-0.5">Recession Probability</div>
+                <div className={`font-semibold tabular-nums ${
+                  data.forward.recessionProb >= 50
+                    ? "text-red-500 dark:text-red-400"
+                    : data.forward.recessionProb >= 0
+                      ? "text-gray-700 dark:text-gray-200"
+                      : "text-gray-400 dark:text-gray-500"
+                }`}>
+                  {data.forward.recessionProb >= 0 ? `${data.forward.recessionProb}%` : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* ── M1 + M2 per-bank table ─────────────────────────────────────── */}
-      <div className="overflow-x-auto flex-1">
-        <table className="w-full">
-          <thead>
-            <tr className="text-[10px] md:text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-              <th className="text-left pb-2 md:pb-3 pr-3 md:pr-4">Bank</th>
-              <th className="text-right pb-2 md:pb-3 pr-3 md:pr-4">M1</th>
-              <th className="text-right pb-2 md:pb-3 pr-3 md:pr-4">M2</th>
-              <th className="text-right pb-2 md:pb-3">Gross Debt</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {loading
-              ? skeletonRows
-              : countries.map((c: CountryData) => {
-                  const m2Current = c.m2USD ?? c.latestUSD ?? null;
-                  const m2Change  = c.m2ChangeUSD ?? c.printedUSD ?? null;
-
-                  const isUSWithPrinter = c.id === "US" && printer !== null;
-                  const rowScore  = isUSWithPrinter ? printer!.score  : c.printerScore ?? 0;
-                  const rowRegime = isUSWithPrinter ? printer!.regime : c.scoreRegime ?? "Normal";
-                  const styles = REGIME_BADGE[rowRegime] ?? REGIME_BADGE.Normal;
-
-                  // Debt-to-GDP colour: green ≤ 60 %, yellow 60–90 %, red > 90 %
-                  const debtCls = c.debtToGDP == null
-                    ? "text-gray-400 dark:text-gray-500"
-                    : c.debtToGDP > 90
-                      ? "text-red-500 dark:text-red-400"
-                      : c.debtToGDP > 60
-                        ? "text-yellow-500 dark:text-yellow-300"
-                        : "text-emerald-500 dark:text-emerald-400";
-
-                  return (
-                    <tr key={c.id}>
-                      {/* Bank + Score badge */}
-                      <td className="py-2 md:py-3 pr-3 md:pr-4">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {!c.error && (
-                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium shrink-0 ${styles.badge}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
-                              {rowScore}/100
-                            </span>
-                          )}
-                          <span className="text-base md:text-lg leading-none select-none">{c.flag}</span>
-                          <span className="text-xs md:text-sm font-semibold text-gray-700 dark:text-white/80">{c.name}</span>
-                        </div>
-                      </td>
-
-                      {/* M1 current + Δ stacked */}
-                      <td className="py-2 md:py-3 pr-3 md:pr-4 text-right">
-                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
-                          {c.error ? "—" : c.m1DataMissing ? (
-                          <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
-                          ) : fmtUSD(c.m1USD)}
-                        </div>
-                        {!c.error && !c.m1DataMissing && (
-                          <div className={`text-[10px] md:text-xs tabular-nums ${
-                            c.m1ChangeUSD == null
-                              ? "text-gray-400 dark:text-gray-500"
-                              : c.m1ChangeUSD < 0
-                                ? "text-red-400 dark:text-red-400"
-                                : "text-emerald-500 dark:text-emerald-400"
-                          }`}>
-                            {fmtDelta(c.m1ChangeUSD)}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* M2 current + Δ stacked */}
-                      <td className="py-2 md:py-3 pr-3 md:pr-4 text-right">
-                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
-                          {c.error ? "—" : fmtUSD(m2Current)}
-                        </div>
-                        {!c.error && (
-                          <div className={`text-[10px] md:text-xs tabular-nums ${
-                            m2Change == null
-                              ? "text-gray-400 dark:text-gray-500"
-                              : m2Change < 0
-                                ? "text-red-400 dark:text-red-400"
-                                : "text-emerald-500 dark:text-emerald-400"
-                          }`}>
-                            {fmtDelta(m2Change)}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Gross Debt (USD) + Debt/GDP % stacked */}
-                      <td className="py-2 md:py-3 text-right">
-                        <div className="text-xs md:text-sm tabular-nums text-gray-700 dark:text-gray-200">
-                          {c.error ? "—" : fmtUSD(c.grossDebtUSD)}
-                        </div>
-                        {!c.error && c.debtToGDP != null && (
-                          <div className={`text-[10px] md:text-xs tabular-nums ${debtCls}`}>
-                            {fmtPct(c.debtToGDP)}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    </section>
   );
 }

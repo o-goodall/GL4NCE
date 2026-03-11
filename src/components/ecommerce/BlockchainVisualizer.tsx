@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CubeBlockIcon } from "../../icons";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,15 @@ interface RecommendedFees {
   minimumFee:  number;
 }
 
+interface HashrateEntry {
+  timestamp: number;
+  avgHashrate: number;
+}
+
+interface HashrateResponse {
+  hashrates: HashrateEntry[];
+}
+
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
 type CacheEntry<T> = { data: T; fetchedAt: number };
@@ -71,25 +81,26 @@ const BLOCKS_KEY        = "btc-blocks-v1";
 const MEMPOOL_KEY       = "btc-mempool-v1";
 const DIFF_KEY          = "btc-diff-adj-v1";
 const FEES_KEY          = "btc-fees-v1";
+const HASHRATE_KEY      = "btc-hashrate-v1";
 
 const BLOCKS_TTL        = 60_000;
 const MEMPOOL_TTL       = 30_000;
 const DIFF_TTL          = 5 * 60_000;
 const FEES_TTL          = 60_000;
+const HASHRATE_TTL      = 5 * 60_000;
 
 const POLL_MS           = 60_000;
 const MAX_BLOCKS        = 6;
 const HALVING_INTERVAL  = 210_000;
 const SATS_PER_BTC      = 1e8;
 const FEE_SEPARATOR     = " · ";
-/** Max block weight in weight-units (4 WU per vbyte × 1,000,000 vbytes) */
-const MAX_BLOCK_WEIGHT  = 4_000_000;
 /** Approximate max block vsize in vbytes — used for pending-block fill */
 const MAX_BLOCK_VSIZE   = 1_000_000;
+/** Confirmed-block waterfill scale: 0 tx empty, 2500 tx full */
+const MAX_BLOCK_TX_FILL = 2_500;
 
 // Block card dimensions — keep in sync with skeleton placeholders
-const BLOCK_CARD_W            = "w-[108px]";
-const PENDING_BLOCK_W         = "w-[120px]";
+const BLOCK_CARD_W            = "w-[120px]";
 /** Fixed height for loading skeleton cards — matches natural card height */
 const BLOCK_CARD_SKELETON_H   = "h-[120px]";
 
@@ -101,8 +112,9 @@ const PENDING_SEAL_MS             = 800;
 const BLOCK_ENTER_DURATION  = "0.6s";
 const FILL_PULSE_DURATION   = "3s";
 const TX_RISE_DURATION      = "2.4s";
-const GLOW_PULSE_DURATION   = "2.8s";
 const PENDING_SEAL_DURATION = "0.8s";
+const CHAIN_SNAP_BACK_MS    = 2600;
+const CHAIN_SNAP_ANIM_MS    = 320;
 
 // Particle config
 const PARTICLE_POSITIONS       = [10, 32, 58, 82] as const;
@@ -144,19 +156,55 @@ function pctColor(n: number | null): string {
   return "text-gray-400 dark:text-gray-500";
 }
 
+function pctDotColor(n: number | null): string {
+  if (n === null) return "bg-gray-300 dark:bg-gray-600";
+  if (n > 0) return "bg-positive";
+  if (n < 0) return "bg-red-400";
+  return "bg-gray-300 dark:bg-gray-600";
+}
+
+function getCycleGradient(progressPct: number): string {
+  void progressPct;
+  return "linear-gradient(to right, #FFD700, #FFC700, #FF8C00, #FF4500, #FF0000, #B22222, #CD5C5C, #E0FFFF)";
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface ProgressRowProps {
   label:           string;
   pct:             number | null;
   percentageLabel: string | null;
-  right:           string | null;
+  right:           React.ReactNode;
   /** CSS gradient string for the filled bar, e.g. "linear-gradient(to right, ...)" */
   gradient:        string;
   loading:         boolean;
 }
 
 function ProgressRow({ label, pct, percentageLabel, right, gradient, loading }: ProgressRowProps) {
+  const [displayedPct, setDisplayedPct] = useState(0);
+
+  useEffect(() => {
+    if (loading || pct === null) {
+      setDisplayedPct(0);
+      return;
+    }
+
+    // Match DCA feel: render 0 first, then animate left->right on next paint.
+    setDisplayedPct(0);
+    let frame1 = 0;
+    let frame2 = 0;
+    frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        setDisplayedPct(Math.min(100, Math.max(0, pct)));
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+    };
+  }, [pct, loading]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -177,17 +225,17 @@ function ProgressRow({ label, pct, percentageLabel, right, gradient, loading }: 
         ) : null}
       </div>
       <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-        {loading ? (
-          <div className="h-full w-2/5 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
-        ) : pct !== null ? (
-          <div
-            className="h-full rounded-full transition-all duration-700"
-            style={{
-              width: `${Math.min(100, Math.max(0, pct))}%`,
-              background: gradient,
-            }}
-          />
-        ) : null}
+        <div
+          className="h-full rounded-full transition-all duration-1000 ease-out"
+          style={{
+            width: `${displayedPct}%`,
+            background: gradient,
+            // Anchor gradient to full track width; reveal it progressively via fill width.
+            backgroundSize: `${10000 / Math.max(displayedPct, 1)}% 100%`,
+            backgroundPosition: "left center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
       </div>
     </div>
   );
@@ -197,23 +245,44 @@ interface MiniStatProps {
   label:   string;
   value:   string;
   sub?:    string;
-  color?:  string;
+  active?: boolean;
+  valueColor?: string;
+  dotColor?: string;
   loading: boolean;
 }
 
-function MiniStat({ label, value, sub, color = "text-gray-800 dark:text-white/90", loading }: MiniStatProps) {
+function MiniStat({
+  label,
+  value,
+  sub,
+  active = false,
+  valueColor = "text-gray-800 dark:text-white/90",
+  dotColor = "bg-gray-300 dark:bg-gray-600",
+  loading,
+}: MiniStatProps) {
   return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[9px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide leading-none">
-        {label}
-      </span>
+    <div className="flex flex-col items-center gap-0.5 py-2.5 px-0.5 min-w-0 text-center">
+      <div className="flex items-center gap-1">
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500 ${loading ? "bg-gray-300 dark:bg-gray-600" : dotColor}`} />
+        <span
+          className={`text-[10px] font-semibold leading-tight transition-colors duration-300 ${
+            active ? "text-gray-800 dark:text-white/90" : "text-gray-400 dark:text-gray-500"
+          }`}
+        >
+          {label}
+        </span>
+      </div>
+
       {loading ? (
-        <div className="h-4 w-12 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        <div className="h-3.5 w-12 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
       ) : (
-        <span className={`text-xs font-bold tabular-nums leading-tight ${color}`}>{value}</span>
+        <span className={`text-[10px] tabular-nums transition-colors duration-300 ${active ? valueColor : "text-gray-400 dark:text-gray-500"}`}>
+          {value}
+        </span>
       )}
+
       {sub && !loading && (
-        <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">{sub}</span>
+        <span className="text-[10px] text-gray-400 dark:text-gray-500 leading-none">{sub}</span>
       )}
     </div>
   );
@@ -239,19 +308,19 @@ function PendingBlock({
 
   if (loading) {
     return (
-      <div className={`flex-none ${PENDING_BLOCK_W} ${BLOCK_CARD_SKELETON_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
+      <div className={`flex-none w-[120px] ${BLOCK_CARD_SKELETON_H} rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse`} />
     );
   }
 
   return (
-    /* Outer div: owns the 3D box-shadow + seal animation — no overflow clip so shadow shows */
+    /* Flat 2D pending card shell (same size; outlined inner card) */
     <div
-      className={`flex-none ${PENDING_BLOCK_W} btc-block-3d-pending rounded-xl ${
+      className={`flex-none w-[120px] ${BLOCK_CARD_SKELETON_H} rounded-xl ${
         isSealing ? `animate-[btc-pending-seal_${PENDING_SEAL_DURATION}_ease-in-out_both]` : ""
       }`}
     >
       {/* Inner div: clips the rising fill & particles inside the card boundary */}
-      <div className="relative overflow-hidden rounded-[10px] border-2 border-dashed border-amber-400/60 dark:border-amber-500/35 bg-gray-50 dark:bg-white/[0.025]">
+      <div className="relative h-full overflow-hidden rounded-[10px] border-2 border-dashed border-yellow-400/70 dark:border-yellow-300/45 bg-gray-50 dark:bg-white/[0.025]">
 
         {/* Gradient fill — rises from the bottom */}
         {fillPct !== null && (
@@ -260,7 +329,7 @@ function PendingBlock({
             style={{
               height: `${fillPct}%`,
               background:
-                "linear-gradient(to top, rgba(245,158,11,0.28) 0%, rgba(251,191,36,0.10) 70%, transparent 100%)",
+                "linear-gradient(to top, rgba(250,204,21,0.32) 0%, rgba(254,240,138,0.16) 70%, transparent 100%)",
             }}
           />
         )}
@@ -269,7 +338,7 @@ function PendingBlock({
         {PARTICLE_POSITIONS.map((leftPct, i) => (
           <div
             key={i}
-            className={`absolute rounded-full bg-amber-400 dark:bg-amber-500 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
+            className={`absolute rounded-full bg-yellow-400 dark:bg-yellow-300 animate-[btc-tx-rise_${TX_RISE_DURATION}_ease-in_infinite]`}
             style={{
               width:          i % 2 === 0 ? "5px" : "4px",
               height:         i % 2 === 0 ? "5px" : "4px",
@@ -283,16 +352,14 @@ function PendingBlock({
 
         {/* Card content — stacked naturally, no flex-1 spacer */}
         <div className="relative z-10 p-2.5">
-          {/* Header */}
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none">
-              Next
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500 animate-pulse shrink-0" />
-          </div>
-
-          <div className="text-sm font-bold tabular-nums text-gray-700 dark:text-gray-200 leading-tight">
-            {nextHeight !== null ? `#${fmtNum(nextHeight)}` : "—"}
+          <div className="mb-1 flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1">
+              <CubeBlockIcon className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-300" aria-hidden="true" />
+              <span className="text-sm font-bold tabular-nums text-gray-700 dark:text-gray-200 leading-tight">
+                {nextHeight !== null ? fmtNum(nextHeight) : "—"}
+              </span>
+            </div>
+            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 dark:bg-yellow-300 animate-pulse shrink-0" aria-label="Live" />
           </div>
 
           {/* Stats */}
@@ -312,27 +379,6 @@ function PendingBlock({
               </div>
             )}
           </div>
-
-          {/* Fill bar */}
-          {fillPct !== null && (
-            <div className="mt-2.5">
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold leading-none">
-                  {fillPct >= 100 ? "Full" : `${fillPct}%`}
-                </span>
-                <span className="text-[8px] text-gray-400 dark:text-gray-500 leading-none">fill</span>
-              </div>
-              <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-[1200ms]"
-                  style={{
-                    width: `${fillPct}%`,
-                    background: "linear-gradient(to right, rgba(245,158,11,0.85), rgba(251,146,60,0.95))",
-                  }}
-                />
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -350,85 +396,73 @@ interface BlockCardProps {
 function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
   const reward   = block.extras?.reward;
   const pool     = block.extras?.pool?.name;
-  const fullness = Math.min(100, Math.round((block.weight / MAX_BLOCK_WEIGHT) * 100));
+  const txFillPct = Math.min(100, Math.round((block.tx_count / MAX_BLOCK_TX_FILL) * 100));
 
   return (
     <div
-      className={`flex-none ${BLOCK_CARD_W} rounded-xl border p-2.5 transition-all ${
-        isLatest ? "btc-block-3d-latest" : "btc-block-3d"
-      } ${
+      className={`relative overflow-hidden flex-none ${BLOCK_CARD_W} ${BLOCK_CARD_SKELETON_H} rounded-xl border p-2.5 transition-all ${
         isNew ? `animate-[btc-block-enter_${BLOCK_ENTER_DURATION}_ease-out_both]` : ""
-      } ${
-        isLatest
-          ? `bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30 animate-[btc-glow-pulse_${GLOW_PULSE_DURATION}_ease-in-out_infinite]`
-          : "bg-white border-gray-100 dark:bg-white/[0.025] dark:border-gray-800"
-      }`}
+      } bg-white border-gray-100 dark:bg-white/[0.025] dark:border-gray-800`}
     >
-      {/* Height */}
-      <div className={`text-sm font-bold tabular-nums leading-tight ${
-        isLatest ? "text-orange-600 dark:text-orange-400" : "text-gray-700 dark:text-gray-200"
-      }`}>
-        #{fmtNum(block.height)}
-      </div>
+      {/* Completed-block water fill — same color for all confirmed blocks */}
+      <div
+        aria-hidden="true"
+        className="absolute bottom-0 left-0 right-0 transition-all duration-700"
+        style={{
+          height: `${txFillPct}%`,
+          background: "linear-gradient(to top, rgba(249,115,22,0.24) 0%, rgba(253,186,116,0.10) 68%, transparent 100%)",
+        }}
+      />
 
-      {/* Time */}
-      <div className={`text-[9px] mt-0.5 leading-none ${
-        isLatest ? "text-orange-400/80 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
-      }`}>
-        {timeAgo(block.timestamp)} ago
-      </div>
-
-      {/* Key-value detail rows — directly below, no flex-1 spacer */}
-      <div className="space-y-1 mt-2.5">
-        <div className="flex items-center justify-between gap-1">
-          <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">Txs</span>
-          <span className="text-[9px] font-semibold tabular-nums text-gray-700 dark:text-gray-200 leading-none">
-            {fmtNum(block.tx_count)}
+      <div className="relative z-10">
+        {/* Height */}
+        <div className="flex items-center gap-1">
+          <CubeBlockIcon
+            className={`h-3.5 w-3.5 ${isLatest ? "text-gray-900 dark:text-white" : "text-gray-900 dark:text-gray-100"}`}
+            aria-hidden="true"
+          />
+          <span className={`text-sm font-bold tabular-nums leading-tight ${
+            isLatest ? "text-gray-900 dark:text-white" : "text-gray-900 dark:text-gray-100"
+          }`}>
+            {fmtNum(block.height)}
           </span>
         </div>
-        <div className="flex items-center justify-between gap-1">
-          <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">Size</span>
-          <span className="text-[9px] tabular-nums text-gray-500 dark:text-gray-400 leading-none">
-            {fmtBytes(block.size)}
-          </span>
+
+        {/* Time */}
+        <div className="text-[9px] mt-0.5 leading-none text-gray-700 dark:text-gray-300">
+          {timeAgo(block.timestamp)} ago
         </div>
-        {reward != null && (
+
+        {/* Key-value detail rows */}
+        <div className="space-y-1 mt-2">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[9px] text-gray-400 dark:text-gray-500 leading-none">Reward</span>
-            <span className="text-[9px] tabular-nums text-amber-500 dark:text-amber-400 leading-none">
-              {fmtReward(reward)}
+            <span className="text-[9px] text-gray-700 dark:text-gray-300 leading-none">Txs</span>
+            <span className="text-[9px] font-semibold tabular-nums text-gray-900 dark:text-white leading-none">
+              {fmtNum(block.tx_count)}
             </span>
           </div>
-        )}
-        {pool && (
-          <div
-            className={`text-[8px] truncate leading-none mt-0.5 ${
-              isLatest ? "text-orange-400/70 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
-            }`}
-            title={pool}
-          >
-            {pool}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[9px] text-gray-700 dark:text-gray-300 leading-none">Size</span>
+            <span className="text-[9px] tabular-nums text-gray-900 dark:text-white leading-none">
+              {fmtBytes(block.size)}
+            </span>
           </div>
-        )}
-      </div>
-
-      {/* Fullness bar */}
-      <div className="mt-2.5">
-        <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-700"
-            style={{
-              width: `${fullness}%`,
-              background: isLatest
-                ? "linear-gradient(to right, rgba(251,146,60,0.8), rgba(245,158,11,0.95))"
-                : "rgba(156,163,175,0.6)",
-            }}
-          />
-        </div>
-        <div className={`text-[8px] tabular-nums mt-0.5 text-right leading-none ${
-          isLatest ? "text-orange-400/70 dark:text-orange-500/60" : "text-gray-400 dark:text-gray-500"
-        }`}>
-          {fullness}%
+          {reward != null && (
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[9px] text-gray-700 dark:text-gray-300 leading-none">Reward</span>
+              <span className="text-[9px] tabular-nums text-gray-900 dark:text-white leading-none">
+                {fmtReward(reward)}
+              </span>
+            </div>
+          )}
+          {pool && (
+            <div
+              className="text-[8px] truncate leading-none mt-0.5 text-gray-700 dark:text-gray-300"
+              title={pool}
+            >
+              {pool}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -441,7 +475,7 @@ function BlockCard({ block, isLatest, isNew }: BlockCardProps) {
 function GhostBlockCard() {
   return (
     <div
-      className={`flex-none ${BLOCK_CARD_W} btc-block-3d rounded-xl border border-gray-100 dark:border-gray-800 p-2.5 bg-gray-50 dark:bg-white/[0.015]`}
+      className={`flex-none ${BLOCK_CARD_W} rounded-xl border border-gray-100 dark:border-gray-800 p-2.5 bg-gray-50 dark:bg-white/[0.015]`}
     >
       {/* Height placeholder */}
       <div className="h-[14px] w-[56px] rounded bg-gray-100 dark:bg-gray-800" />
@@ -493,6 +527,7 @@ export default function BlockchainVisualizer() {
   const [mempool,    setMempool]    = useState<MempoolInfo | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyAdjustment | null>(null);
   const [fees,       setFees]       = useState<RecommendedFees | null>(null);
+  const [hashrate,   setHashrate]   = useState<HashrateResponse | null>(null);
   const [loading,    setLoading]    = useState(true);
 
   const prevHeightRef             = useRef<number | null>(null);
@@ -500,6 +535,10 @@ export default function BlockchainVisualizer() {
   const [isSealingPending,   setIsSealingPending]   = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const chainScrollRef = useRef<HTMLDivElement | null>(null);
+  const chainSnapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chainSnapRafRef = useRef<number | null>(null);
+  const isProgrammaticChainScrollRef = useRef(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -538,13 +577,22 @@ export default function BlockchainVisualizer() {
           .then((d) => { setCache(FEES_KEY, d); return d; });
       })();
 
-      Promise.allSettled([fetchBlocks, fetchMempool, fetchDiff, fetchFees]).then(
-        ([bRes, mRes, dRes, fRes]) => {
+      const fetchHashrate: Promise<HashrateResponse> = (() => {
+        const c = bust ? null : getCache<HashrateResponse>(HASHRATE_KEY, HASHRATE_TTL);
+        if (c) return Promise.resolve(c);
+        return fetch("https://mempool.space/api/v1/mining/hashrate/3d", { signal })
+          .then((r) => { if (!r.ok) throw new Error(`hashrate ${r.status}`); return r.json() as Promise<HashrateResponse>; })
+          .then((d) => { setCache(HASHRATE_KEY, d); return d; });
+      })();
+
+      Promise.allSettled([fetchBlocks, fetchMempool, fetchDiff, fetchFees, fetchHashrate]).then(
+        ([bRes, mRes, dRes, fRes, hRes]) => {
           if (signal.aborted) return;
           if (bRes.status === "fulfilled") setBlocks(bRes.value.slice(0, MAX_BLOCKS));
           if (mRes.status === "fulfilled") setMempool(mRes.value);
           if (dRes.status === "fulfilled") setDifficulty(dRes.value);
           if (fRes.status === "fulfilled") setFees(fRes.value);
+          if (hRes.status === "fulfilled") setHashrate(hRes.value);
           setLoading(false);
         }
       );
@@ -558,6 +606,58 @@ export default function BlockchainVisualizer() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
+
+  // Snap the live chain back to its starting position after the user stops scrolling.
+  useEffect(() => {
+    return () => {
+      if (chainSnapTimerRef.current) clearTimeout(chainSnapTimerRef.current);
+      if (chainSnapRafRef.current !== null) cancelAnimationFrame(chainSnapRafRef.current);
+    };
+  }, []);
+
+  function animateChainSnapBack(el: HTMLDivElement): void {
+    if (chainSnapRafRef.current !== null) cancelAnimationFrame(chainSnapRafRef.current);
+
+    const startLeft = el.scrollLeft;
+    if (startLeft <= 0) return;
+
+    const startTime = performance.now();
+    const easeOutQuad = (t: number) => 1 - (1 - t) * (1 - t);
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / CHAIN_SNAP_ANIM_MS);
+      const eased = easeOutQuad(t);
+      isProgrammaticChainScrollRef.current = true;
+      el.scrollLeft = startLeft * (1 - eased);
+
+      if (t < 1) {
+        chainSnapRafRef.current = requestAnimationFrame(step);
+      } else {
+        isProgrammaticChainScrollRef.current = false;
+        chainSnapRafRef.current = null;
+      }
+    };
+
+    chainSnapRafRef.current = requestAnimationFrame(step);
+  }
+
+  function onChainScroll(): void {
+    if (isProgrammaticChainScrollRef.current) return;
+
+    if (chainSnapTimerRef.current) clearTimeout(chainSnapTimerRef.current);
+    if (chainSnapRafRef.current !== null) {
+      cancelAnimationFrame(chainSnapRafRef.current);
+      chainSnapRafRef.current = null;
+    }
+
+    chainSnapTimerRef.current = setTimeout(() => {
+      const el = chainScrollRef.current;
+      if (!el) return;
+      if (el.scrollLeft <= 0) return;
+      animateChainSnapBack(el);
+    }, CHAIN_SNAP_BACK_MS);
+  }
 
   // ── Detect new block → trigger animations ────────────────────────────────
   useEffect(() => {
@@ -599,77 +699,102 @@ export default function BlockchainVisualizer() {
     : "—";
   const feeSub = fees ? `fast${FEE_SEPARATOR}mid${FEE_SEPARATOR}slow` : undefined;
 
+  // Latest hashrate in EH/s
+  const latestHashrate = hashrate?.hashrates?.length
+    ? hashrate.hashrates[hashrate.hashrates.length - 1].avgHashrate / 1e18
+    : null;
+  const hashrateStr = latestHashrate !== null
+    ? `${latestHashrate.toFixed(1)} EH/s`
+    : "—";
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] h-full flex flex-col">
+    <section className="w-full px-1 py-1 sm:px-0">
 
       {/* ── Header ── */}
-      <div className="px-5 pt-5 pb-3 shrink-0">
-        <div>
-          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-tight">
-            Blockchain
-          </h3>
+      <div className="pt-2 pb-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <CubeBlockIcon className="h-6 w-6 text-brand-500" aria-label="Block" />
           {loading ? (
-            <div className="h-5 w-28 mt-0.5 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            <div className="h-7 w-24 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
           ) : blockHeight !== null ? (
-            <span className="text-xl font-bold tabular-nums text-gray-800 dark:text-white/90 leading-tight">
-              #{fmtNum(blockHeight)}
+            <span className="text-3xl font-semibold tabular-nums leading-none text-white sm:text-4xl">
+              {fmtNum(blockHeight)}
             </span>
           ) : null}
         </div>
       </div>
 
       {/* ── Progress bars: Halving + Epoch ── */}
-      <div className="px-5 pb-3.5 space-y-3 shrink-0">
+      <div className="pb-3.5 space-y-3 shrink-0">
         <ProgressRow
           label="Halving"
           pct={halvingPct}
           percentageLabel={halvingPct !== null ? `${halvingPct.toFixed(1)}%` : null}
-          right={blocksToHalving !== null ? `${fmtNum(blocksToHalving)} blocks left` : null}
-          gradient="linear-gradient(to right, rgba(245,158,11,0.8), rgba(251,191,36,0.95))"
+          right={blocksToHalving !== null ? (
+            <span className="flex items-center gap-0.5 text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+              <CubeBlockIcon className="h-[8px] w-[8px]" aria-hidden="true" />
+              {fmtNum(blocksToHalving)}
+            </span>
+          ) : null}
+          gradient={getCycleGradient(halvingPct ?? 0)}
           loading={loading}
         />
         <ProgressRow
           label="Epoch"
           pct={epochProgress}
           percentageLabel={epochProgress !== null ? `${epochProgress.toFixed(1)}%` : null}
-          right={remainingBlocks !== null ? `${fmtNum(remainingBlocks)} left` : null}
-          gradient="linear-gradient(to right, rgba(251,146,60,0.8), rgba(239,68,68,0.7))"
+          right={remainingBlocks !== null ? (
+            <span className="flex items-center gap-0.5 text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+              <CubeBlockIcon className="h-[8px] w-[8px]" aria-hidden="true" />
+              {fmtNum(remainingBlocks)}
+            </span>
+          ) : null}
+          gradient={getCycleGradient(epochProgress ?? 0)}
           loading={loading}
         />
       </div>
 
       {/* ── Stats row ── */}
-      <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-800 shrink-0">
-        <div className="grid grid-cols-4 gap-0 divide-x divide-gray-100 dark:divide-gray-800">
-          <div className="pr-3">
+      <div className="py-3 shrink-0">
+        <div className="grid grid-cols-4 gap-1">
+          <div>
             <MiniStat
               label="Est Diff"
               value={estDiffChange !== null ? fmtPct(estDiffChange) : "—"}
-              color={pctColor(estDiffChange)}
+              active={estDiffChange !== null}
+              valueColor={pctColor(estDiffChange)}
+              dotColor={pctDotColor(estDiffChange)}
               loading={loading}
             />
           </div>
-          <div className="px-3">
+          <div>
             <MiniStat
               label="Last Diff"
               value={lastDiffChange !== null ? fmtPct(lastDiffChange) : "—"}
-              color={pctColor(lastDiffChange)}
+              active={lastDiffChange !== null}
+              valueColor={pctColor(lastDiffChange)}
+              dotColor={pctDotColor(lastDiffChange)}
               loading={loading}
             />
           </div>
-          <div className="px-3">
+          <div>
             <MiniStat
-              label="Mempool"
-              value={mempoolCount !== null ? fmtNum(mempoolCount) : "—"}
-              sub={avgFeeRate !== null ? `${avgFeeRate} sat/vB` : undefined}
+              label="Hashrate"
+              value={hashrateStr}
+              active={latestHashrate !== null}
+              valueColor="text-gray-800 dark:text-white/90"
+              dotColor={latestHashrate !== null ? "bg-positive" : "bg-gray-300 dark:bg-gray-600"}
               loading={loading}
             />
           </div>
-          <div className="pl-3">
+          <div>
             <MiniStat
               label="Fees sat/vB"
               value={feeStr}
               sub={feeSub}
+              active={fees !== null}
+              valueColor="text-gray-800 dark:text-white/90"
+              dotColor={fees !== null ? "bg-positive" : "bg-gray-300 dark:bg-gray-600"}
               loading={loading}
             />
           </div>
@@ -677,16 +802,13 @@ export default function BlockchainVisualizer() {
       </div>
 
       {/* ── Live Chain — fills remaining height, cards float at natural height ── */}
-      <div className="flex-1 min-h-0 flex flex-col px-5 pb-5 pt-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-white/[0.008]">
-        <div className="flex items-center justify-between mb-3 shrink-0">
-          <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-            Live Chain
-          </span>
-          <span className="text-[9px] text-gray-400 dark:text-gray-500">older →</span>
-        </div>
-
+      <div className="flex-1 min-h-0 flex flex-col pb-3 pt-3">
         {/* Scrollable chain row — items-center keeps cards at natural height, centered */}
-        <div className="flex-1 min-h-0 flex items-center overflow-x-auto pb-1">
+        <div
+          ref={chainScrollRef}
+          onScroll={onChainScroll}
+          className="flex-1 min-h-0 flex items-center overflow-x-auto no-scrollbar pb-1"
+        >
 
           {/* Pending block */}
           <div className="flex items-center shrink-0">
@@ -742,6 +864,6 @@ export default function BlockchainVisualizer() {
               ))}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

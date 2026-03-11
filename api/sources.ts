@@ -65,6 +65,21 @@ export const RSS_SOURCES = [
   // Note: X/Twitter would be ideal but requires a paid API subscription.
   { name: "Reddit WorldNews",   url: "https://www.reddit.com/r/worldnews/new/.rss" },
   { name: "Reddit Geopolitics", url: "https://www.reddit.com/r/geopolitics/new/.rss" },
+  // ── GDELT targeted event queries (structured, machine-readable) ────────────
+  // Augment the general GDELT feeds with focused queries for specific event
+  // types the Flashpoints pipeline needs to surface reliably.  Each query
+  // targets a specific intelligence requirement; the timespan is tuned to the
+  // typical publication cadence for that topic.
+  { name: "GDELT Protests",  url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(protest+OR+unrest+OR+riot+OR+uprising+OR+demonstration+OR+civil+disobedience)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=1h" },
+  { name: "GDELT Conflict",  url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(armed+conflict+OR+insurgent+OR+rebel+offensive+OR+militant+attack+OR+guerrilla+OR+civil+war)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
+  { name: "GDELT Military",  url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(military+exercise+OR+troop+deployment+OR+naval+exercise+OR+carrier+strike+group+OR+defense+procurement+OR+arms+deal)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=25&sort=DateDesc&timespan=6h" },
+  { name: "GDELT Missiles",  url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(missile+test+OR+missile+launch+OR+ballistic+missile+OR+hypersonic+weapon+OR+nuclear+test+OR+weapons+test)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=15&sort=DateDesc&timespan=6h" },
+  { name: "GDELT NATO",      url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(nato+posture+OR+nato+readiness+OR+nato+deployment+OR+nato+exercise+OR+nato+statement)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=15&sort=DateDesc&timespan=6h" },
+  { name: "GDELT Carriers",  url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(carrier+strike+group+OR+carrier+battle+group+OR+fleet+deployment+OR+naval+task+force+OR+amphibious+ready+group)%20sourcelang:english&mode=ArtList&format=RSS&maxrecords=15&sort=DateDesc&timespan=24h" },
+  // ── Defense / military OSINT (no registration required) ─────────────────────
+  // USNI News (US Naval Institute) publishes the weekly Fleet Tracker and
+  // covers carrier group movements, naval exercises, and defense procurement.
+  { name: "USNI News", url: "https://news.usni.org/feed" },
 ];
 
 // ── Telegram public channels ─────────────────────────────────────────────────
@@ -134,6 +149,13 @@ export const SOURCE_WEIGHTS: Record<string, number> = {
   "Reddit UkrainianConflict": 0.6,
   "Reddit MiddleEastNews":    0.6,
   "Reddit BreakingNews":      0.5,
+  "GDELT Protests":           0.8,
+  "GDELT Conflict":           0.8,
+  "GDELT Military":           0.8,
+  "GDELT Missiles":           0.8,
+  "GDELT NATO":               0.8,
+  "GDELT Carriers":           0.8,
+  "USNI News":                1.0,
 };
 
 /**

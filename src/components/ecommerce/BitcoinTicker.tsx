@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
-import { ArrowUpIcon, ArrowDownIcon } from "../../icons";
+import { ArrowUpIcon, ArrowDownIcon, ReserveStageIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
 
 interface TickerData {
@@ -117,12 +117,10 @@ export default function BitcoinTicker() {
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
-        <span
-          className="w-5 h-5 flex items-center justify-center text-lg font-bold text-brand-500 leading-none"
-          aria-label="Bitcoin"
-        >
-          ₿
-        </span>
+        <ReserveStageIcon
+          className="w-5 h-5 text-brand-500"
+          aria-label="Reserve stage"
+        />
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           Bitcoin
         </h3>

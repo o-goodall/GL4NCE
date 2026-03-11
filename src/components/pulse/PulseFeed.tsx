@@ -69,7 +69,7 @@ const ALL_GROUP = "All";
 /** Max visible height of the article list before scrolling (mirrors Triggers). */
 const LIST_MAX_HEIGHT = 480;
 /** Shared outer container classes — kept consistent across all render states. */
-const OUTER_CLS = "rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6";
+const OUTER_CLS = "w-full px-1 py-1 sm:px-0";
 
 export default function PulseFeed() {
   const { data, loading, error, refresh } = usePulse();
@@ -113,8 +113,20 @@ export default function PulseFeed() {
     return (
       <div className={OUTER_CLS}>
         <div className="mb-4">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
-          <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
+          <div className="flex items-center gap-2.5">
+            <span
+              className="inline-flex items-center justify-center"
+              aria-hidden="true"
+            >
+              <span
+                className="material-symbols-outlined text-[#FFD300] text-[24px] leading-none"
+                style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+              >
+                radar
+              </span>
+            </span>
+            <h3 className="text-3xl sm:text-4xl font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
+          </div>
         </div>
         <div className="flex flex-col gap-2">
           {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
@@ -129,8 +141,20 @@ export default function PulseFeed() {
       <div className={OUTER_CLS}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
-            <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
+            <div className="flex items-center gap-2.5">
+              <span
+                className="inline-flex items-center justify-center"
+                aria-hidden="true"
+              >
+                <span
+                  className="material-symbols-outlined text-[#FFD300] text-[24px] leading-none"
+                  style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+                >
+                  radar
+                </span>
+              </span>
+              <h3 className="text-3xl sm:text-4xl font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
+            </div>
           </div>
           <button
             onClick={refresh}
@@ -153,8 +177,20 @@ export default function PulseFeed() {
       {/* Header — mirrors Triggers header structure */}
       <div className="flex flex-col gap-1 mb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
-          <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">General News / Context</p>
+          <div className="flex items-center gap-2.5">
+            <span
+              className="inline-flex items-center justify-center"
+              aria-hidden="true"
+            >
+              <span
+                className="material-symbols-outlined text-[#FFD300] text-[24px] leading-none"
+                style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+              >
+                radar
+              </span>
+            </span>
+            <h3 className="text-3xl sm:text-4xl font-semibold text-gray-800 dark:text-white/90">Pulse</h3>
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {data?.feedStats && (

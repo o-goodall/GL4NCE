@@ -469,22 +469,25 @@ export default function GeopoliticalMarkets() {
   );
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
+    <div className="w-full px-1 py-1 sm:px-0">
       {/* Header */}
       <div className="flex flex-col gap-1 mb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Triggers</h3>
-          <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-            {activeCat.subtitle} from{" "}
-            <a
-              href={activeCat.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-brand-600 dark:hover:text-brand-300"
+          <div className="flex items-center gap-2.5">
+            <span
+              className="inline-flex items-center justify-center"
+              aria-hidden="true"
             >
-              Polymarket
-            </a>
-          </p>
+              <span
+                className="material-symbols-outlined text-[#FFD300] text-[24px] leading-none"
+                style={{ fontFamily: '"Material Symbols Outlined"', fontFeatureSettings: '"liga"' }}
+              >
+                group_search
+              </span>
+            </span>
+            <h3 className="text-3xl sm:text-4xl font-semibold text-gray-800 dark:text-white/90">Triggers</h3>
+          </div>
+          <span className="mt-1 text-[10px] tabular-nums text-gray-400 dark:text-gray-500">Source: Polymarket</span>
         </div>
       </div>
 

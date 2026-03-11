@@ -22,6 +22,7 @@ const BarChart = lazy(() => import("./pages/Charts/BarChart"));
 const SignIn = lazy(() => import("./pages/AuthPages/SignIn"));
 const SignUp = lazy(() => import("./pages/AuthPages/SignUp"));
 const NotFound = lazy(() => import("./pages/OtherPage/NotFound"));
+const Settings = lazy(() => import("./pages/Settings"));
 
 export default function App() {
   return (
@@ -35,28 +36,21 @@ export default function App() {
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/intel" element={<Intel />} />
 
-            {/* Others Page */}
-            <Route path="/profile" element={<UserProfiles />} />
-            <Route path="/calendar" element={<Calendar />} />
-            <Route path="/blank" element={<Blank />} />
-
-            {/* Forms */}
-            <Route path="/form-elements" element={<FormElements />} />
-
-            {/* Tables */}
-            <Route path="/basic-tables" element={<BasicTables />} />
-
-            {/* Ui Elements */}
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/avatars" element={<Avatars />} />
-            <Route path="/badge" element={<Badges />} />
-            <Route path="/buttons" element={<Buttons />} />
-            <Route path="/images" element={<Images />} />
-            <Route path="/videos" element={<Videos />} />
-
-            {/* Charts */}
-            <Route path="/line-chart" element={<LineChart />} />
-            <Route path="/bar-chart" element={<BarChart />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/profile" element={<UserProfiles />} />
+            <Route path="/settings/calendar" element={<Calendar />} />
+            <Route path="/settings/blank" element={<Blank />} />
+            <Route path="/settings/form-elements" element={<FormElements />} />
+            <Route path="/settings/basic-tables" element={<BasicTables />} />
+            <Route path="/settings/alerts" element={<Alerts />} />
+            <Route path="/settings/avatars" element={<Avatars />} />
+            <Route path="/settings/badge" element={<Badges />} />
+            <Route path="/settings/buttons" element={<Buttons />} />
+            <Route path="/settings/images" element={<Images />} />
+            <Route path="/settings/videos" element={<Videos />} />
+            <Route path="/settings/line-chart" element={<LineChart />} />
+            <Route path="/settings/bar-chart" element={<BarChart />} />
+            <Route path="/settings/error-404" element={<NotFound />} />
           </Route>
 
           {/* Auth Layout */}
