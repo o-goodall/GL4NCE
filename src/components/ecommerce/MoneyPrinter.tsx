@@ -244,9 +244,9 @@ export default function MoneyPrinter() {
         </p>
       </div>
 
-      {/* ── Gauge bar (no labels — level implied by fill) ──────────────── */}
+      {/* ── Gauge bar (printer rating 0–5) ─────────────────────────────── */}
       <div className="pt-2 pb-3.5">
-        <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+        <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden relative">
           <div
             className="h-full rounded-full transition-all duration-1000 ease-out"
             style={{
@@ -257,6 +257,43 @@ export default function MoneyPrinter() {
               backgroundRepeat: "no-repeat",
             }}
           />
+          {/* Level tick marks on the bar */}
+          {[1, 2, 3, 4].map((lvl) => (
+            <div
+              key={lvl}
+              className="absolute top-0 h-2 w-px bg-gray-400/40 dark:bg-gray-500/40"
+              style={{ left: `${(lvl / 5) * 100}%` }}
+            />
+          ))}
+        </div>
+
+        {/* Level labels row */}
+        <div className="relative h-3 mt-1">
+          {[0, 1, 2, 3, 4, 5].map((lvl) => {
+            const pct = (lvl / 5) * 100;
+            const isActive = data.frliLevel === lvl;
+            return (
+              <span
+                key={lvl}
+                className={`absolute text-[9px] tabular-nums whitespace-nowrap ${
+                  lvl === 0 ? "" : lvl === 5 ? "" : "-translate-x-1/2"
+                } ${
+                  isActive
+                    ? "font-medium text-gray-600 dark:text-gray-300"
+                    : "text-gray-400 dark:text-gray-500"
+                }`}
+                style={
+                  lvl === 0
+                    ? { left: 0 }
+                    : lvl === 5
+                      ? { right: 0 }
+                      : { left: `${pct}%` }
+                }
+              >
+                {lvl}
+              </span>
+            );
+          })}
         </div>
       </div>
 
