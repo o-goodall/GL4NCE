@@ -18,6 +18,7 @@ interface FrliData {
   status:      string;
   metrics:     FrliMetric[];
   balanceSheetYoY: number;
+  balanceSheetTotal: number;
   rates: {
     fedFunds:    number | null;
     yield2y:     number | null;
@@ -43,13 +44,16 @@ function getCycleGradient(): string {
   return "linear-gradient(to right, #FFD700, #FFC700, #FF8C00, #FF4500, #FF0000, #B22222, #CD5C5C, #E0FFFF)";
 }
 
-// ── Historical QE peaks (Fed balance sheet YoY change, $ billions) ────────
-// Used to show current expansion as a fraction of past crises.
-
-const QE_PEAKS = [
-  { label: "2008",  value: 1250 },   // GFC: ~$1.25T expansion
-  { label: "2020",  value: 4500 },   // COVID: ~$4.5T expansion
-] as const;
+// ── Fed Balance Sheet thermometer scale constants ───────────────────────
+// Scale: baseline ($0.9T) → ceiling ($20T) to leave room for the next big print
+const BS_BASELINE   = 0.9;    // ~$0.9T pre-2008
+const BS_2008_PEAK  = 4.5;    // ~$4.5T post-GFC          (+3.6T)
+const BS_COVID_PEAK = 8.9;    // ~$8.9T COVID peak         (+4.4T from pre-COVID $4.1T→$8.9T ≈ +5T)
+const BS_CEILING    = 20;     // $20T — leaves headroom for +$7–10T next crisis
+const BS_RANGE      = BS_CEILING - BS_BASELINE;  // 19.1T
+const BS_2008_PCT   = ((BS_2008_PEAK - BS_BASELINE) / BS_RANGE) * 100;   // ~18.8%
+const BS_COVID_PCT  = ((BS_COVID_PEAK - BS_BASELINE) / BS_RANGE) * 100;  // ~41.9%
+const BS_NEXT_PCT   = 100; // right edge = ceiling
 
 // ── MiniStat (same pattern as BlockchainVisualizer) ───────────────────────
 
@@ -150,7 +154,7 @@ export default function MoneyPrinter() {
   const m2Active   = m2Metric != null;
   const m2Display  = m2Arrow === "up" ? `${m2Growth} ▲`
                    : m2Arrow === "down" ? `${m2Growth} ▼`
-                   : m2Growth;
+                   : `${m2Growth} ─`;
 
   const fedRate    = data?.rates.fedFunds ?? null;
   const rateCut    = data?.forward.rateCutProb ?? -1;
@@ -163,9 +167,11 @@ export default function MoneyPrinter() {
                      : liqArrow === "down" ? `${liqDirection} ▼`
                      : liqDirection;
 
-  // Historical QE comparison — current BS change as % of past crisis peaks
-  const bsYoY     = data?.balanceSheetYoY ?? 0;
-  const bsAbsYoY  = Math.abs(bsYoY);
+  // Historical QE comparison — thermometer scale
+  const bsTotal   = data?.balanceSheetTotal ?? 0;
+  const todayPct  = bsTotal > 0
+    ? Math.min(110, Math.max(0, ((bsTotal - BS_BASELINE) / BS_RANGE) * 100))
+    : 0;
 
   // ── Skeleton ──────────────────────────────────────────────────────────
   if (loading) {
@@ -282,7 +288,6 @@ export default function MoneyPrinter() {
             <MiniStat
               label="M2 Growth"
               value={m2Display}
-              sub={m2Arrow === "up" ? "rising" : m2Arrow === "down" ? "slowing" : "flat"}
               active={m2Active}
               valueColor={
                 m2Arrow === "up" ? "text-emerald-500 dark:text-emerald-400"
@@ -301,7 +306,6 @@ export default function MoneyPrinter() {
             <MiniStat
               label="Money Supply"
               value={liqDisplay}
-              sub={liqArrow === "up" ? "more cash in system" : liqArrow === "down" ? "draining" : "steady"}
               active={data != null}
               valueColor={
                 liqArrow === "up" ? "text-emerald-500 dark:text-emerald-400"
@@ -319,32 +323,90 @@ export default function MoneyPrinter() {
         </div>
       </div>
 
-      {/* ── Historical QE comparison (minimal) ─────────────────────────── */}
-      {bsAbsYoY > 50 && (
+      {/* ── Fed Balance Sheet thermometer ───────────────────────────── */}
+      {bsTotal > 0 && (
         <div className="pb-3">
-          <div className="space-y-1.5">
-            {QE_PEAKS.map((peak) => {
-              const pct = Math.min(100, Math.round((bsAbsYoY / peak.value) * 100));
-              return (
-                <div key={peak.label} className="flex items-center gap-2">
-                  <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 w-8 text-right shrink-0">
-                    {peak.label}
-                  </span>
-                  <div className="flex-1 h-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gray-300 dark:bg-gray-600 transition-all duration-700"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 w-8 shrink-0">
-                    {pct}%
-                  </span>
-                </div>
-              );
-            })}
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 text-center">
-              vs past crises (Fed balance sheet expansion)
+          {/* Track */}
+          <div className="relative h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-visible">
+            {/* Faded "next crisis" zone from COVID to end */}
+            <div
+              className="absolute inset-y-0 rounded-full opacity-30"
+              style={{
+                left: `${BS_COVID_PCT}%`,
+                width: `${BS_NEXT_PCT - BS_COVID_PCT}%`,
+                background: "repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(156,163,175,0.25) 3px, rgba(156,163,175,0.25) 6px)",
+              }}
+            />
+
+            {/* Fill up to today */}
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-gray-300 dark:bg-gray-600 transition-all duration-700"
+              style={{ width: `${Math.min(todayPct, 100)}%` }}
+            />
+
+            {/* 2008 marker */}
+            <div
+              className="absolute top-0 h-1.5 w-px bg-gray-400 dark:bg-gray-500"
+              style={{ left: `${BS_2008_PCT}%` }}
+            />
+
+            {/* COVID marker */}
+            <div
+              className="absolute top-0 h-1.5 w-px bg-gray-400 dark:bg-gray-500"
+              style={{ left: `${BS_COVID_PCT}%` }}
+            />
+
+            {/* Today triangle marker */}
+            <div
+              className="absolute -top-2.5 -translate-x-1/2 text-[9px] leading-none text-gray-400 dark:text-gray-500"
+              style={{ left: `${Math.min(todayPct, 100)}%` }}
+            >
+              ▲
             </div>
+          </div>
+
+          {/* Labels row */}
+          <div className="relative mt-1 h-4">
+            {/* 0 */}
+            <span className="absolute left-0 text-[9px] tabular-nums text-gray-400 dark:text-gray-500">0</span>
+
+            {/* 2008 */}
+            <span
+              className="absolute -translate-x-1/2 text-[9px] tabular-nums text-gray-400 dark:text-gray-500 whitespace-nowrap"
+              style={{ left: `${BS_2008_PCT}%` }}
+            >
+              2008 (+3.6T)
+            </span>
+
+            {/* COVID */}
+            <span
+              className="absolute -translate-x-1/2 text-[9px] tabular-nums text-gray-400 dark:text-gray-500 whitespace-nowrap"
+              style={{ left: `${BS_COVID_PCT}%` }}
+            >
+              COVID (+5T)
+            </span>
+
+            {/* Next Crisis */}
+            <span
+              className="absolute text-[9px] tabular-nums text-gray-400/60 dark:text-gray-600 whitespace-nowrap"
+              style={{ right: 0 }}
+            >
+              Next?
+            </span>
+          </div>
+
+          {/* Today label below marker */}
+          <div className="relative h-3">
+            <span
+              className="absolute -translate-x-1/2 text-[9px] font-medium tabular-nums text-gray-500 dark:text-gray-400 whitespace-nowrap"
+              style={{ left: `${Math.min(todayPct, 100)}%` }}
+            >
+              Today (${bsTotal.toFixed(1)}T)
+            </span>
+          </div>
+
+          <div className="text-[9px] text-gray-400 dark:text-gray-500 text-center mt-0.5">
+            Fed balance sheet size (trillions USD)
           </div>
         </div>
       )}

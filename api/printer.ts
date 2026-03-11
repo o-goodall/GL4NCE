@@ -182,7 +182,8 @@ export interface PrinterScoreResult {
   regime:        string;       // descriptive label
   status:        string;       // short status copy
   metrics:       FrliMetric[]; // 4 core FRLI metrics
-  balanceSheetYoY: number;     // Fed BS YoY change in billions (for historical comparison)
+  balanceSheetYoY: number;     // Fed BS YoY change in billions
+  balanceSheetTotal: number;   // current Fed BS total in trillions (for thermometer scale)
   rates: {
     fedFunds:    number | null;
     yield2y:     number | null;
@@ -414,6 +415,9 @@ export default async function handler(
       status,
       metrics,
       balanceSheetYoY: Math.round(latestBsChange),
+      balanceSheetTotal: walclPts.length > 0
+        ? Math.round((walclPts[0].value / 1_000_000) * 100) / 100   // millions → trillions, 2dp
+        : 0,
       rates: {
         fedFunds,
         yield2y,
