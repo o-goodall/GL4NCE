@@ -182,6 +182,7 @@ export interface PrinterScoreResult {
   regime:        string;       // descriptive label
   status:        string;       // short status copy
   metrics:       FrliMetric[]; // 4 core FRLI metrics
+  balanceSheetYoY: number;     // Fed BS YoY change in billions (for historical comparison)
   rates: {
     fedFunds:    number | null;
     yield2y:     number | null;
@@ -412,6 +413,7 @@ export default async function handler(
       regime,
       status,
       metrics,
+      balanceSheetYoY: Math.round(latestBsChange),
       rates: {
         fedFunds,
         yield2y,

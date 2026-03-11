@@ -17,6 +17,7 @@ interface FrliData {
   regime:      string;
   status:      string;
   metrics:     FrliMetric[];
+  balanceSheetYoY: number;
   rates: {
     fedFunds:    number | null;
     yield2y:     number | null;
@@ -41,6 +42,14 @@ function fmtRate(v: number | null): string {
 function getCycleGradient(): string {
   return "linear-gradient(to right, #FFD700, #FFC700, #FF8C00, #FF4500, #FF0000, #B22222, #CD5C5C, #E0FFFF)";
 }
+
+// ── Historical QE peaks (Fed balance sheet YoY change, $ billions) ────────
+// Used to show current expansion as a fraction of past crises.
+
+const QE_PEAKS = [
+  { label: "2008",  value: 1250 },   // GFC: ~$1.25T expansion
+  { label: "2020",  value: 4500 },   // COVID: ~$4.5T expansion
+] as const;
 
 // ── MiniStat (same pattern as BlockchainVisualizer) ───────────────────────
 
@@ -139,6 +148,9 @@ export default function MoneyPrinter() {
   const m2Growth   = m2Metric?.detail ?? "—";
   const m2Arrow    = m2Metric?.arrow;
   const m2Active   = m2Metric != null;
+  const m2Display  = m2Arrow === "up" ? `${m2Growth} ▲`
+                   : m2Arrow === "down" ? `${m2Growth} ▼`
+                   : m2Growth;
 
   const fedRate    = data?.rates.fedFunds ?? null;
   const rateCut    = data?.forward.rateCutProb ?? -1;
@@ -147,6 +159,13 @@ export default function MoneyPrinter() {
   // Net liquidity direction from composite Z-score
   const liqDirection = frliScore > 0.3 ? "Expanding" : frliScore < -0.3 ? "Contracting" : "Neutral";
   const liqArrow     = frliScore > 0.3 ? "up" : frliScore < -0.3 ? "down" : "flat";
+  const liqDisplay   = liqArrow === "up" ? `${liqDirection} ▲`
+                     : liqArrow === "down" ? `${liqDirection} ▼`
+                     : liqDirection;
+
+  // Historical QE comparison — current BS change as % of past crisis peaks
+  const bsYoY     = data?.balanceSheetYoY ?? 0;
+  const bsAbsYoY  = Math.abs(bsYoY);
 
   // ── Skeleton ──────────────────────────────────────────────────────────
   if (loading) {
@@ -205,7 +224,7 @@ export default function MoneyPrinter() {
   return (
     <section className="w-full px-1 py-1 sm:px-0">
 
-      {/* ── Header: icon + regime name ─────────────────────────────────── */}
+      {/* ── Header: icon + DEFCON-style level number ──────────────────── */}
       <div className="pb-1 pt-0">
         <p className="flex items-center gap-2 text-3xl font-semibold leading-none text-white sm:text-4xl">
           <span
@@ -215,7 +234,8 @@ export default function MoneyPrinter() {
           >
             print
           </span>
-          {data.regime}
+          <span className="tabular-nums">{data.frliLevel}</span>
+          <span className="text-base font-normal text-gray-400 dark:text-gray-500 self-end mb-0.5">/5</span>
         </p>
       </div>
 
@@ -250,7 +270,7 @@ export default function MoneyPrinter() {
           </div>
           <div>
             <MiniStat
-              label="Rate Cut"
+              label="Rate Cut Prob"
               value={rateCut >= 0 ? `${rateCut}%` : "—"}
               active={rateCut >= 0}
               valueColor={rateCut >= 60 ? "text-orange-500 dark:text-orange-400" : "text-gray-800 dark:text-white/90"}
@@ -261,8 +281,8 @@ export default function MoneyPrinter() {
           <div>
             <MiniStat
               label="M2 Growth"
-              value={m2Growth}
-              sub={m2Arrow === "up" ? "expanding" : m2Arrow === "down" ? "slowing" : "flat"}
+              value={m2Display}
+              sub={m2Arrow === "up" ? "rising" : m2Arrow === "down" ? "slowing" : "flat"}
               active={m2Active}
               valueColor={
                 m2Arrow === "up" ? "text-emerald-500 dark:text-emerald-400"
@@ -279,9 +299,9 @@ export default function MoneyPrinter() {
           </div>
           <div>
             <MiniStat
-              label="Liquidity"
-              value={liqDirection}
-              sub={liqArrow === "up" ? "more money in" : liqArrow === "down" ? "draining" : "steady"}
+              label="Money Supply"
+              value={liqDisplay}
+              sub={liqArrow === "up" ? "more cash in system" : liqArrow === "down" ? "draining" : "steady"}
               active={data != null}
               valueColor={
                 liqArrow === "up" ? "text-emerald-500 dark:text-emerald-400"
@@ -298,6 +318,36 @@ export default function MoneyPrinter() {
           </div>
         </div>
       </div>
+
+      {/* ── Historical QE comparison (minimal) ─────────────────────────── */}
+      {bsAbsYoY > 50 && (
+        <div className="pb-3">
+          <div className="space-y-1.5">
+            {QE_PEAKS.map((peak) => {
+              const pct = Math.min(100, Math.round((bsAbsYoY / peak.value) * 100));
+              return (
+                <div key={peak.label} className="flex items-center gap-2">
+                  <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 w-8 text-right shrink-0">
+                    {peak.label}
+                  </span>
+                  <div className="flex-1 h-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gray-300 dark:bg-gray-600 transition-all duration-700"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 w-8 shrink-0">
+                    {pct}%
+                  </span>
+                </div>
+              );
+            })}
+            <div className="text-[10px] text-gray-400 dark:text-gray-500 text-center">
+              vs past crises (Fed balance sheet expansion)
+            </div>
+          </div>
+        </div>
+      )}
 
     </section>
   );
