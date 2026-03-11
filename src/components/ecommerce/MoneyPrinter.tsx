@@ -267,34 +267,47 @@ export default function MoneyPrinter() {
           ))}
         </div>
 
-        {/* Level labels row */}
-        <div className="relative h-3 mt-1">
-          {[0, 1, 2, 3, 4, 5].map((lvl) => {
-            const pct = (lvl / 5) * 100;
-            const isActive = data.frliLevel === lvl;
-            return (
-              <span
-                key={lvl}
-                className={`absolute text-[9px] tabular-nums whitespace-nowrap ${
-                  lvl === 0 ? "" : lvl === 5 ? "" : "-translate-x-1/2"
-                } ${
-                  isActive
-                    ? "font-medium text-gray-600 dark:text-gray-300"
-                    : "text-gray-400 dark:text-gray-500"
-                }`}
-                style={
-                  lvl === 0
-                    ? { left: 0 }
-                    : lvl === 5
-                      ? { right: 0 }
-                      : { left: `${pct}%` }
-                }
-              >
-                {lvl}
-              </span>
-            );
-          })}
-        </div>
+        {/* Level number + label rows */}
+        {(() => {
+          const levels = [
+            { n: 0, label: "Strong Tightening" },
+            { n: 1, label: "Mild Tightening" },
+            { n: 2, label: "Neutral" },
+            { n: 3, label: "Mild Expansion" },
+            { n: 4, label: "Active QE" },
+            { n: 5, label: "Extreme Intervention" },
+          ];
+          return (
+            <div className="relative mt-1 h-6">
+              {levels.map(({ n, label }) => {
+                const pct = (n / 5) * 100;
+                const isActive = data.frliLevel === n;
+                return (
+                  <span
+                    key={n}
+                    className={`absolute flex flex-col items-center text-[9px] leading-tight whitespace-nowrap ${
+                      n === 0 ? "items-start" : n === 5 ? "items-end" : "-translate-x-1/2"
+                    } ${
+                      isActive
+                        ? "font-medium text-gray-600 dark:text-gray-300"
+                        : "text-gray-400 dark:text-gray-500"
+                    }`}
+                    style={
+                      n === 0
+                        ? { left: 0 }
+                        : n === 5
+                          ? { right: 0 }
+                          : { left: `${pct}%` }
+                    }
+                  >
+                    <span className="tabular-nums">{n}</span>
+                    <span className="text-[8px] hidden sm:inline">{label}</span>
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Fed Balance Sheet scale ───────────────────────────────── */}
