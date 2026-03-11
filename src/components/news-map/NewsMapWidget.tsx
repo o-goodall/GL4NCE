@@ -76,7 +76,7 @@ async function loadWorldGeoJson(): Promise<GeoJsonObject> {
   // Inject alpha-2 code into each feature's properties for easy lookup
   if ("features" in fc) {
     for (const f of fc.features) {
-      const numId = String(f.id ?? f.properties?.id ?? "");
+      const numId = String(f.id ?? (f.properties as { id?: string | number } | null)?.id ?? "");
       const alpha2 = numericToAlpha2(numId);
       if (alpha2) {
         f.properties = { ...f.properties, alpha2 };
@@ -239,7 +239,7 @@ export default function NewsMapWidget() {
   const isDark = theme === "dark";
   const { data, loading } = useNewsMap();
 
-  const [tappedCode, setTappedCode] = useState<string | null>(null);
+  const [_tappedCode, setTappedCode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -287,8 +287,6 @@ export default function NewsMapWidget() {
     () => countries.filter((c) => c.trending).sort((a, b) => (a.trendingRank ?? 99) - (b.trendingRank ?? 99)),
     [countries],
   );
-
-  const trendingCodes = useMemo(() => new Set(trendingCountries.map((c) => c.code)), [trendingCountries]);
 
   const criticalCodes = useMemo(
     () => new Set(countries.filter((c) => c.alertLevel === "critical").map((c) => c.code)),
@@ -471,7 +469,6 @@ export default function NewsMapWidget() {
             maxBoundsViscosity={0.8}
             zoomControl={false}
             attributionControl={false}
-            // @ts-expect-error — gestureHandling augmented in leaflet-gesture-handling.d.ts
             gestureHandling={true}
             className="h-full w-full rounded-xl"
             style={{ background: isDark ? "#1a1d23" : "#f8f9fa" }}
